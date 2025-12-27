@@ -7,8 +7,11 @@ jobs:
   publish:
     runs-on: [self-hosted, terminal-0]
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -l {0}
     env:
-      PATH: /Users/jckwind/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     permissions:
       contents: write
 
@@ -20,6 +23,7 @@ jobs:
 
       - name: Setup Rust
         run: |
+          source "$HOME/.cargo/env"
           rustup update stable
           rustup default stable
 
