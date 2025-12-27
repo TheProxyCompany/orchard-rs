@@ -53,6 +53,7 @@ fn align(offset: usize) -> usize {
 /// * `response_channel_id` - Channel ID for routing responses
 /// * `prompt` - The prompt text
 /// * `options` - Sampling and generation options
+#[allow(clippy::too_many_arguments)]
 pub fn build_request_payload(
     request_id: u64,
     model_id: &str,
