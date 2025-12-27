@@ -65,4 +65,4 @@ async fn main() -> Result<(), orchard::Error> {
 
 ## License
 
-MIT
+Apache-2.0
