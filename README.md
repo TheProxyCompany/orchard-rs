@@ -6,7 +6,7 @@ Rust client for [Orchard](https://github.com/TheProxyCompany) - high-performance
 
 ```toml
 [dependencies]
-orchard = "2024.12"
+orchard-rs = "2024.12"
 ```
 
 ## Usage
