@@ -1,0 +1,33 @@
+[package]
+name = "orchard"
+version = "2024.12.1"
+edition = "2021"
+description = "Rust client for Orchard - high-performance LLM inference on Apple Silicon"
+license = "MIT"
+repository = "https://github.com/TheProxyCompany/orchard-rs"
+keywords = ["llm", "inference", "apple-silicon", "nng", "ipc"]
+categories = ["api-bindings", "asynchronous"]
+
+[lib]
+name = "orchard"
+crate-type = ["lib"]
+
+[dependencies]
+# NNG for IPC communication with PIE
+nng = "1.0"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+thiserror = "2"
+dirs = "5"
+log = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+env_logger = "0.11"

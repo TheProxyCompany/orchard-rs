@@ -1,0 +1,81 @@
+name: Publish to crates.io
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: [self-hosted, terminal-0]
+    timeout-minutes: 30
+    env:
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Setup Rust
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Bump version
+        id: version
+        run: |
+          # Read current version from Cargo.toml
+          CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+
+          # Parse calver: YYYY.MM.PATCH
+          YEAR=$(echo $CURRENT | cut -d. -f1)
+          MONTH=$(echo $CURRENT | cut -d. -f2)
+          PATCH=$(echo $CURRENT | cut -d. -f3)
+
+          # Get current date
+          NOW_YEAR=$(date +%Y)
+          NOW_MONTH=$(date +%-m)
+
+          # Bump version
+          if [ "$YEAR" != "$NOW_YEAR" ] || [ "$MONTH" != "$NOW_MONTH" ]; then
+            NEW_VERSION="${NOW_YEAR}.${NOW_MONTH}.1"
+          else
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${YEAR}.${MONTH}.${NEW_PATCH}"
+          fi
+
+          # Update Cargo.toml
+          sed -i '' "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
+
+          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "Bumped version: ${CURRENT} → ${NEW_VERSION}"
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "v${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
