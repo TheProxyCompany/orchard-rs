@@ -38,7 +38,7 @@ async fn test_chat_completion_first_token() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 1,
@@ -77,7 +77,7 @@ async fn test_chat_completion_multi_token() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 64,
@@ -108,13 +108,13 @@ async fn test_chat_completion_multi_token() {
     }
 }
 
-/// Test synchronous chat interface.
-#[test]
-fn test_sync_chat_completion() {
+/// Test synchronous chat interface (from async context).
+#[tokio::test]
+async fn test_sync_chat_completion() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 32,
@@ -124,6 +124,7 @@ fn test_sync_chat_completion() {
 
     let messages = vec![make_message("user", "Say hello in one sentence.")];
 
+    // Test that sync chat() works from within async context
     let result = client.chat(MODEL_ID, messages, params);
     assert!(result.is_ok(), "Sync chat request failed: {:?}", result.err());
 

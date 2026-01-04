@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{Client, ModelRegistry, SamplingParams};
+use orchard::{BatchChatResult, Client, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "moondream3";
 
@@ -48,7 +48,7 @@ async fn test_chat_completion_batched_homogeneous() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 10,
@@ -61,10 +61,13 @@ async fn test_chat_completion_batched_homogeneous() {
         vec![make_message("user", "Give me a fun fact about space.")],
     ];
 
-    let result = client.achat_batch(MODEL_ID, conversations, params).await;
+    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
     assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
 
-    let responses = result.unwrap();
+    let responses = match result.unwrap() {
+        BatchChatResult::Complete(responses) => responses,
+        BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
+    };
     assert_eq!(responses.len(), 2, "Should have 2 responses (one per conversation)");
 
     for (i, response) in responses.iter().enumerate() {
@@ -84,7 +87,7 @@ async fn test_chat_completion_batched_different_content() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 20,
@@ -97,10 +100,13 @@ async fn test_chat_completion_batched_different_content() {
         vec![make_message("user", "List three colors separated by commas.")],
     ];
 
-    let result = client.achat_batch(MODEL_ID, conversations, params).await;
+    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
     assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
 
-    let responses = result.unwrap();
+    let responses = match result.unwrap() {
+        BatchChatResult::Complete(responses) => responses,
+        BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
+    };
     assert_eq!(responses.len(), 2, "Should have 2 responses");
 
     // First response should be short (greeting)
@@ -115,16 +121,18 @@ async fn test_chat_completion_batched_different_content() {
 async fn test_empty_batch() {
     // This test doesn't require PIE - it tests edge case handling
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry);
 
     // Connection may fail without PIE, but that's ok for this test
-    if let Ok(client) = client {
+    if let Ok(client) = Client::connect(registry).await {
         let params = SamplingParams::default();
         let conversations: Vec<Vec<HashMap<String, serde_json::Value>>> = vec![];
 
-        let result = client.achat_batch(MODEL_ID, conversations, params).await;
+        let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
         match result {
-            Ok(responses) => assert!(responses.is_empty(), "Empty batch should return empty responses"),
+            Ok(BatchChatResult::Complete(responses)) => {
+                assert!(responses.is_empty(), "Empty batch should return empty responses")
+            }
+            Ok(BatchChatResult::Stream(_)) => panic!("Expected complete result, got stream"),
             Err(_) => {
                 // Expected without PIE running
             }

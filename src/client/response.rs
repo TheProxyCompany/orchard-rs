@@ -1,8 +1,17 @@
 //! Response types for the client API.
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 
 use crate::ipc::client::ResponseDelta;
+
+/// Result of a batch chat completion that can be streamed or complete.
+pub enum BatchChatResult {
+    /// Complete responses for all prompts
+    Complete(Vec<ClientResponse>),
+    /// Stream of deltas (contains prompt_index to identify which prompt)
+    Stream(mpsc::Receiver<ClientDelta>),
+}
 
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -38,7 +38,7 @@ async fn test_json_structured_output() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 100,
@@ -95,7 +95,7 @@ async fn test_list_structured_output() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 50,

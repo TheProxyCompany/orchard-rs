@@ -38,7 +38,7 @@ async fn test_stop_on_newline() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 100,
@@ -86,7 +86,7 @@ async fn test_stop_on_word() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 200,
@@ -126,7 +126,7 @@ async fn test_multiple_stop_sequences() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 100,

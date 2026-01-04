@@ -233,9 +233,9 @@ pub fn build_batch_request_payload(
         let best_of = prompt.best_of.unwrap_or(prompt.num_candidates.max(1));
         let final_candidates = prompt.final_candidates.unwrap_or(best_of);
 
-        // Convert logit_bias HashMap to array of [token_id, bias] pairs
-        let logit_bias: Vec<(i32, f64)> = prompt.logit_bias.iter()
-            .map(|(&k, &v)| (k, v))
+        // Convert logit_bias HashMap to array of {token, bias} objects (matching Python)
+        let logit_bias: Vec<Value> = prompt.logit_bias.iter()
+            .map(|(&k, &v)| json!({"token": k, "bias": v}))
             .collect();
 
         let prompt_meta = json!({

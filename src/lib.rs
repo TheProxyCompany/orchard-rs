@@ -31,7 +31,7 @@ pub use formatter::multimodal::{
 };
 pub use formatter::ChatFormatter;
 
-pub use client::{ChatResult, Client, ClientDelta, ClientResponse, SamplingParams, UsageStats};
+pub use client::{BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, SamplingParams, UsageStats};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -92,7 +92,7 @@ async fn test_image_captioning() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 50,
@@ -127,7 +127,7 @@ async fn test_visual_question_answering() {
     require_pie!();
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).expect("Failed to connect to engine");
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 30,

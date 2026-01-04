@@ -6,14 +6,29 @@ mod moondream;
 mod response;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+/// Global runtime for synchronous operations.
+/// Uses current_thread for efficiency - sync callers don't need multi-thread.
+static SYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
+    SYNC_RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create sync runtime")
+    })
+}
+
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
-use crate::ipc::client::{IPCClient, ResponseDelta};
+use crate::ipc::client::{EventCallback, IPCClient, ResponseDelta};
 use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload};
 use crate::model::registry::ModelRegistry;
 
@@ -22,7 +37,7 @@ pub use moondream::{
     MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
     MOONDREAM_MODEL_ID,
 };
-pub use response::{ClientDelta, ClientResponse, UsageStats};
+pub use response::{BatchChatResult, ClientDelta, ClientResponse, UsageStats};
 
 /// Errors that can occur during client operations.
 #[derive(Error, Debug)]
@@ -48,7 +63,24 @@ pub enum ClientError {
 
 impl From<crate::error::Error> for ClientError {
     fn from(err: crate::error::Error) -> Self {
-        ClientError::Ipc(err.to_string())
+        use crate::error::Error;
+        match err {
+            Error::ModelNotFound(s) => ClientError::ModelNotFound(s),
+            Error::ModelNotReady(s) => ClientError::ModelNotReady(s),
+            Error::NotConnected
+            | Error::InvalidResponse
+            | Error::Nng(_)
+            | Error::Timeout
+            | Error::ChannelClosed => ClientError::Ipc(err.to_string()),
+            Error::Template(s) => ClientError::Formatter(s),
+            Error::InvalidImageUrl
+            | Error::InvalidBase64
+            | Error::MissingContentType(_, _)
+            | Error::InvalidContent
+            | Error::PlaceholderMismatch(_, _)
+            | Error::EmptyRequest => ClientError::Multimodal(err.to_string()),
+            _ => ClientError::RequestFailed(err.to_string()),
+        }
     }
 }
 
@@ -138,35 +170,61 @@ impl Default for SamplingParams {
 ///
 /// Provides both synchronous and asynchronous interfaces for LLM inference.
 pub struct Client {
-    ipc: IPCClient,
+    ipc: Arc<IPCClient>,
     registry: Arc<ModelRegistry>,
 }
 
 impl Client {
     /// Create a new client with the given IPC client and model registry.
-    pub fn new(ipc: IPCClient, registry: Arc<ModelRegistry>) -> Self {
+    pub fn new(ipc: Arc<IPCClient>, registry: Arc<ModelRegistry>) -> Self {
         Self { ipc, registry }
     }
 
-    /// Create a client and connect to the engine.
-    pub fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
-        let mut ipc = IPCClient::new();
+    /// Create a client and connect to the engine (async).
+    ///
+    /// This sets up:
+    /// - Event callback for handling model_loaded events
+    /// - IPC client shared with registry for management commands
+    pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
+        // Create event callback that routes model_loaded events to registry
+        let registry_for_events = Arc::clone(&registry);
+        let event_callback: EventCallback = Arc::new(move |event_name: &str, payload: &Value| {
+            if event_name == "model_loaded" {
+                let registry = Arc::clone(&registry_for_events);
+                let payload = payload.clone();
+                // Spawn a task to handle the event (handle_model_loaded is async)
+                tokio::spawn(async move {
+                    registry.handle_model_loaded(&payload).await;
+                });
+            }
+        });
+
+        let mut ipc = IPCClient::with_event_callback(event_callback);
         ipc.connect()?;
-        Ok(Self::new(ipc, registry))
+        let ipc = Arc::new(ipc);
+
+        // Share the IPC client with the registry for management commands
+        registry.set_ipc_client(Arc::clone(&ipc)).await;
+
+        Ok(Self { ipc, registry })
     }
 
-    /// Disconnect from the engine.
-    pub fn disconnect(&mut self) {
-        self.ipc.disconnect();
+    /// Disconnect from the engine and clean up resources.
+    pub fn disconnect(&self) {
+        // Note: We can't mutably borrow through Arc, so disconnect is handled on drop
+        // This method is kept for API compatibility but does nothing
+    }
+
+    /// Close the client and release all resources.
+    ///
+    /// This is the preferred way to clean up the client.
+    pub fn close(&self) {
+        self.disconnect();
     }
 
     /// Resolve control token capabilities for a model.
     pub async fn resolve_capabilities(&self, model_id: &str) -> Result<HashMap<String, i32>> {
-        let info = self
-            .registry
-            .ensure_loaded(model_id)
-            .await
-            .map_err(ClientError::ModelNotReady)?;
+        let info = self.registry.ensure_loaded(model_id).await?;
 
         let capabilities = info.capabilities.as_ref().cloned().unwrap_or_default();
         let mut resolved = HashMap::new();
@@ -194,11 +252,7 @@ impl Client {
         params: SamplingParams,
         stream: bool,
     ) -> Result<ChatResult> {
-        let info = self
-            .registry
-            .ensure_loaded(model_id)
-            .await
-            .map_err(ClientError::ModelNotReady)?;
+        let info = self.registry.ensure_loaded(model_id).await?;
 
         let request_id = self.ipc.next_request_id();
 
@@ -260,6 +314,13 @@ impl Client {
             .unwrap_or_default();
 
         // Build PromptPayload with full multimodal data
+        // Generate unique RNG seed if not explicitly provided
+        let rng_seed = if params.rng_seed == 0 {
+            rand::thread_rng().gen::<u64>()
+        } else {
+            params.rng_seed
+        };
+
         let prompt_payload = PromptPayload {
             prompt: final_prompt,
             image_buffers,
@@ -270,7 +331,7 @@ impl Client {
             top_p: params.top_p,
             top_k: params.top_k,
             min_p: params.min_p,
-            rng_seed: params.rng_seed,
+            rng_seed,
             stop_sequences: params.stop.clone(),
             num_candidates: params.n,
             best_of: params.best_of,
@@ -314,25 +375,33 @@ impl Client {
     }
 
     /// Perform synchronous chat completion (blocking).
+    ///
+    /// Handles nested async contexts properly - safe to call from any context.
     pub fn chat(
         &self,
         model_id: &str,
         messages: Vec<HashMap<String, serde_json::Value>>,
         params: SamplingParams,
     ) -> Result<ClientResponse> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
-
-        rt.block_on(async {
+        let future = async {
             match self.achat(model_id, messages, params, false).await? {
                 ChatResult::Complete(response) => Ok(response),
                 ChatResult::Stream(_) => Err(ClientError::RequestFailed(
                     "Unexpected stream result".into(),
                 )),
             }
-        })
+        };
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // Already in async context - use block_in_place to avoid panic
+                tokio::task::block_in_place(|| handle.block_on(future))
+            }
+            Err(_) => {
+                // Not in async context - use the global sync runtime
+                get_sync_runtime().block_on(future)
+            }
+        }
     }
 
     /// Perform batched chat completion.
@@ -340,21 +409,24 @@ impl Client {
     /// This sends ALL conversations in ONE IPC message, allowing the engine
     /// to schedule them together efficiently. Responses are demultiplexed
     /// by prompt_index and returned in order.
+    ///
+    /// # Arguments
+    /// * `model_id` - Model to use for generation
+    /// * `conversations` - List of conversation message lists
+    /// * `params` - Sampling parameters
+    /// * `stream` - Whether to stream responses (deltas contain prompt_index)
     pub async fn achat_batch(
         &self,
         model_id: &str,
         conversations: Vec<Vec<HashMap<String, serde_json::Value>>>,
         params: SamplingParams,
-    ) -> Result<Vec<ClientResponse>> {
+        stream: bool,
+    ) -> Result<BatchChatResult> {
         if conversations.is_empty() {
-            return Ok(Vec::new());
+            return Ok(BatchChatResult::Complete(Vec::new()));
         }
 
-        let info = self
-            .registry
-            .ensure_loaded(model_id)
-            .await
-            .map_err(ClientError::ModelNotReady)?;
+        let info = self.registry.ensure_loaded(model_id).await?;
 
         let request_id = self.ipc.next_request_id();
         let num_prompts = conversations.len();
@@ -420,6 +492,13 @@ impl Client {
                 final_prompt = final_prompt.replace(coord, "");
             }
 
+            // Generate unique RNG seed for EACH prompt in batch
+            let rng_seed = if params.rng_seed == 0 {
+                rand::thread_rng().gen::<u64>()
+            } else {
+                params.rng_seed
+            };
+
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
                 image_buffers,
@@ -430,7 +509,7 @@ impl Client {
                 top_p: params.top_p,
                 top_k: params.top_k,
                 min_p: params.min_p,
-                rng_seed: params.rng_seed,
+                rng_seed,
                 stop_sequences: params.stop.clone(),
                 num_candidates: params.n,
                 best_of: params.best_of,
@@ -449,16 +528,31 @@ impl Client {
         }
 
         // Send ONE batch request with all prompts
-        let (_batch_size, mut rx) = self.ipc.send_batch_request(
+        let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             model_id,
             &info.model_path,
             &prompt_payloads,
         )?;
 
+        if stream {
+            // Convert ResponseDelta receiver to ClientDelta receiver
+            let (tx, client_rx) = mpsc::channel(256);
+            tokio::spawn(async move {
+                let mut rx = rx;
+                while let Some(delta) = rx.recv().await {
+                    if tx.send(ClientDelta::from(delta)).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            return Ok(BatchChatResult::Stream(client_rx));
+        }
+
         // Collect responses grouped by prompt_index
         let mut deltas_by_prompt: HashMap<u32, Vec<ClientDelta>> = HashMap::new();
         let mut finals_received = 0usize;
+        let mut rx = rx;
 
         while finals_received < num_prompts {
             match rx.recv().await {
@@ -486,18 +580,18 @@ impl Client {
             responses.push(aggregate_response(deltas));
         }
 
-        Ok(responses)
+        Ok(BatchChatResult::Complete(responses))
     }
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
+/// Position is always 0 (matching Python behavior).
 fn convert_capabilities(capabilities: &[CapabilityInput]) -> Vec<CapabilityEntry> {
     capabilities
         .iter()
-        .enumerate()
-        .map(|(position, cap)| CapabilityEntry {
+        .map(|cap| CapabilityEntry {
             name: cap.name.clone(),
-            position,
+            position: 0,  // Always 0, matching Python
             payload: cap.payload.clone(),
         })
         .collect()

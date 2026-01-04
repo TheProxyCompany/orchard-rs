@@ -132,10 +132,7 @@ impl MoondreamClient {
     ///
     /// This will ensure the moondream3 model is loaded and ready.
     pub async fn new(client: Client, registry: Arc<ModelRegistry>) -> Result<Self> {
-        let model_info = registry
-            .ensure_loaded(MOONDREAM_MODEL_ID)
-            .await
-            .map_err(ClientError::ModelNotReady)?;
+        let model_info = registry.ensure_loaded(MOONDREAM_MODEL_ID).await?;
 
         // Build capability token ID map with fallbacks
         let mut capability_token_ids: HashMap<String, i32> = HashMap::from([

@@ -21,7 +21,10 @@ use tokio::sync::mpsc;
 pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 
 /// Response delta from PIE.
+///
+/// Uses serde for deserialization with sensible defaults for missing fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ResponseDelta {
     /// Request ID this delta belongs to
     pub request_id: u64,
@@ -86,55 +89,6 @@ impl Default for ResponseDelta {
     }
 }
 
-impl ResponseDelta {
-    /// Parse from JSON value.
-    pub fn from_json(json: &Value) -> Self {
-        let tokens = json["tokens"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_i64().map(|n| n as i32))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let top_logprobs = json["top_logprobs"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| {
-                        v.as_object().map(|obj| {
-                            obj.iter()
-                                .filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f)))
-                                .collect()
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Self {
-            request_id: json["request_id"].as_u64().unwrap_or(0),
-            sequence_id: json["sequence_id"].as_u64(),
-            prompt_index: json["prompt_index"].as_u64().map(|v| v as u32),
-            candidate_index: json["candidate_index"].as_u64().map(|v| v as u32),
-            content: json["content"].as_str().map(String::from),
-            content_len: json["content_len"].as_u64().map(|v| v as u32),
-            inline_content_bytes: json["inline_content_bytes"].as_u64().map(|v| v as u32),
-            is_final_delta: json["is_final_delta"].as_bool().unwrap_or(false),
-            finish_reason: json["finish_reason"].as_str().map(String::from),
-            error: json["error"].as_str().map(String::from),
-            prompt_token_count: json["prompt_token_count"].as_u64().map(|v| v as u32),
-            num_tokens_in_delta: json["num_tokens_in_delta"].as_u64().map(|v| v as u32),
-            generation_len: json["generation_len"].as_u64().map(|v| v as u32),
-            tokens,
-            top_logprobs,
-            cumulative_logprob: json["cumulative_logprob"].as_f64(),
-            modal_decoder_id: json["modal_decoder_id"].as_str().map(String::from),
-            modal_bytes_b64: json["modal_bytes_b64"].as_str().map(String::from),
-        }
-    }
-}
 
 /// High-performance IPC client for communicating with PIE.
 ///
@@ -143,7 +97,8 @@ impl ResponseDelta {
 pub struct IPCClient {
     request_socket: Option<Socket>,
     response_socket: Option<Socket>,
-    management_socket: Option<Socket>,
+    /// Management socket wrapped in Arc<Mutex> for async access via spawn_blocking
+    management_socket: Arc<Mutex<Option<Socket>>>,
     response_channel_id: u64,
     request_id_counter: AtomicU64,
     active_requests: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseDelta>>>>,
@@ -158,7 +113,7 @@ impl IPCClient {
         Self {
             request_socket: None,
             response_socket: None,
-            management_socket: None,
+            management_socket: Arc::new(Mutex::new(None)),
             response_channel_id: rand_u64(),
             request_id_counter: AtomicU64::new(0),
             active_requests: Arc::new(Mutex::new(HashMap::new())),
@@ -173,7 +128,7 @@ impl IPCClient {
         Self {
             request_socket: None,
             response_socket: None,
-            management_socket: None,
+            management_socket: Arc::new(Mutex::new(None)),
             response_channel_id: rand_u64(),
             request_id_counter: AtomicU64::new(0),
             active_requests: Arc::new(Mutex::new(HashMap::new())),
@@ -181,6 +136,11 @@ impl IPCClient {
             should_stop: Arc::new(AtomicBool::new(false)),
             event_callback: Some(callback),
         }
+    }
+
+    /// Get a clone of the management socket Arc for async operations.
+    pub fn management_socket(&self) -> Arc<Mutex<Option<Socket>>> {
+        Arc::clone(&self.management_socket)
     }
 
     /// Set the event callback for handling engine events.
@@ -214,7 +174,10 @@ impl IPCClient {
         // Create management socket (REQ)
         let management_socket = Socket::new(Protocol::Req0)?;
         management_socket.dial(&management_url())?;
-        self.management_socket = Some(management_socket);
+        {
+            let mut mgmt = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+            *mgmt = Some(management_socket);
+        }
 
         // Start listener thread
         self.should_stop.store(false, Ordering::SeqCst);
@@ -255,7 +218,10 @@ impl IPCClient {
 
         self.request_socket = None;
         self.response_socket = None;
-        self.management_socket = None;
+        {
+            let mut mgmt = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+            *mgmt = None;
+        }
 
         if let Ok(mut requests) = self.active_requests.lock() {
             requests.clear();
@@ -303,10 +269,40 @@ impl IPCClient {
         Ok((prompts.len(), rx))
     }
 
-    /// Send a management command (e.g., load_model).
-    /// This is synchronous and blocking - appropriate for setup operations.
+    /// Send a management command asynchronously.
+    ///
+    /// Uses spawn_blocking internally since NNG sockets are sync.
+    pub async fn send_management_command_async(&self, command: Value, timeout: Duration) -> Result<Value> {
+        let socket_arc = Arc::clone(&self.management_socket);
+
+        tokio::task::spawn_blocking(move || {
+            let guard = socket_arc.lock().unwrap_or_else(|e| e.into_inner());
+            let socket = guard.as_ref().ok_or(Error::NotConnected)?;
+
+            // Set timeout
+            socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
+
+            // Send command
+            let data = serde_json::to_vec(&command)?;
+            let msg = nng::Message::from(data.as_slice());
+            socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+
+            // Receive response
+            let response = socket.recv()?;
+            let json: Value = serde_json::from_slice(&response)?;
+
+            Ok(json)
+        })
+        .await
+        .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
+    }
+
+    /// Send a management command synchronously (blocking).
+    ///
+    /// Prefer `send_management_command_async` in async contexts.
     pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
-        let socket = self.management_socket.as_ref().ok_or(Error::NotConnected)?;
+        let guard = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+        let socket = guard.as_ref().ok_or(Error::NotConnected)?;
 
         // Set timeout
         socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
@@ -387,8 +383,7 @@ fn run_response_listener(
                 if data.starts_with(response_topic_bytes) {
                     let json_data = &data[response_topic_bytes.len()..];
 
-                    if let Ok(json) = serde_json::from_slice::<Value>(json_data) {
-                        let delta = ResponseDelta::from_json(&json);
+                    if let Ok(delta) = serde_json::from_slice::<ResponseDelta>(json_data) {
                         let request_id = delta.request_id;
                         let is_final = delta.is_final_delta;
 
@@ -531,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn test_response_delta_from_json() {
+    fn test_response_delta_deserialize() {
         let json = serde_json::json!({
             "request_id": 123,
             "sequence_id": 1,
@@ -548,7 +543,7 @@ mod tests {
             "modal_decoder_id": "moondream3.coord",
             "modal_bytes_b64": "AAAA"
         });
-        let delta = ResponseDelta::from_json(&json);
+        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
         assert_eq!(delta.request_id, 123);
         assert_eq!(delta.sequence_id, Some(1));
         assert_eq!(delta.candidate_index, Some(0));
@@ -558,5 +553,19 @@ mod tests {
         assert_eq!(delta.top_logprobs.len(), 2);
         assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
+    }
+
+    #[test]
+    fn test_response_delta_deserialize_with_defaults() {
+        // Test that missing fields get sensible defaults
+        let json = serde_json::json!({
+            "request_id": 42,
+            "is_final_delta": true
+        });
+        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
+        assert_eq!(delta.request_id, 42);
+        assert!(delta.is_final_delta);
+        assert!(delta.tokens.is_empty());
+        assert!(delta.content.is_none());
     }
 }

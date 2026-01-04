@@ -89,6 +89,8 @@ pub enum Error {
     // === Generic ===
     #[error("{0}")]
     Other(String),
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
