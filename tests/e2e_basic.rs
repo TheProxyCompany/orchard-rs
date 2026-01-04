@@ -37,7 +37,7 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 async fn test_chat_completion_first_token() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -76,7 +76,7 @@ async fn test_chat_completion_first_token() {
 async fn test_chat_completion_multi_token() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -113,7 +113,7 @@ async fn test_chat_completion_multi_token() {
 fn test_sync_chat_completion() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {

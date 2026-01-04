@@ -1,40 +1,13 @@
 //! Multimodal content handling.
-//!
-//! Provides utilities for handling images and capabilities in chat messages.
 
 use std::collections::HashMap;
 
 use base64::Engine;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use super::ChatFormatter;
-
-/// Errors specific to multimodal processing.
-#[derive(Error, Debug)]
-pub enum MultimodalError {
-    #[error("Invalid image data URL format")]
-    InvalidImageUrl,
-
-    #[error("Invalid base64-encoded image content")]
-    InvalidBase64,
-
-    #[error("Content part {0} in message {1} is missing a valid 'type'")]
-    MissingType(usize, usize),
-
-    #[error("Message content must be a string or list of content parts")]
-    InvalidContent,
-
-    #[error("Mismatch between image placeholders ({0}) and supplied images ({1})")]
-    PlaceholderMismatch(usize, usize),
-
-    #[error("Response request must include at least one content segment")]
-    EmptyRequest,
-
-    #[error("{0}")]
-    Other(String),
-}
+use crate::error::{Error, Result};
 
 /// A capability input with name and binary payload.
 #[derive(Debug, Clone)]
@@ -72,15 +45,12 @@ pub fn build_multimodal_messages(
     formatter: &ChatFormatter,
     items: &[HashMap<String, serde_json::Value>],
     instructions: Option<&str>,
-) -> Result<
-    (
-        Vec<HashMap<String, serde_json::Value>>,
-        Vec<Vec<u8>>,
-        Vec<CapabilityInput>,
-        Vec<(ContentType, usize)>,
-    ),
-    MultimodalError,
-> {
+) -> Result<(
+    Vec<HashMap<String, serde_json::Value>>,
+    Vec<Vec<u8>>,
+    Vec<CapabilityInput>,
+    Vec<(ContentType, usize)>,
+)> {
     let available_roles: std::collections::HashSet<String> = [
         formatter.control_tokens.roles.system.as_ref().map(|_| "system"),
         formatter.control_tokens.roles.agent.as_ref().map(|_| "agent"),
@@ -97,7 +67,6 @@ pub fn build_multimodal_messages(
     let mut capabilities = Vec::new();
     let mut content_order = Vec::new();
 
-    // Add system instructions if provided
     if let Some(instructions) = instructions {
         let system_role = if available_roles.contains("system") {
             "system"
@@ -119,7 +88,6 @@ pub fn build_multimodal_messages(
 
         let content = message.get("content").cloned().unwrap_or(serde_json::Value::Null);
 
-        // Simple string content
         if let Some(text) = content.as_str() {
             let mut msg = HashMap::new();
             msg.insert("role".to_string(), serde_json::json!(role));
@@ -128,7 +96,6 @@ pub fn build_multimodal_messages(
             continue;
         }
 
-        // Array of content parts
         if let Some(parts) = content.as_array() {
             let mut rendered_parts: Vec<serde_json::Value> = Vec::new();
 
@@ -136,7 +103,7 @@ pub fn build_multimodal_messages(
                 let part_type = content_part
                     .get("type")
                     .and_then(|v| v.as_str())
-                    .ok_or(MultimodalError::MissingType(part_idx, msg_idx))?
+                    .ok_or(Error::MissingContentType(part_idx, msg_idx))?
                     .to_lowercase();
 
                 match part_type.as_str() {
@@ -145,7 +112,7 @@ pub fn build_multimodal_messages(
                             .get("text")
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| {
-                                MultimodalError::Other(format!(
+                                Error::Other(format!(
                                     "Text content missing for part {} in message {}",
                                     part_idx, msg_idx
                                 ))
@@ -165,7 +132,7 @@ pub fn build_multimodal_messages(
                             .get("name")
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| {
-                                MultimodalError::Other(format!(
+                                Error::Other(format!(
                                     "Capability part {} in message {} missing 'name'",
                                     part_idx, msg_idx
                                 ))
@@ -175,13 +142,12 @@ pub fn build_multimodal_messages(
                             .get("data")
                             .and_then(|v| v.as_array())
                             .ok_or_else(|| {
-                                MultimodalError::Other(format!(
+                                Error::Other(format!(
                                     "Capability part {} in message {} missing 'data' array",
                                     part_idx, msg_idx
                                 ))
                             })?;
 
-                        // Pack floats as little-endian f32
                         let mut payload = Vec::with_capacity(data.len() * 4);
                         for val in data {
                             let f = val.as_f64().unwrap_or(0.0) as f32;
@@ -196,7 +162,7 @@ pub fn build_multimodal_messages(
                         rendered_parts.push(serde_json::json!({"type": "capability"}));
                     }
                     _ => {
-                        return Err(MultimodalError::Other(format!(
+                        return Err(Error::Other(format!(
                             "Unsupported content type: {}",
                             part_type
                         )));
@@ -209,7 +175,7 @@ pub fn build_multimodal_messages(
             msg.insert("content".to_string(), serde_json::json!(rendered_parts));
             messages.push(msg);
         } else if !content.is_null() {
-            return Err(MultimodalError::InvalidContent);
+            return Err(Error::InvalidContent);
         }
     }
 
@@ -227,14 +193,13 @@ pub fn build_multimodal_layout(
     placeholder_token: &str,
     exclude_image_placeholder: bool,
     coord_placeholder: Option<&str>,
-) -> Result<Vec<LayoutSegment>, MultimodalError> {
+) -> Result<Vec<LayoutSegment>> {
     let mut layout = Vec::new();
 
     if image_buffers.is_empty() && capabilities.is_empty() {
-        // Text-only case
         let text_bytes = prompt_text.as_bytes();
         if text_bytes.is_empty() {
-            return Err(MultimodalError::EmptyRequest);
+            return Err(Error::EmptyRequest);
         }
         layout.push(LayoutSegment {
             segment_type: "text".to_string(),
@@ -244,36 +209,34 @@ pub fn build_multimodal_layout(
         return Ok(layout);
     }
 
-    // Find image placeholder positions
-    let image_regex = Regex::new(&regex::escape(placeholder_token)).unwrap();
+    let image_regex = Regex::new(&regex::escape(placeholder_token))
+        .expect("escaped regex is always valid");
     let image_matches: Vec<_> = image_regex.find_iter(prompt_text).collect();
 
     if image_matches.len() != image_buffers.len() {
-        return Err(MultimodalError::PlaceholderMismatch(
+        return Err(Error::PlaceholderMismatch(
             image_matches.len(),
             image_buffers.len(),
         ));
     }
 
-    // Find coord placeholder positions if provided
     let coord_placeholder = coord_placeholder.unwrap_or("<|coord|>");
-    let coord_regex = Regex::new(&regex::escape(coord_placeholder)).unwrap();
+    let coord_regex = Regex::new(&regex::escape(coord_placeholder))
+        .expect("escaped regex is always valid");
     let coord_matches: Vec<_> = coord_regex.find_iter(prompt_text).collect();
     let use_coord_placeholders = !coord_matches.is_empty();
 
     if use_coord_placeholders {
-        // Build layout following placeholder positions
         let coord_caps: Vec<_> = capabilities.iter().filter(|c| c.name == "coord").collect();
 
         if coord_matches.len() != coord_caps.len() {
-            return Err(MultimodalError::Other(format!(
+            return Err(Error::Other(format!(
                 "Mismatch between coord placeholders ({}) and coord capabilities ({})",
                 coord_matches.len(),
                 coord_caps.len()
             )));
         }
 
-        // Combine all placeholders
         let mut all_placeholders: Vec<(usize, usize, &str, usize)> = Vec::new();
 
         for (idx, m) in image_matches.iter().enumerate() {
@@ -289,7 +252,6 @@ pub fn build_multimodal_layout(
         let mut coord_cap_idx = 0;
 
         for (start, end, ptype, idx) in all_placeholders {
-            // Add text before this placeholder
             let text_end = if ptype == "image" && !exclude_image_placeholder {
                 end
             } else {
@@ -306,7 +268,6 @@ pub fn build_multimodal_layout(
                 });
             }
 
-            // Add the placeholder content
             if ptype == "image" {
                 layout.push(LayoutSegment {
                     segment_type: "image".to_string(),
@@ -326,7 +287,6 @@ pub fn build_multimodal_layout(
             cursor = end;
         }
 
-        // Add remaining text
         if cursor < prompt_text.len() {
             let tail = &prompt_text[cursor..];
             let tail_bytes = tail.as_bytes();
@@ -339,7 +299,6 @@ pub fn build_multimodal_layout(
             }
         }
     } else {
-        // Build layout following content_order
         let mut cursor = 0;
         let mut image_idx = 0;
         let mut cap_idx = 0;
@@ -382,13 +341,10 @@ pub fn build_multimodal_layout(
                     });
                     cap_idx += 1;
                 }
-                ContentType::Text => {
-                    // Text handled with image positions
-                }
+                ContentType::Text => {}
             }
         }
 
-        // Add remaining text
         if cursor < prompt_text.len() {
             let tail = &prompt_text[cursor..];
             let tail_bytes = tail.as_bytes();
@@ -403,7 +359,7 @@ pub fn build_multimodal_layout(
     }
 
     if layout.is_empty() {
-        return Err(MultimodalError::EmptyRequest);
+        return Err(Error::EmptyRequest);
     }
 
     Ok(layout)
@@ -428,13 +384,11 @@ fn normalize_role(raw_role: &str, available_roles: &std::collections::HashSet<St
     normalized.to_string()
 }
 
-fn get_image_url(content_part: &serde_json::Value) -> Result<String, MultimodalError> {
-    // Try direct image_url string
+fn get_image_url(content_part: &serde_json::Value) -> Result<String> {
     if let Some(url) = content_part.get("image_url").and_then(|v| v.as_str()) {
         return Ok(url.to_string());
     }
 
-    // Try nested object
     if let Some(obj) = content_part.get("image_url").and_then(|v| v.as_object()) {
         if let Some(url) = obj.get("url").and_then(|v| v.as_str()) {
             return Ok(url.to_string());
@@ -444,21 +398,18 @@ fn get_image_url(content_part: &serde_json::Value) -> Result<String, MultimodalE
         }
     }
 
-    Err(MultimodalError::Other(
-        "Image content part missing image_url".to_string(),
-    ))
+    Err(Error::Other("Image content part missing image_url".into()))
 }
 
-fn decode_image_payload(data_url: &str) -> Result<Vec<u8>, MultimodalError> {
-    // Parse data URL: data:image/...;base64,...
+fn decode_image_payload(data_url: &str) -> Result<Vec<u8>> {
     let base64_prefix = ";base64,";
     if let Some(idx) = data_url.find(base64_prefix) {
         let base64_data = &data_url[idx + base64_prefix.len()..];
         base64::engine::general_purpose::STANDARD
             .decode(base64_data)
-            .map_err(|_| MultimodalError::InvalidBase64)
+            .map_err(|_| Error::InvalidBase64)
     } else {
-        Err(MultimodalError::InvalidImageUrl)
+        Err(Error::InvalidImageUrl)
     }
 }
 
@@ -477,7 +428,7 @@ mod tests {
     fn test_decode_invalid_base64() {
         let data_url = "data:image/png;base64,!!!invalid!!!";
         let result = decode_image_payload(data_url);
-        assert!(matches!(result, Err(MultimodalError::InvalidBase64)));
+        assert!(matches!(result, Err(Error::InvalidBase64)));
     }
 
     #[test]

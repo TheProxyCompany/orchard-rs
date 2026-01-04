@@ -1,7 +1,4 @@
 //! Model registry for tracking loaded models and their state.
-//!
-//! Provides a state machine for model lifecycle:
-//! IDLE -> DOWNLOADING -> LOADING -> ACTIVATING -> READY -> FAILED
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,6 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, RwLock};
 
+use crate::error::Error;
 use crate::formatter::ChatFormatter;
 use crate::model::resolver::{ModelResolver, ResolvedModel};
 
@@ -45,31 +43,20 @@ impl std::fmt::Display for ModelLoadState {
 /// Information about a loaded model.
 #[derive(Debug, Clone)]
 pub struct ModelInfo {
-    /// Model identifier
     pub model_id: String,
-    /// Path to model weights
     pub model_path: String,
-    /// Chat formatter for this model
     pub formatter: Arc<ChatFormatter>,
-    /// Token ID capabilities (e.g., EOS, BOS token IDs)
     pub capabilities: Option<HashMap<String, Vec<i32>>>,
 }
 
 /// Entry in the model registry tracking a model's state.
 pub struct ModelEntry {
-    /// Current state
     pub state: ModelLoadState,
-    /// Model info (available after loading)
     pub info: Option<ModelInfo>,
-    /// Error message if failed
     pub error: Option<String>,
-    /// Notification for state changes
     pub notify: Arc<Notify>,
-    /// Resolution result
     pub resolved: Option<ResolvedModel>,
-    /// Download progress (bytes downloaded)
     pub bytes_downloaded: Option<u64>,
-    /// Download progress (total bytes)
     pub bytes_total: Option<u64>,
 }
 
@@ -88,25 +75,20 @@ impl Default for ModelEntry {
 }
 
 /// Registry of loaded models.
-///
-/// Tracks model state and provides methods for ensuring models are loaded.
 pub struct ModelRegistry {
-    /// Model entries by canonical ID
     entries: RwLock<HashMap<String, ModelEntry>>,
-    /// Model resolver
     resolver: Mutex<ModelResolver>,
-    /// Alias cache: short name -> canonical ID
     alias_cache: RwLock<HashMap<String, String>>,
 }
 
 impl ModelRegistry {
     /// Create a new model registry.
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self, Error> {
+        Ok(Self {
             entries: RwLock::new(HashMap::new()),
-            resolver: Mutex::new(ModelResolver::new()),
+            resolver: Mutex::new(ModelResolver::new()?),
             alias_cache: RwLock::new(HashMap::new()),
-        }
+        })
     }
 
     /// Ensure a model is loaded and ready.
@@ -119,7 +101,6 @@ impl ModelRegistry {
     pub async fn ensure_loaded(&self, requested_model_id: &str) -> Result<ModelInfo, String> {
         let (_state, canonical_id) = self.schedule_model(requested_model_id, false).await?;
 
-        // Wait for local readiness
         let (state, info, error) = self.await_model(&canonical_id, None).await?;
 
         if state == ModelLoadState::Failed {
@@ -130,9 +111,6 @@ impl ModelRegistry {
             return info.ok_or_else(|| "Model ready but info missing".to_string());
         }
 
-        // Model is in Loading state, need to activate with engine
-        // This would normally involve IPC communication
-        // For now, we just return the info if available
         info.ok_or_else(|| format!("Model '{}' not ready", canonical_id))
     }
 
@@ -144,7 +122,6 @@ impl ModelRegistry {
         requested_model_id: &str,
         force_reload: bool,
     ) -> Result<(ModelLoadState, String), String> {
-        // Resolve the model
         let resolved = {
             let mut resolver = self.resolver.lock().await;
             resolver
@@ -155,7 +132,6 @@ impl ModelRegistry {
 
         let canonical_id = resolved.canonical_id.clone();
 
-        // Update alias cache
         {
             let mut alias_cache = self.alias_cache.write().await;
             alias_cache.insert(requested_model_id.to_lowercase(), canonical_id.clone());
@@ -164,18 +140,15 @@ impl ModelRegistry {
                 .or_insert_with(|| canonical_id.clone());
         }
 
-        // Check/create entry
         let mut entries = self.entries.write().await;
         let entry = entries
             .entry(canonical_id.clone())
             .or_insert_with(ModelEntry::default);
 
-        // Check if already ready
         if entry.state == ModelLoadState::Ready && !force_reload {
             return Ok((ModelLoadState::Ready, canonical_id));
         }
 
-        // Check if already loading
         if matches!(
             entry.state,
             ModelLoadState::Loading | ModelLoadState::Downloading | ModelLoadState::Activating
@@ -184,12 +157,10 @@ impl ModelRegistry {
             return Ok((entry.state, canonical_id));
         }
 
-        // Check if failed
         if entry.state == ModelLoadState::Failed && !force_reload {
             return Ok((ModelLoadState::Failed, canonical_id));
         }
 
-        // Reset for loading
         entry.error = None;
         entry.info = None;
         entry.resolved = Some(resolved.clone());
@@ -197,7 +168,6 @@ impl ModelRegistry {
         entry.bytes_total = None;
         entry.notify = Arc::new(Notify::new());
 
-        // If model is already local, build formatter
         if resolved.source == "local" || resolved.source == "hf_cache" {
             match ChatFormatter::new(&resolved.model_path) {
                 Ok(formatter) => {
@@ -220,7 +190,6 @@ impl ModelRegistry {
             }
         }
 
-        // Need to download
         entry.state = ModelLoadState::Downloading;
         Ok((ModelLoadState::Downloading, canonical_id))
     }
@@ -399,19 +368,13 @@ impl ModelRegistry {
     }
 }
 
-impl Default for ModelRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn test_registry_creation() {
-        let registry = ModelRegistry::new();
+        let registry = ModelRegistry::new().unwrap();
         let models = registry.list_models().await;
         assert!(models.is_empty());
     }

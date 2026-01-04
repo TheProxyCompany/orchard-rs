@@ -17,7 +17,7 @@ pub fn ipc_root() -> PathBuf {
     }
 
     // Default to the standard application cache directory.
-    let home = dirs::home_dir().expect("Could not determine home directory");
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
 
     // macOS: ~/Library/Caches, others: ~/.cache
     let base = if cfg!(target_os = "macos") {

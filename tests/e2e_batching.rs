@@ -47,7 +47,7 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 async fn test_chat_completion_batched_homogeneous() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -83,7 +83,7 @@ async fn test_chat_completion_batched_homogeneous() {
 async fn test_chat_completion_batched_different_content() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -114,7 +114,7 @@ async fn test_chat_completion_batched_different_content() {
 #[tokio::test]
 async fn test_empty_batch() {
     // This test doesn't require PIE - it tests edge case handling
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry);
 
     // Connection may fail without PIE, but that's ok for this test

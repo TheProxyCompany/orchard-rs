@@ -1,9 +1,4 @@
 //! Chat formatting for LLM prompts.
-//!
-//! This module provides:
-//! - Template-based chat formatting (`ChatFormatter`)
-//! - Control token definitions (`ControlTokens`)
-//! - Multimodal content handling (`multimodal`)
 
 pub mod control_tokens;
 pub mod multimodal;
@@ -12,31 +7,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use minijinja::{context, Environment, Value};
-use thiserror::Error;
 
 pub use control_tokens::{ControlTokens, Role, RoleTags};
 pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput};
 
-/// Errors that can occur during chat formatting.
-#[derive(Error, Debug)]
-pub enum FormatterError {
-    #[error("Config not found: {0}")]
-    ConfigNotFound(String),
-
-    #[error("Profile not found for model type: {0}")]
-    ProfileNotFound(String),
-
-    #[error("Template error: {0}")]
-    Template(String),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-}
-
-pub type Result<T> = std::result::Result<T, FormatterError>;
+use crate::error::{Error, Result};
 
 /// Determine model type from config.
 fn determine_model_type(config: &serde_json::Value) -> &str {
@@ -72,10 +47,9 @@ pub struct ChatFormatter {
 impl ChatFormatter {
     /// Create a new chat formatter for a model.
     pub fn new(model_path: &Path) -> Result<Self> {
-        // Load config.json
         let config_path = model_path.join("config.json");
         if !config_path.exists() {
-            return Err(FormatterError::ConfigNotFound(
+            return Err(Error::FormatterConfigNotFound(
                 model_path.to_string_lossy().to_string(),
             ));
         }
@@ -84,20 +58,12 @@ impl ChatFormatter {
             serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
         let model_type = determine_model_type(&config).to_string();
-
-        // Find profile directory
         let profile_dir = Self::find_profile_dir(&model_type)?;
-
-        // Load control tokens
         let control_tokens = ControlTokens::load(&profile_dir)?;
 
-        // Load template
         let template_path = profile_dir.join("chat_template.jinja");
         let template_source = std::fs::read_to_string(&template_path).map_err(|_| {
-            FormatterError::Template(format!(
-                "Failed to load template from {:?}",
-                template_path
-            ))
+            Error::Template(format!("Failed to load template from {:?}", template_path))
         })?;
 
         Ok(Self {
@@ -143,13 +109,12 @@ impl ChatFormatter {
     ) -> Result<String> {
         let mut env = Environment::new();
         env.add_template("chat", &self.template_source)
-            .map_err(|e| FormatterError::Template(e.to_string()))?;
+            .map_err(|e| Error::Template(e.to_string()))?;
 
         let template = env
             .get_template("chat")
-            .map_err(|e| FormatterError::Template(e.to_string()))?;
+            .map_err(|e| Error::Template(e.to_string()))?;
 
-        // Convert conversation to Value
         let interactions: Vec<Value> = conversation
             .iter()
             .map(|msg| {
@@ -158,8 +123,6 @@ impl ChatFormatter {
                     .and_then(|v| v.as_str())
                     .unwrap_or("user");
                 let content = msg.get("content").cloned().unwrap_or(serde_json::Value::Null);
-
-                // Convert content to minijinja Value
                 let content_value = Self::json_to_minijinja(&content);
 
                 let map: std::collections::BTreeMap<String, Value> = [
@@ -191,19 +154,16 @@ impl ChatFormatter {
 
         template
             .render(ctx)
-            .map_err(|e| FormatterError::Template(e.to_string()))
+            .map_err(|e| Error::Template(e.to_string()))
     }
 
     fn find_profile_dir(model_type: &str) -> Result<std::path::PathBuf> {
-        // Look for profiles in the bundled submodule
         let candidates = [
-            // Bundled profiles submodule (primary)
             Some(
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("profiles")
                     .join(model_type),
             ),
-            // Relative to working directory (fallback)
             std::env::current_dir()
                 .ok()
                 .map(|p| p.join("profiles").join(model_type)),
@@ -215,7 +175,7 @@ impl ChatFormatter {
             }
         }
 
-        Err(FormatterError::ProfileNotFound(model_type.to_string()))
+        Err(Error::FormatterProfileNotFound(model_type.to_string()))
     }
 
     fn json_to_minijinja(value: &serde_json::Value) -> Value {

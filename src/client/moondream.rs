@@ -78,11 +78,20 @@ pub struct CaptionResult {
     pub caption: String,
 }
 
+/// A point coordinate (x, y) normalized to 0-1 with named fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PointCoord {
+    /// X coordinate (0-1)
+    pub x: f64,
+    /// Y coordinate (0-1)
+    pub y: f64,
+}
+
 /// Result from a point operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointResult {
     /// Points where the object was found
-    pub points: Vec<HashMap<String, f64>>,
+    pub points: Vec<PointCoord>,
 }
 
 /// A detected object with bounding box.
@@ -105,7 +114,7 @@ pub struct DetectResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GazeResult {
     /// Gaze target point, or None if not detected
-    pub gaze: Option<HashMap<String, f64>>,
+    pub gaze: Option<PointCoord>,
 }
 
 /// Moondream-specific client for vision-language tasks.
@@ -444,7 +453,7 @@ impl MoondreamClient {
         &self,
         image_data_url: &str,
         length: &str,
-        params: SamplingParams,
+        mut params: SamplingParams,
     ) -> Result<CaptionResult> {
         let content = vec![serde_json::json!({
             "type": "input_image",
@@ -457,7 +466,6 @@ impl MoondreamClient {
         ])];
 
         // Set task_name based on length
-        let mut params = params;
         params.task_name = Some(format!("caption_{}", length));
 
         let result = self
@@ -499,7 +507,7 @@ impl MoondreamClient {
         &self,
         image_data_url: &str,
         object: &str,
-        params: SamplingParams,
+        mut params: SamplingParams,
     ) -> Result<PointResult> {
         let content = vec![
             serde_json::json!({
@@ -517,7 +525,6 @@ impl MoondreamClient {
             ("content".to_string(), serde_json::json!(content)),
         ])];
 
-        let mut params = params;
         params.task_name = Some("point".to_string());
 
         let result = self
@@ -552,14 +559,12 @@ impl MoondreamClient {
         }
 
         // Pair up coordinates into points
-        let points: Vec<HashMap<String, f64>> = coords
+        let points: Vec<PointCoord> = coords
             .chunks(2)
             .filter(|chunk| chunk.len() == 2)
-            .map(|chunk| {
-                let mut point = HashMap::new();
-                point.insert("x".to_string(), chunk[0]);
-                point.insert("y".to_string(), chunk[1]);
-                point
+            .map(|chunk| PointCoord {
+                x: chunk[0],
+                y: chunk[1],
             })
             .collect();
 
@@ -576,7 +581,7 @@ impl MoondreamClient {
         &self,
         image_data_url: &str,
         object: &str,
-        params: SamplingParams,
+        mut params: SamplingParams,
     ) -> Result<DetectResult> {
         let content = vec![
             serde_json::json!({
@@ -594,7 +599,6 @@ impl MoondreamClient {
             ("content".to_string(), serde_json::json!(content)),
         ])];
 
-        let mut params = params;
         params.task_name = Some("detect".to_string());
 
         let result = self
@@ -662,7 +666,7 @@ impl MoondreamClient {
         &self,
         image_data_url: &str,
         eye: Point,
-        params: SamplingParams,
+        mut params: SamplingParams,
     ) -> Result<GazeResult> {
         let content = vec![
             serde_json::json!({
@@ -681,7 +685,6 @@ impl MoondreamClient {
             ("content".to_string(), serde_json::json!(content)),
         ])];
 
-        let mut params = params;
         params.task_name = Some("detect_gaze".to_string());
 
         let result = self
@@ -715,10 +718,12 @@ impl MoondreamClient {
         }
 
         if coords.len() >= 2 {
-            let mut gaze = HashMap::new();
-            gaze.insert("x".to_string(), coords[0]);
-            gaze.insert("y".to_string(), coords[1]);
-            Ok(GazeResult { gaze: Some(gaze) })
+            Ok(GazeResult {
+                gaze: Some(PointCoord {
+                    x: coords[0],
+                    y: coords[1],
+                }),
+            })
         } else {
             Ok(GazeResult { gaze: None })
         }

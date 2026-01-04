@@ -37,7 +37,7 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 async fn test_json_structured_output() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -94,7 +94,7 @@ async fn test_json_structured_output() {
 async fn test_list_structured_output() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {

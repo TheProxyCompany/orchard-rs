@@ -1,79 +1,38 @@
 //! Model resolution utilities.
-//!
-//! Maps model identifiers to local filesystem paths, supporting:
-//! - Local paths (absolute or relative)
-//! - HuggingFace repo IDs (e.g., "meta-llama/Llama-3.1-8B-Instruct")
-//! - Short aliases (e.g., "moondream3")
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use hf_hub::api::tokio::Api;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
-/// Known aliases for unambiguous models.
+use crate::error::{Error, Result};
+
 const ALIASES: &[(&str, &str)] = &[("moondream3", "moondream/moondream3-preview")];
-
-/// Errors that can occur during model resolution.
-#[derive(Error, Debug)]
-pub enum ModelResolutionError {
-    #[error("Model identifier cannot be empty")]
-    EmptyIdentifier,
-
-    #[error("Model directory '{0}' is missing config.json")]
-    MissingConfig(PathBuf),
-
-    #[error("Failed to download model '{0}' from HuggingFace: {1}")]
-    DownloadFailed(String, String),
-
-    #[error("Failed to read model config: {0}")]
-    ConfigReadError(String),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-}
-
-pub type Result<T> = std::result::Result<T, ModelResolutionError>;
 
 /// Result of resolving a model identifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedModel {
-    /// Canonical model identifier
     pub canonical_id: String,
-    /// Path to the model directory
     pub model_path: PathBuf,
-    /// How the model was resolved: "local", "hf_cache", or "hf_hub"
     pub source: String,
-    /// Model metadata extracted from config
     pub metadata: HashMap<String, String>,
-    /// HuggingFace repo ID if applicable
     pub hf_repo: Option<String>,
 }
 
 /// Resolves model identifiers to local filesystem paths.
-///
-/// Resolution order:
-/// 1. Local filesystem path (absolute or relative) -> use directly
-/// 2. Known alias -> map to HF repo ID, then resolve via HuggingFace
-/// 3. Treat as HF repo ID -> resolve via HuggingFace
 pub struct ModelResolver {
-    /// Cache of resolved models
     resolved_cache: HashMap<String, ResolvedModel>,
-    /// HuggingFace API client
     hf_api: Api,
 }
 
 impl ModelResolver {
     /// Create a new model resolver.
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             resolved_cache: HashMap::new(),
-            hf_api: Api::new().expect("Failed to create HuggingFace API client"),
-        }
+            hf_api: Api::new().map_err(|e| Error::HfApiInit(e.to_string()))?,
+        })
     }
 
     /// Resolve a model identifier to a local filesystem path.
@@ -86,7 +45,7 @@ impl ModelResolver {
     pub async fn resolve(&mut self, requested_id: &str) -> Result<ResolvedModel> {
         let identifier = requested_id.trim();
         if identifier.is_empty() {
-            return Err(ModelResolutionError::EmptyIdentifier);
+            return Err(Error::EmptyModelId);
         }
 
         // Check cache first
@@ -153,7 +112,7 @@ impl ModelResolver {
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| config_path),
             Err(e) => {
-                return Err(ModelResolutionError::DownloadFailed(
+                return Err(Error::DownloadFailed(
                     repo_id.to_string(),
                     e.to_string(),
                 ));
@@ -216,11 +175,11 @@ impl ModelResolver {
     fn load_config(&self, model_dir: &Path) -> Result<serde_json::Value> {
         let config_file = model_dir.join("config.json");
         if !config_file.exists() {
-            return Err(ModelResolutionError::MissingConfig(model_dir.to_path_buf()));
+            return Err(Error::MissingConfig(model_dir.to_path_buf()));
         }
 
         let content = std::fs::read_to_string(&config_file)?;
-        serde_json::from_str(&content).map_err(ModelResolutionError::from)
+        serde_json::from_str(&content).map_err(Error::from)
     }
 
     fn determine_canonical_id(config: &serde_json::Value, model_dir: &Path) -> Option<String> {
@@ -296,11 +255,6 @@ impl ModelResolver {
     }
 }
 
-impl Default for ModelResolver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -308,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_resolver_creation() {
-        let resolver = ModelResolver::new();
+        let resolver = ModelResolver::new().unwrap();
         assert!(resolver.resolved_cache.is_empty());
     }
 

@@ -1,6 +1,4 @@
 //! Control tokens for different model templates.
-//!
-//! Defines the structure for control tokens used in various LLM template formats.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -8,7 +6,7 @@ use std::path::Path;
 use minijinja::Value;
 use serde::{Deserialize, Serialize};
 
-use super::FormatterError;
+use crate::error::{Error, Result};
 
 /// Role definition for a message type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,17 +124,17 @@ pub struct ControlTokens {
 
 impl ControlTokens {
     /// Load control tokens from a profile directory.
-    pub fn load(profile_dir: &Path) -> Result<Self, FormatterError> {
+    pub fn load(profile_dir: &Path) -> Result<Self> {
         let tokens_path = profile_dir.join("control_tokens.json");
         if !tokens_path.exists() {
-            return Err(FormatterError::ConfigNotFound(format!(
+            return Err(Error::FormatterConfigNotFound(format!(
                 "control_tokens.json not found in {:?}",
                 profile_dir
             )));
         }
 
         let content = std::fs::read_to_string(&tokens_path)?;
-        serde_json::from_str(&content).map_err(FormatterError::from)
+        Ok(serde_json::from_str(&content)?)
     }
 }
 

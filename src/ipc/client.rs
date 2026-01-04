@@ -22,26 +22,40 @@ use tokio::sync::mpsc;
 pub struct ResponseDelta {
     /// Request ID this delta belongs to
     pub request_id: u64,
+    /// Sequence ID for ordering
+    pub sequence_id: Option<u64>,
     /// Prompt index for batched requests (identifies which prompt in the batch)
     pub prompt_index: Option<u32>,
+    /// Candidate index (for multi-candidate generation)
+    pub candidate_index: Option<u32>,
     /// Generated content (token text)
     pub content: Option<String>,
+    /// Content length in characters
+    pub content_len: Option<u32>,
+    /// Inline content bytes
+    pub inline_content_bytes: Option<u32>,
     /// Whether this is the final delta
     pub is_final_delta: bool,
     /// Finish reason (e.g., "stop", "length")
     pub finish_reason: Option<String>,
     /// Error message if request failed
     pub error: Option<String>,
+    /// Prompt token count
+    pub prompt_token_count: Option<u32>,
+    /// Number of tokens in this delta
+    pub num_tokens_in_delta: Option<u32>,
+    /// Generation length so far
+    pub generation_len: Option<u32>,
     /// Token IDs in this delta
     pub tokens: Vec<i32>,
+    /// Top log probabilities for each token
+    pub top_logprobs: Vec<HashMap<String, f64>>,
+    /// Cumulative log probability
+    pub cumulative_logprob: Option<f64>,
     /// Modal decoder identifier (e.g., "moondream3.coord")
     pub modal_decoder_id: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
-    /// Prompt token count
-    pub prompt_token_count: Option<u32>,
-    /// Generation length so far
-    pub generation_len: Option<u32>,
 }
 
 impl ResponseDelta {
@@ -56,18 +70,40 @@ impl ResponseDelta {
             })
             .unwrap_or_default();
 
+        let top_logprobs = json["top_logprobs"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        v.as_object().map(|obj| {
+                            obj.iter()
+                                .filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f)))
+                                .collect()
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self {
             request_id: json["request_id"].as_u64().unwrap_or(0),
+            sequence_id: json["sequence_id"].as_u64(),
             prompt_index: json["prompt_index"].as_u64().map(|v| v as u32),
+            candidate_index: json["candidate_index"].as_u64().map(|v| v as u32),
             content: json["content"].as_str().map(String::from),
+            content_len: json["content_len"].as_u64().map(|v| v as u32),
+            inline_content_bytes: json["inline_content_bytes"].as_u64().map(|v| v as u32),
             is_final_delta: json["is_final_delta"].as_bool().unwrap_or(false),
             finish_reason: json["finish_reason"].as_str().map(String::from),
             error: json["error"].as_str().map(String::from),
+            prompt_token_count: json["prompt_token_count"].as_u64().map(|v| v as u32),
+            num_tokens_in_delta: json["num_tokens_in_delta"].as_u64().map(|v| v as u32),
+            generation_len: json["generation_len"].as_u64().map(|v| v as u32),
             tokens,
+            top_logprobs,
+            cumulative_logprob: json["cumulative_logprob"].as_f64(),
             modal_decoder_id: json["modal_decoder_id"].as_str().map(String::from),
             modal_bytes_b64: json["modal_bytes_b64"].as_str().map(String::from),
-            prompt_token_count: json["prompt_token_count"].as_u64().map(|v| v as u32),
-            generation_len: json["generation_len"].as_u64().map(|v| v as u32),
         }
     }
 }
@@ -174,22 +210,19 @@ impl IPCClient {
 
     /// Disconnect from PIE.
     pub fn disconnect(&mut self) {
-        // Signal listener to stop
         self.should_stop.store(true, Ordering::SeqCst);
 
-        // Wait for listener thread
         if let Some(handle) = self.listener_handle.take() {
             let _ = handle.join();
         }
 
-        // Close sockets
         self.request_socket = None;
         self.response_socket = None;
         self.management_socket = None;
 
-        // Fail all active requests
-        let mut requests = self.active_requests.lock().unwrap();
-        requests.clear();
+        if let Ok(mut requests) = self.active_requests.lock() {
+            requests.clear();
+        }
     }
 
     /// Get the next request ID.
@@ -226,16 +259,13 @@ impl IPCClient {
             &options.stop_sequences,
         )?;
 
-        // Create channel for responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Register the sender
-        {
-            let mut requests = self.active_requests.lock().unwrap();
-            requests.insert(request_id, tx);
-        }
+        self.active_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request_id, tx);
 
-        // Send request
         let msg = nng::Message::from(payload.as_slice());
         socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
 
@@ -243,11 +273,6 @@ impl IPCClient {
     }
 
     /// Send a batched request with multiple prompts in ONE IPC message.
-    ///
-    /// This is the correct batching implementation - all prompts are sent together
-    /// so the engine can schedule them efficiently.
-    ///
-    /// Returns the number of prompts in the batch.
     pub fn send_batch_request(
         &self,
         request_id: u64,
@@ -257,7 +282,6 @@ impl IPCClient {
     ) -> Result<(usize, mpsc::UnboundedReceiver<ResponseDelta>)> {
         let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
 
-        // Build batched request payload
         let payload = build_batch_request_payload(
             request_id,
             model_id,
@@ -267,16 +291,13 @@ impl IPCClient {
             prompts,
         )?;
 
-        // Create channel for responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Register the sender
-        {
-            let mut requests = self.active_requests.lock().unwrap();
-            requests.insert(request_id, tx);
-        }
+        self.active_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request_id, tx);
 
-        // Send request - ONE message with all prompts
         let msg = nng::Message::from(payload.as_slice());
         socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
 
@@ -321,10 +342,12 @@ impl IPCClient {
                         response_channel_id,
                     );
                 }
-            })
-            .expect("Failed to spawn listener thread");
+            });
 
-        self.listener_handle = Some(handle);
+        match handle {
+            Ok(h) => self.listener_handle = Some(h),
+            Err(e) => log::error!("Failed to spawn IPC listener thread: {}", e),
+        }
     }
 }
 
@@ -367,18 +390,20 @@ fn run_response_listener(
                         let request_id = delta.request_id;
                         let is_final = delta.is_final_delta;
 
-                        // Route to the appropriate sender
-                        let sender = {
-                            let requests = active_requests.lock().unwrap();
-                            requests.get(&request_id).cloned()
-                        };
+                        let sender = active_requests
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .get(&request_id)
+                            .cloned();
 
                         if let Some(tx) = sender {
                             let _ = tx.send(delta);
 
                             if is_final {
-                                let mut requests = active_requests.lock().unwrap();
-                                requests.remove(&request_id);
+                                active_requests
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .remove(&request_id);
                             }
                         }
                     }
@@ -442,15 +467,29 @@ mod tests {
     fn test_response_delta_from_json() {
         let json = serde_json::json!({
             "request_id": 123,
+            "sequence_id": 1,
+            "prompt_index": 0,
+            "candidate_index": 0,
             "content": "Hello",
+            "content_len": 5,
+            "inline_content_bytes": 5,
             "is_final_delta": false,
+            "num_tokens_in_delta": 3,
             "tokens": [1, 2, 3],
+            "top_logprobs": [{"hello": -0.5}, {"world": -1.0}],
+            "cumulative_logprob": -1.5,
             "modal_decoder_id": "moondream3.coord",
             "modal_bytes_b64": "AAAA"
         });
         let delta = ResponseDelta::from_json(&json);
         assert_eq!(delta.request_id, 123);
+        assert_eq!(delta.sequence_id, Some(1));
+        assert_eq!(delta.candidate_index, Some(0));
+        assert_eq!(delta.content_len, Some(5));
+        assert_eq!(delta.num_tokens_in_delta, Some(3));
         assert_eq!(delta.tokens, vec![1, 2, 3]);
+        assert_eq!(delta.top_logprobs.len(), 2);
+        assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
     }
 }

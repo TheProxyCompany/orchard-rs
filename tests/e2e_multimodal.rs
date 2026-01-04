@@ -91,7 +91,7 @@ fn create_test_image_base64() -> String {
 async fn test_image_captioning() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {
@@ -126,7 +126,7 @@ async fn test_image_captioning() {
 async fn test_visual_question_answering() {
     require_pie!();
 
-    let registry = Arc::new(ModelRegistry::new());
+    let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).expect("Failed to connect to engine");
 
     let params = SamplingParams {

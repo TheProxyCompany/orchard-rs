@@ -2,6 +2,7 @@
 //!
 //! Wire format: [4 bytes: metadata length][JSON metadata][16-byte aligned binary blobs]
 
+use crate::defaults;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -9,60 +10,54 @@ use serde_json::{json, Value};
 /// A single prompt payload for batched requests.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromptPayload {
-    /// Prompt text
     pub prompt: String,
-    /// Image buffers (raw bytes)
     #[serde(default)]
     pub image_buffers: Vec<Vec<u8>>,
-    /// Capability entries
     #[serde(default)]
     pub capabilities: Vec<CapabilityEntry>,
-    /// Layout segments
     #[serde(default)]
     pub layout: Vec<LayoutEntry>,
-    /// Maximum tokens to generate
     #[serde(default)]
     pub max_generated_tokens: i32,
-    /// Sampling temperature
-    #[serde(default = "default_temperature")]
+    #[serde(default = "defaults::temperature")]
     pub temperature: f64,
-    /// Top-p sampling
-    #[serde(default = "default_top_p")]
+    #[serde(default = "defaults::top_p")]
     pub top_p: f64,
-    /// Top-k sampling
-    #[serde(default = "default_top_k")]
+    #[serde(default = "defaults::top_k")]
     pub top_k: i32,
-    /// Min-p sampling
     #[serde(default)]
     pub min_p: f64,
-    /// Random seed
     #[serde(default)]
     pub rng_seed: u64,
-    /// Stop sequences
     #[serde(default)]
     pub stop_sequences: Vec<String>,
-    /// Number of candidates
-    #[serde(default = "default_one")]
+    #[serde(default = "defaults::num_candidates")]
     pub num_candidates: i32,
-    /// Frequency penalty
+    #[serde(default)]
+    pub best_of: Option<i32>,
+    #[serde(default)]
+    pub final_candidates: Option<i32>,
     #[serde(default)]
     pub frequency_penalty: f64,
-    /// Presence penalty
     #[serde(default)]
     pub presence_penalty: f64,
-    /// Repetition penalty
-    #[serde(default = "default_one_f64")]
+    #[serde(default = "defaults::repetition_penalty")]
     pub repetition_penalty: f64,
-    /// Task name for specialized tasks (e.g., "caption_normal", "point", "detect")
+    #[serde(default = "defaults::repetition_context_size")]
+    pub repetition_context_size: i32,
+    #[serde(default)]
+    pub top_logprobs: i32,
+    #[serde(default)]
+    pub logit_bias: std::collections::HashMap<i32, f64>,
+    #[serde(default)]
+    pub tool_schemas_json: String,
+    #[serde(default)]
+    pub response_format_json: String,
     #[serde(default)]
     pub task_name: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
-
-fn default_temperature() -> f64 { 1.0 }
-fn default_top_p() -> f64 { 1.0 }
-fn default_top_k() -> i32 { -1 }
-fn default_one() -> i32 { 1 }
-fn default_one_f64() -> f64 { 1.0 }
 
 /// Capability entry for multimodal content.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -330,11 +325,20 @@ pub fn build_batch_request_payload(
         let (capability_data_offset, capability_data_size) = reserve_blob(capability_data_bytes);
         let (layout_offset, _) = reserve_blob(layout_data);
 
+        // Compute best_of and final_candidates with proper defaults
+        let best_of = prompt.best_of.unwrap_or(prompt.num_candidates.max(1));
+        let final_candidates = prompt.final_candidates.unwrap_or(best_of);
+
+        // Convert logit_bias HashMap to array of [token_id, bias] pairs
+        let logit_bias: Vec<(i32, f64)> = prompt.logit_bias.iter()
+            .map(|(&k, &v)| (k, v))
+            .collect();
+
         let prompt_meta = json!({
             "prompt_index": index,
             "num_candidates": prompt.num_candidates.max(1),
-            "best_of": prompt.num_candidates.max(1),
-            "final_candidates": prompt.num_candidates.max(1),
+            "best_of": best_of,
+            "final_candidates": final_candidates,
             "max_generated_tokens": prompt.max_generated_tokens,
             "text_offset": text_offset,
             "text_size": text_size,
@@ -352,16 +356,17 @@ pub fn build_batch_request_payload(
             "top_k": prompt.top_k,
             "min_p": prompt.min_p,
             "rng_seed": prompt.rng_seed,
-            "top_logprobs": 0,
+            "top_logprobs": prompt.top_logprobs,
             "frequency_penalty": prompt.frequency_penalty,
             "presence_penalty": prompt.presence_penalty,
-            "repetition_context_size": 0,
+            "repetition_context_size": prompt.repetition_context_size,
             "repetition_penalty": prompt.repetition_penalty,
             "stop_sequences": prompt.stop_sequences,
-            "tool_schemas_json": "",
-            "response_format_json": "",
-            "logit_bias": [],
+            "tool_schemas_json": prompt.tool_schemas_json,
+            "response_format_json": prompt.response_format_json,
+            "logit_bias": logit_bias,
             "task_name": prompt.task_name,
+            "reasoning_effort": prompt.reasoning_effort,
         });
 
         prompt_metadata_list.push(prompt_meta);

@@ -54,80 +54,81 @@ impl From<crate::error::Error> for ClientError {
 
 pub type Result<T> = std::result::Result<T, ClientError>;
 
+use crate::defaults;
+
 /// Sampling parameters for generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SamplingParams {
-    /// Maximum tokens to generate
-    #[serde(default = "default_max_tokens")]
+    #[serde(default = "defaults::max_tokens")]
     pub max_tokens: i32,
-    /// Sampling temperature (0.0 = greedy, 1.0 = default)
-    #[serde(default = "default_temperature")]
+    #[serde(default = "defaults::temperature")]
     pub temperature: f64,
-    /// Top-p (nucleus) sampling
-    #[serde(default = "default_top_p")]
+    #[serde(default = "defaults::top_p")]
     pub top_p: f64,
-    /// Top-k sampling (-1 = disabled)
-    #[serde(default = "default_top_k")]
+    #[serde(default = "defaults::top_k")]
     pub top_k: i32,
-    /// Minimum p for sampling
     #[serde(default)]
     pub min_p: f64,
-    /// Random seed (0 = random)
     #[serde(default)]
     pub rng_seed: u64,
-    /// Stop sequences
     #[serde(default)]
     pub stop: Vec<String>,
-    /// Frequency penalty
     #[serde(default)]
     pub frequency_penalty: f64,
-    /// Presence penalty
     #[serde(default)]
     pub presence_penalty: f64,
-    /// Repetition penalty
-    #[serde(default = "default_repetition_penalty")]
+    #[serde(default = "defaults::repetition_penalty")]
     pub repetition_penalty: f64,
-    /// Number of candidates to generate
-    #[serde(default = "default_n")]
+    #[serde(default = "defaults::repetition_context_size")]
+    pub repetition_context_size: i32,
+    #[serde(default = "defaults::num_candidates")]
     pub n: i32,
-    /// Task name for specialized tasks (e.g., "caption_normal", "point", "detect")
+    #[serde(default)]
+    pub best_of: Option<i32>,
+    #[serde(default)]
+    pub final_candidates: Option<i32>,
+    #[serde(default)]
+    pub top_logprobs: i32,
+    #[serde(default)]
+    pub logit_bias: HashMap<i32, f64>,
+    #[serde(default)]
+    pub tools: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub response_format: Option<serde_json::Value>,
+    #[serde(default)]
+    pub reasoning: bool,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub instructions: Option<String>,
     #[serde(default)]
     pub task_name: Option<String>,
-}
-
-fn default_max_tokens() -> i32 {
-    1024
-}
-fn default_temperature() -> f64 {
-    1.0
-}
-fn default_top_p() -> f64 {
-    1.0
-}
-fn default_top_k() -> i32 {
-    -1
-}
-fn default_repetition_penalty() -> f64 {
-    1.0
-}
-fn default_n() -> i32 {
-    1
 }
 
 impl Default for SamplingParams {
     fn default() -> Self {
         Self {
-            max_tokens: default_max_tokens(),
-            temperature: default_temperature(),
-            top_p: default_top_p(),
-            top_k: default_top_k(),
+            max_tokens: defaults::MAX_TOKENS,
+            temperature: defaults::TEMPERATURE,
+            top_p: defaults::TOP_P,
+            top_k: defaults::TOP_K,
             min_p: 0.0,
             rng_seed: 0,
             stop: Vec::new(),
             frequency_penalty: 0.0,
             presence_penalty: 0.0,
-            repetition_penalty: default_repetition_penalty(),
-            n: default_n(),
+            repetition_penalty: defaults::REPETITION_PENALTY,
+            repetition_context_size: defaults::REPETITION_CONTEXT_SIZE,
+            n: defaults::NUM_CANDIDATES,
+            best_of: None,
+            final_candidates: None,
+            top_logprobs: 0,
+            logit_bias: HashMap::new(),
+            tools: Vec::new(),
+            response_format: None,
+            reasoning: false,
+            reasoning_effort: None,
+            instructions: None,
             task_name: None,
         }
     }
@@ -201,9 +202,12 @@ impl Client {
 
         let request_id = self.ipc.next_request_id();
 
-        // Build multimodal content
+        // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
+        let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
+
+        // Build multimodal content (pass instructions if provided)
         let (messages_for_template, image_buffers, capabilities, content_order) =
-            build_multimodal_messages(&info.formatter, &messages, None)
+            build_multimodal_messages(&info.formatter, &messages, params.instructions.as_deref())
                 .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         if messages_for_template.is_empty() {
@@ -212,10 +216,10 @@ impl Client {
             ));
         }
 
-        // Apply template
+        // Apply template with reasoning flag
         let prompt_text = info
             .formatter
-            .apply_template(&messages_for_template, true, false, None)
+            .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
         // Build layout (currently unused, but validates the multimodal structure)
@@ -235,7 +239,7 @@ impl Client {
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         // Build final prompt (with placeholders removed if needed)
-        let mut final_prompt = prompt_text.clone();
+        let mut final_prompt = prompt_text;
         if info.formatter.should_clip_image_placeholder() {
             final_prompt = final_prompt.replace(info.formatter.default_image_placeholder(), "");
         }
@@ -266,9 +270,8 @@ impl Client {
             let mut deltas = Vec::new();
             let mut rx = rx;
             while let Some(delta) = rx.recv().await {
-                let client_delta = ClientDelta::from(delta.clone());
-                let is_final = client_delta.is_final;
-                deltas.push(client_delta);
+                let is_final = delta.is_final_delta;
+                deltas.push(ClientDelta::from(delta));
                 if is_final {
                     break;
                 }
@@ -324,13 +327,28 @@ impl Client {
         let request_id = self.ipc.next_request_id();
         let num_prompts = conversations.len();
 
+        // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
+        let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
+
+        // Serialize tools and response_format to JSON strings (matching Python)
+        let tool_schemas_json = if params.tools.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&params.tools).unwrap_or_default()
+        };
+        let response_format_json = params
+            .response_format
+            .as_ref()
+            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+            .unwrap_or_default();
+
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for messages in &conversations {
-            // Build multimodal content
+            // Build multimodal content (pass instructions if provided)
             let (messages_for_template, _image_buffers, _capabilities, _content_order) =
-                build_multimodal_messages(&info.formatter, messages, None)
+                build_multimodal_messages(&info.formatter, messages, params.instructions.as_deref())
                     .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
             if messages_for_template.is_empty() {
@@ -339,14 +357,14 @@ impl Client {
                 ));
             }
 
-            // Apply template
+            // Apply template with reasoning flag
             let prompt_text = info
                 .formatter
-                .apply_template(&messages_for_template, true, false, None)
+                .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
             // Build final prompt (with placeholders removed if needed)
-            let mut final_prompt = prompt_text.clone();
+            let mut final_prompt = prompt_text;
             if info.formatter.should_clip_image_placeholder() {
                 final_prompt = final_prompt.replace(info.formatter.default_image_placeholder(), "");
             }
@@ -364,9 +382,18 @@ impl Client {
                 rng_seed: params.rng_seed,
                 stop_sequences: params.stop.clone(),
                 num_candidates: params.n,
+                best_of: params.best_of,
+                final_candidates: params.final_candidates,
                 frequency_penalty: params.frequency_penalty,
                 presence_penalty: params.presence_penalty,
                 repetition_penalty: params.repetition_penalty,
+                repetition_context_size: params.repetition_context_size,
+                top_logprobs: params.top_logprobs,
+                logit_bias: params.logit_bias.clone(),
+                tool_schemas_json: tool_schemas_json.clone(),
+                response_format_json: response_format_json.clone(),
+                task_name: params.task_name.clone(),
+                reasoning_effort: params.reasoning_effort.clone(),
                 ..Default::default()
             });
         }
@@ -387,13 +414,12 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     let prompt_index = delta.prompt_index.unwrap_or(0);
-                    let client_delta = ClientDelta::from(delta.clone());
-                    let is_final = client_delta.is_final;
+                    let is_final = delta.is_final_delta;
 
                     deltas_by_prompt
                         .entry(prompt_index)
                         .or_default()
-                        .push(client_delta);
+                        .push(ClientDelta::from(delta));
 
                     if is_final {
                         finals_received += 1;
@@ -473,6 +499,14 @@ mod tests {
         assert_eq!(params.temperature, 1.0);
         assert_eq!(params.top_p, 1.0);
         assert_eq!(params.top_k, -1);
+        assert_eq!(params.repetition_context_size, 60);
+        assert_eq!(params.top_logprobs, 0);
+        assert!(params.logit_bias.is_empty());
+        assert!(params.tools.is_empty());
+        assert!(params.response_format.is_none());
+        assert!(!params.reasoning);
+        assert!(params.reasoning_effort.is_none());
+        assert!(params.instructions.is_none());
     }
 
     #[test]

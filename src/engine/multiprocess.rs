@@ -30,9 +30,7 @@ pub fn pid_is_alive(pid: u32) -> bool {
 
     #[cfg(not(unix))]
     {
-        // On non-Unix systems, we can't easily check process liveness
-        // For now, assume alive
-        true
+        true // Non-Unix: can't check liveness, assume running
     }
 }
 

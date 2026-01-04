@@ -7,38 +7,31 @@ use crate::ipc::client::ResponseDelta;
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageStats {
-    /// Number of tokens in the prompt
     pub prompt_tokens: u32,
-    /// Number of tokens generated
     pub completion_tokens: u32,
-    /// Total tokens (prompt + completion)
     pub total_tokens: u32,
 }
 
 /// A single delta from a streaming response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClientDelta {
-    /// Request ID
     pub request_id: u64,
-    /// Prompt index (for batched requests)
+    pub sequence_id: Option<u64>,
     pub prompt_index: Option<u32>,
-    /// Generated content
+    pub candidate_index: Option<u32>,
     pub content: Option<String>,
-    /// Whether this is the final delta
+    pub content_len: Option<u32>,
+    pub inline_content_bytes: Option<u32>,
     pub is_final: bool,
-    /// Finish reason (e.g., "stop", "length")
     pub finish_reason: Option<String>,
-    /// Error message if failed
     pub error: Option<String>,
-    /// Prompt token count
     pub prompt_token_count: Option<u32>,
-    /// Current generation length
+    pub num_tokens_in_delta: Option<u32>,
     pub generation_len: Option<u32>,
-    /// Token IDs in this delta
     pub tokens: Vec<i32>,
-    /// Modal decoder identifier (e.g., "moondream3.coord")
+    pub top_logprobs: Vec<std::collections::HashMap<String, f64>>,
+    pub cumulative_logprob: Option<f64>,
     pub modal_decoder_id: Option<String>,
-    /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
 }
 
@@ -46,14 +39,21 @@ impl From<ResponseDelta> for ClientDelta {
     fn from(delta: ResponseDelta) -> Self {
         Self {
             request_id: delta.request_id,
+            sequence_id: delta.sequence_id,
             prompt_index: delta.prompt_index,
+            candidate_index: delta.candidate_index,
             content: delta.content,
+            content_len: delta.content_len,
+            inline_content_bytes: delta.inline_content_bytes,
             is_final: delta.is_final_delta,
             finish_reason: delta.finish_reason,
             error: delta.error,
             prompt_token_count: delta.prompt_token_count,
+            num_tokens_in_delta: delta.num_tokens_in_delta,
             generation_len: delta.generation_len,
             tokens: delta.tokens,
+            top_logprobs: delta.top_logprobs,
+            cumulative_logprob: delta.cumulative_logprob,
             modal_decoder_id: delta.modal_decoder_id,
             modal_bytes_b64: delta.modal_bytes_b64,
         }
@@ -63,13 +63,9 @@ impl From<ResponseDelta> for ClientDelta {
 /// A complete response from a chat completion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientResponse {
-    /// Aggregated text content
     pub text: String,
-    /// Finish reason
     pub finish_reason: Option<String>,
-    /// Token usage statistics
     pub usage: UsageStats,
-    /// Individual deltas (for inspection)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deltas: Vec<ClientDelta>,
 }
@@ -101,24 +97,36 @@ mod tests {
     fn test_client_delta_from_response_delta() {
         let response = ResponseDelta {
             request_id: 123,
+            sequence_id: Some(1),
             prompt_index: Some(0),
+            candidate_index: Some(0),
             content: Some("Hello".to_string()),
+            content_len: Some(5),
+            inline_content_bytes: Some(5),
             is_final_delta: false,
             finish_reason: None,
             error: None,
+            prompt_token_count: Some(10),
+            num_tokens_in_delta: Some(3),
+            generation_len: Some(5),
             tokens: vec![1, 2, 3],
+            top_logprobs: vec![],
+            cumulative_logprob: Some(-1.5),
             modal_decoder_id: Some("moondream3.coord".to_string()),
             modal_bytes_b64: Some("AAAA".to_string()),
-            prompt_token_count: Some(10),
-            generation_len: Some(5),
         };
 
         let delta = ClientDelta::from(response);
         assert_eq!(delta.request_id, 123);
+        assert_eq!(delta.sequence_id, Some(1));
         assert_eq!(delta.prompt_index, Some(0));
+        assert_eq!(delta.candidate_index, Some(0));
         assert_eq!(delta.content, Some("Hello".to_string()));
+        assert_eq!(delta.content_len, Some(5));
+        assert_eq!(delta.num_tokens_in_delta, Some(3));
         assert!(!delta.is_final);
         assert_eq!(delta.tokens, vec![1, 2, 3]);
+        assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
     }
 }

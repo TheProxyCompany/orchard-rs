@@ -1,9 +1,4 @@
 //! Inference engine process lifecycle management.
-//!
-//! Provides the `InferenceEngine` struct which manages:
-//! - PIE process spawning
-//! - Reference counting across multiple clients
-//! - Graceful shutdown with proper cleanup
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -11,8 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use fs4::fs_std::FileExt;
-use thiserror::Error;
-
 use nng::options::Options;
 
 use crate::engine::fetch::EngineFetcher;
@@ -20,33 +13,10 @@ use crate::engine::multiprocess::{
     filter_alive_pids, pid_is_alive, read_pid_file, read_ref_pids, reap_engine_process,
     stop_engine_process, write_pid_file, write_ref_pids,
 };
+use crate::error::{Error, Result};
 use crate::ipc::endpoints::{response_url, EVENT_TOPIC_PREFIX};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
-
-/// Errors that can occur during engine lifecycle management.
-#[derive(Error, Debug)]
-pub enum LifecycleError {
-    #[error("Failed to acquire lock: {0}")]
-    LockFailed(String),
-
-    #[error("Engine startup failed: {0}")]
-    StartupFailed(String),
-
-    #[error("Engine shutdown failed: {0}")]
-    ShutdownFailed(String),
-
-    #[error("Engine already closed")]
-    AlreadyClosed,
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Fetch error: {0}")]
-    Fetch(#[from] crate::engine::fetch::FetchError),
-}
-
-pub type Result<T> = std::result::Result<T, LifecycleError>;
 
 /// File paths used by the engine lifecycle manager.
 #[derive(Debug, Clone)]
@@ -166,7 +136,7 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_file
             .lock_exclusive()
-            .map_err(|e| LifecycleError::LockFailed(e.to_string()))?;
+            .map_err(|e| Error::LockFailed(e.to_string()))?;
 
         // Read current refs
         let refs = read_ref_pids(&self.paths.refs_file);
@@ -208,19 +178,18 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&paths.lock_file)?;
         lock_file
             .lock_exclusive()
-            .map_err(|e| LifecycleError::LockFailed(e.to_string()))?;
+            .map_err(|e| Error::LockFailed(e.to_string()))?;
 
-        let pid = read_pid_file(&paths.pid_file);
-
-        if pid.is_none() || !pid_is_alive(pid.unwrap()) {
-            log::info!("Engine is not running. Cleaning up stale files.");
-            let _ = std::fs::remove_file(&paths.pid_file);
-            let _ = std::fs::remove_file(&paths.ready_file);
-            let _ = std::fs::remove_file(&paths.refs_file);
-            return Ok(());
-        }
-
-        let pid = pid.unwrap();
+        let pid = match read_pid_file(&paths.pid_file) {
+            Some(p) if pid_is_alive(p) => p,
+            _ => {
+                log::info!("Engine is not running. Cleaning up stale files.");
+                let _ = std::fs::remove_file(&paths.pid_file);
+                let _ = std::fs::remove_file(&paths.ready_file);
+                let _ = std::fs::remove_file(&paths.refs_file);
+                return Ok(());
+            }
+        };
         log::info!("Sending shutdown signal to engine process {}", pid);
 
         if stop_engine_process(pid, timeout) {
@@ -231,7 +200,7 @@ impl InferenceEngine {
             log::info!("Engine process {} terminated gracefully", pid);
             Ok(())
         } else {
-            Err(LifecycleError::ShutdownFailed(format!(
+            Err(Error::ShutdownFailed(format!(
                 "Failed to stop engine process {}",
                 pid
             )))
@@ -250,7 +219,7 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_file
             .lock_exclusive()
-            .map_err(|e| LifecycleError::LockFailed(e.to_string()))?;
+            .map_err(|e| Error::LockFailed(e.to_string()))?;
 
         // Read current state
         let refs = read_ref_pids(&self.paths.refs_file);
@@ -301,7 +270,7 @@ impl InferenceEngine {
             .stdout(Stdio::from(log_file.try_clone()?))
             .stderr(Stdio::from(log_file))
             .spawn()
-            .map_err(|e| LifecycleError::StartupFailed(format!("Failed to spawn engine: {}", e)))?;
+            .map_err(|e| Error::StartupFailed(format!("Failed to spawn engine: {}", e)))?;
 
         self.launch_process = Some(child);
         Ok(())
@@ -315,19 +284,19 @@ impl InferenceEngine {
         let response_url = response_url();
 
         let socket = nng::Socket::new(nng::Protocol::Sub0)
-            .map_err(|e| LifecycleError::StartupFailed(format!("Failed to create Sub0 socket: {}", e)))?;
+            .map_err(|e| Error::StartupFailed(format!("Failed to create Sub0 socket: {}", e)))?;
 
         socket
             .set_opt::<nng::options::protocol::pubsub::Subscribe>(telemetry_topic.clone())
-            .map_err(|e| LifecycleError::StartupFailed(format!("Failed to subscribe: {}", e)))?;
+            .map_err(|e| Error::StartupFailed(format!("Failed to subscribe: {}", e)))?;
 
         socket
             .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(250)))
-            .map_err(|e| LifecycleError::StartupFailed(format!("Failed to set timeout: {}", e)))?;
+            .map_err(|e| Error::StartupFailed(format!("Failed to set timeout: {}", e)))?;
 
         socket
             .dial(&response_url)
-            .map_err(|e| LifecycleError::StartupFailed(format!("Failed to dial {}: {}", response_url, e)))?;
+            .map_err(|e| Error::StartupFailed(format!("Failed to dial {}: {}", response_url, e)))?;
 
         let deadline = Instant::now() + self.startup_timeout;
 
@@ -335,7 +304,7 @@ impl InferenceEngine {
             // Check if launched process died
             if let Some(ref child) = self.launch_process {
                 if !pid_is_alive(child.id()) {
-                    return Err(LifecycleError::StartupFailed(
+                    return Err(Error::StartupFailed(
                         "Engine process exited before signaling readiness; check the engine log".into()
                     ));
                 }
@@ -399,7 +368,7 @@ impl InferenceEngine {
             }
         }
 
-        Err(LifecycleError::StartupFailed(format!(
+        Err(Error::StartupFailed(format!(
             "Timed out after {:?}s waiting for telemetry heartbeat from engine",
             self.startup_timeout.as_secs()
         )))
@@ -414,7 +383,7 @@ impl InferenceEngine {
         }
 
         if !stop_engine_process(pid, Duration::from_secs(5)) {
-            return Err(LifecycleError::ShutdownFailed(format!(
+            return Err(Error::ShutdownFailed(format!(
                 "Failed to stop engine PID {}",
                 pid
             )));

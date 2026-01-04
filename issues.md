@@ -1,6 +1,6 @@
 # orchard-rs Parity Status
 
-Originally generated 2025-01-03. Updated 2025-01-03 after fixes.
+Originally generated 2026-01-03. Updated 2026-01-04 with adversarial review.
 
 ---
 
@@ -157,6 +157,140 @@ macro_rules! require_pie {
 ```
 
 Tests run in CI without PIE, execute when PIE available.
+
+---
+
+---
+
+## Adversarial Review: 2026-01-04
+
+Full codebase comparison of orchard-rs vs orchard-py, looking for agent-generated shortcuts and missing functionality.
+
+### 🔴 Critical Missing Functionality
+
+**1. ClientDelta is missing 7 fields from Python:**
+
+| Field | Python Type | Status |
+|-------|-------------|--------|
+| `sequence_id` | `int \| None` | Missing |
+| `candidate_index` | `int \| None` | Missing |
+| `num_tokens_in_delta` | `int \| None` | Missing |
+| `top_logprobs` | `list[dict]` | Missing |
+| `cumulative_logprob` | `float \| None` | Missing |
+| `content_len` | `int \| None` | Missing |
+| `inline_content_bytes` | `int \| None` | Missing |
+
+This means orchard-rs clients can't access logprobs or proper batching metadata.
+
+**2. SamplingParams missing critical features:**
+
+| Feature | Python | Rust |
+|---------|--------|------|
+| `best_of` / `final_candidates` | ✅ | ❌ |
+| `tools` (function calling) | ✅ | ❌ |
+| `response_format` (structured output) | ✅ | ❌ |
+| `logit_bias` (token steering) | ✅ | ❌ |
+| `top_logprobs` (logprobs return) | ✅ | ❌ |
+| `reasoning` / `reasoning_effort` | ✅ | ❌ |
+| `instructions` (system prompt) | ✅ | ❌ |
+| `repetition_context_size` | ✅ | ❌ |
+
+These aren't "nice to have" — `tools` and `response_format` are core API features.
+
+**3. achat doesn't forward reasoning parameters:**
+
+The Rust `achat` ignores reasoning flags entirely. Python passes `reasoning=reasoning_flag` and `reasoning_effort` through the template and IPC.
+
+---
+
+### 🟡 Code Quality Issues
+
+**1. Defensive/redundant patterns:**
+
+In `lifecycle.rs:215`:
+```rust
+if pid.is_none() || !pid_is_alive(pid.unwrap()) {
+```
+This is the classic "check then unwrap" anti-pattern. Should be:
+```rust
+if !pid.map(pid_is_alive).unwrap_or(false) {
+```
+
+**2. Unnecessary mutable rebinding:**
+
+In `moondream.rs`, every method does:
+```rust
+let mut params = params;
+params.task_name = Some("detect".to_string());
+```
+This works but feels like a workaround. The Python version passes kwargs directly.
+
+**3. HashMap<String, f64> for points:**
+
+In `PointResult` and `GazeResult`:
+```rust
+pub points: Vec<HashMap<String, f64>>,
+pub gaze: Option<HashMap<String, f64>>,
+```
+Python uses `{"x": float, "y": float}` dicts for JSON compat, but Rust should use proper structs:
+```rust
+pub struct PointCoord { pub x: f64, pub y: f64 }
+```
+Using HashMap here is agent laziness — avoids defining a proper type.
+
+---
+
+### 🟡 Style Drift from Python
+
+**1. Error handling asymmetry:**
+
+Python uses typed exceptions with clear messages:
+```python
+raise ValueError(f"Invalid chat message payload: {exc}")
+```
+
+Rust maps everything to opaque `ClientError::Multimodal(String)`:
+```rust
+.map_err(|e| ClientError::Multimodal(e.to_string()))?;
+```
+Loses the original error type and context.
+
+**2. Logging differences:**
+
+Python has thoughtful logging:
+```python
+logger.debug(f"Submitting request {request_id} for model {model_id}...")
+```
+
+Rust has sparse logging — the IPC client has zero log statements in the hot path.
+
+**3. Clone patterns:**
+
+30+ `.clone()` calls in orchard-rs. Many are necessary (Arc, threading), but some could potentially use `Arc<ResolvedModel>` to avoid deep cloning.
+
+---
+
+### 🟢 What orchard-rs Does Well
+
+1. **No TODOs/FIXMEs** — Clean slate, no deferred work markers
+2. **Tests exist** — 63 passing tests, good coverage
+3. **Core IPC works** — The serialization matches Python's wire format
+4. **Moondream modal decoding** — The coordinate/size decoding is correct
+5. **Lock-based IPC client** — Actually simpler than Python's async queue approach
+
+---
+
+### Summary
+
+| Category | Assessment |
+|----------|-----------|
+| Feature parity | **60%** — Missing tools, response_format, reasoning, logprobs |
+| API completeness | **70%** — ClientDelta missing 7 fields |
+| Code quality | **75%** — Some anti-patterns but functional |
+| Test coverage | **80%** — Good unit tests, no integration tests |
+| Style match | **65%** — Some drift from Python patterns |
+
+**Verdict:** Functional for basic text generation and Moondream vision tasks. Not production-ready for structured output, function calling, or advanced sampling features.
 
 ---
 
