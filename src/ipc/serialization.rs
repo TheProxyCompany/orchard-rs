@@ -259,7 +259,7 @@ pub fn build_batch_request_payload(
             "top_p": prompt.top_p,
             "top_k": prompt.top_k,
             "min_p": prompt.min_p,
-            "rng_seed": prompt.rng_seed,
+            "rng_seed": (prompt.rng_seed & 0xFFFFFFFF) as u32,
             "top_logprobs": prompt.top_logprobs,
             "frequency_penalty": prompt.frequency_penalty,
             "presence_penalty": prompt.presence_penalty,
