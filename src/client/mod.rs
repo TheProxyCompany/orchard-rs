@@ -209,19 +209,6 @@ impl Client {
         Ok(Self { ipc, registry })
     }
 
-    /// Disconnect from the engine and clean up resources.
-    pub fn disconnect(&self) {
-        // Note: We can't mutably borrow through Arc, so disconnect is handled on drop
-        // This method is kept for API compatibility but does nothing
-    }
-
-    /// Close the client and release all resources.
-    ///
-    /// This is the preferred way to clean up the client.
-    pub fn close(&self) {
-        self.disconnect();
-    }
-
     /// Resolve control token capabilities for a model.
     pub async fn resolve_capabilities(&self, model_id: &str) -> Result<HashMap<String, i32>> {
         let info = self.registry.ensure_loaded(model_id).await?;

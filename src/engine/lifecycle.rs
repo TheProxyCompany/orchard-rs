@@ -18,6 +18,15 @@ use crate::ipc::endpoints::{response_url, EVENT_TOPIC_PREFIX};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
 
+/// Remove a file, logging non-NotFound errors.
+fn remove_if_exists(path: &std::path::Path) {
+    if let Err(e) = std::fs::remove_file(path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("Failed to remove {}: {}", path.display(), e);
+        }
+    }
+}
+
 /// File paths used by the engine lifecycle manager.
 #[derive(Debug, Clone)]
 pub struct EnginePaths {
@@ -31,12 +40,12 @@ pub struct EnginePaths {
 }
 
 impl EnginePaths {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?
             .join("com.theproxycompany");
 
-        Self {
+        Ok(Self {
             pid_file: cache_dir.join("pie.pid"),
             refs_file: cache_dir.join("pie.refs"),
             lock_file: cache_dir.join("pie.lock"),
@@ -44,13 +53,7 @@ impl EnginePaths {
             engine_log_file: cache_dir.join("pie.log"),
             client_log_file: cache_dir.join("client.log"),
             cache_dir,
-        }
-    }
-}
-
-impl Default for EnginePaths {
-    fn default() -> Self {
-        Self::new()
+        })
     }
 }
 
@@ -84,7 +87,7 @@ pub struct InferenceEngine {
 impl InferenceEngine {
     /// Create a new InferenceEngine and connect to (or spawn) the engine process.
     pub async fn new() -> Result<Self> {
-        Self::with_options(Default::default(), None).await
+        Self::with_options(EnginePaths::new()?, None).await
     }
 
     /// Create with custom options.
@@ -155,8 +158,8 @@ impl InferenceEngine {
                     self.stop_engine_locked(pid)?;
                 }
             } else {
-                let _ = std::fs::remove_file(&self.paths.pid_file);
-                let _ = std::fs::remove_file(&self.paths.ready_file);
+                remove_if_exists(&self.paths.pid_file);
+                remove_if_exists(&self.paths.ready_file);
             }
             let _ = write_ref_pids(&self.paths.refs_file, &[]);
         } else {
@@ -173,7 +176,7 @@ impl InferenceEngine {
 
     /// Force shutdown the engine regardless of reference count.
     pub fn shutdown(timeout: Duration) -> Result<()> {
-        let paths = EnginePaths::new();
+        let paths = EnginePaths::new()?;
 
         let lock_file = std::fs::File::create(&paths.lock_file)?;
         lock_file
@@ -184,18 +187,18 @@ impl InferenceEngine {
             Some(p) if pid_is_alive(p) => p,
             _ => {
                 log::info!("Engine is not running. Cleaning up stale files.");
-                let _ = std::fs::remove_file(&paths.pid_file);
-                let _ = std::fs::remove_file(&paths.ready_file);
-                let _ = std::fs::remove_file(&paths.refs_file);
+                remove_if_exists(&paths.pid_file);
+                remove_if_exists(&paths.ready_file);
+                remove_if_exists(&paths.refs_file);
                 return Ok(());
             }
         };
         log::info!("Sending shutdown signal to engine process {}", pid);
 
         if stop_engine_process(pid, timeout) {
-            let _ = std::fs::remove_file(&paths.pid_file);
-            let _ = std::fs::remove_file(&paths.ready_file);
-            let _ = std::fs::remove_file(&paths.refs_file);
+            remove_if_exists(&paths.pid_file);
+            remove_if_exists(&paths.ready_file);
+            remove_if_exists(&paths.refs_file);
             reap_engine_process(pid);
             log::info!("Engine process {} terminated gracefully", pid);
             Ok(())
@@ -233,8 +236,8 @@ impl InferenceEngine {
             log::debug!("Inference engine not running. Launching new instance.");
 
             // Clean up stale files
-            let _ = std::fs::remove_file(&self.paths.pid_file);
-            let _ = std::fs::remove_file(&self.paths.ready_file);
+            remove_if_exists(&self.paths.pid_file);
+            remove_if_exists(&self.paths.ready_file);
 
             self.launch_engine().await?;
             self.wait_for_engine_ready().await?;
@@ -377,8 +380,8 @@ impl InferenceEngine {
     fn stop_engine_locked(&mut self, pid: u32) -> Result<()> {
         if !pid_is_alive(pid) {
             log::debug!("Engine PID {} already exited", pid);
-            let _ = std::fs::remove_file(&self.paths.pid_file);
-            let _ = std::fs::remove_file(&self.paths.ready_file);
+            remove_if_exists(&self.paths.pid_file);
+            remove_if_exists(&self.paths.ready_file);
             return Ok(());
         }
 
@@ -390,8 +393,8 @@ impl InferenceEngine {
         }
 
         reap_engine_process(pid);
-        let _ = std::fs::remove_file(&self.paths.pid_file);
-        let _ = std::fs::remove_file(&self.paths.ready_file);
+        remove_if_exists(&self.paths.pid_file);
+        remove_if_exists(&self.paths.ready_file);
 
         log::info!("Engine PID {} stopped", pid);
         Ok(())
@@ -419,7 +422,9 @@ impl InferenceEngine {
 impl Drop for InferenceEngine {
     fn drop(&mut self) {
         if !self.closed {
-            let _ = self.close();
+            if let Err(e) = self.close() {
+                log::error!("Failed to close InferenceEngine: {}", e);
+            }
         }
     }
 }
@@ -430,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_engine_paths() {
-        let paths = EnginePaths::new();
+        let paths = EnginePaths::new().expect("cache dir should be available");
         assert!(paths.cache_dir.to_string_lossy().contains("com.theproxycompany"));
     }
 
