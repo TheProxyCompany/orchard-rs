@@ -4,7 +4,7 @@
 
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
-use crate::ipc::serialization::{build_request_payload, RequestType};
+use crate::ipc::serialization::{build_request_payload, build_batch_request_payload, PromptPayload, RequestType};
 
 use nng::options::Options;
 use nng::{Protocol, Socket};
@@ -22,6 +22,8 @@ use tokio::sync::mpsc;
 pub struct ResponseDelta {
     /// Request ID this delta belongs to
     pub request_id: u64,
+    /// Prompt index for batched requests (identifies which prompt in the batch)
+    pub prompt_index: Option<u32>,
     /// Generated content (token text)
     pub content: Option<String>,
     /// Whether this is the final delta
@@ -37,6 +39,7 @@ impl ResponseDelta {
     pub fn from_json(json: &Value) -> Self {
         Self {
             request_id: json["request_id"].as_u64().unwrap_or(0),
+            prompt_index: json["prompt_index"].as_u64().map(|v| v as u32),
             content: json["content"].as_str().map(String::from),
             is_final_delta: json["is_final_delta"].as_bool().unwrap_or(false),
             finish_reason: json["finish_reason"].as_str().map(String::from),
@@ -215,6 +218,47 @@ impl IPCClient {
         Ok(rx)
     }
 
+    /// Send a batched request with multiple prompts in ONE IPC message.
+    ///
+    /// This is the correct batching implementation - all prompts are sent together
+    /// so the engine can schedule them efficiently.
+    ///
+    /// Returns the number of prompts in the batch.
+    pub fn send_batch_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        prompts: &[PromptPayload],
+    ) -> Result<(usize, mpsc::UnboundedReceiver<ResponseDelta>)> {
+        let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
+
+        // Build batched request payload
+        let payload = build_batch_request_payload(
+            request_id,
+            model_id,
+            model_path,
+            RequestType::Generation,
+            self.response_channel_id,
+            prompts,
+        )?;
+
+        // Create channel for responses
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        // Register the sender
+        {
+            let mut requests = self.active_requests.lock().unwrap();
+            requests.insert(request_id, tx);
+        }
+
+        // Send request - ONE message with all prompts
+        let msg = nng::Message::from(payload.as_slice());
+        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+
+        Ok((prompts.len(), rx))
+    }
+
     /// Send a management command (e.g., load_model).
     /// This is synchronous and blocking - appropriate for setup operations.
     pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
@@ -330,19 +374,16 @@ fn run_response_listener(
     }
 }
 
-/// Generate a random u64 for channel ID.
+/// Generate a unique response channel ID.
+/// Format: (PID << 32) | random_32_bits
 fn rand_u64() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use rand::Rng;
 
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    let pid = std::process::id() as u64 & 0xFFFFFFFF;
+    let random: u32 = rand::thread_rng().gen();
 
-    let nanos = duration.as_nanos() as u64;
-    let pid = std::process::id() as u64;
-
-    // Mix time and PID for reasonable uniqueness
-    nanos.wrapping_mul(31).wrapping_add(pid)
+    let channel_id = (pid << 32) | (random as u64);
+    if channel_id == 0 { 1 } else { channel_id }
 }
 
 #[cfg(test)]

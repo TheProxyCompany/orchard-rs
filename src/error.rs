@@ -36,6 +36,26 @@ pub enum Error {
     /// Channel closed
     #[error("Channel closed")]
     ChannelClosed,
+
+    /// Engine fetch error
+    #[error("Fetch error: {0}")]
+    Fetch(#[from] crate::engine::fetch::FetchError),
+
+    /// Engine lifecycle error
+    #[error("Lifecycle error: {0}")]
+    Lifecycle(#[from] crate::engine::lifecycle::LifecycleError),
+
+    /// Model resolution error
+    #[error("Model resolution error: {0}")]
+    ModelResolution(#[from] crate::model::resolver::ModelResolutionError),
+
+    /// Formatter error
+    #[error("Formatter error: {0}")]
+    Formatter(#[from] crate::formatter::FormatterError),
+
+    /// Multimodal error
+    #[error("Multimodal error: {0}")]
+    Multimodal(#[from] crate::formatter::multimodal::MultimodalError),
 }
 
 /// Result type alias for Orchard operations.
