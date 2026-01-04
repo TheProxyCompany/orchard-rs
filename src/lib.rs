@@ -11,7 +11,7 @@ pub mod model;
 
 pub use error::{Error, Result};
 
-pub use ipc::client::{IPCClient, RequestOptions, ResponseDelta};
+pub use ipc::client::{EventCallback, IPCClient, ResponseDelta};
 pub use ipc::endpoints;
 pub use ipc::serialization::{
     build_batch_request_payload, CapabilityEntry, LayoutEntry, PromptPayload, RequestType, SegmentType,

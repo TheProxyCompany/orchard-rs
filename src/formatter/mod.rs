@@ -9,7 +9,7 @@ use std::path::Path;
 use minijinja::{context, Environment, Value};
 
 pub use control_tokens::{ControlTokens, Role, RoleTags};
-pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput};
+pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
 
 use crate::error::{Error, Result};
 

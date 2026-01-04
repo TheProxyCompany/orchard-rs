@@ -4,7 +4,7 @@
 
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
-use crate::ipc::serialization::{build_request_payload, build_batch_request_payload, PromptPayload, RequestType};
+use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
 
 use nng::options::Options;
 use nng::{Protocol, Socket};
@@ -16,6 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// Callback type for engine events (telemetry, model_loaded, etc.)
+pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 
 /// Response delta from PIE.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +59,31 @@ pub struct ResponseDelta {
     pub modal_decoder_id: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
+}
+
+impl Default for ResponseDelta {
+    fn default() -> Self {
+        Self {
+            request_id: 0,
+            sequence_id: None,
+            prompt_index: None,
+            candidate_index: None,
+            content: None,
+            content_len: None,
+            inline_content_bytes: None,
+            is_final_delta: false,
+            finish_reason: None,
+            error: None,
+            prompt_token_count: None,
+            num_tokens_in_delta: None,
+            generation_len: None,
+            tokens: Vec::new(),
+            top_logprobs: Vec::new(),
+            cumulative_logprob: None,
+            modal_decoder_id: None,
+            modal_bytes_b64: None,
+        }
+    }
 }
 
 impl ResponseDelta {
@@ -108,54 +136,20 @@ impl ResponseDelta {
     }
 }
 
-/// Request options for inference.
-#[derive(Debug, Clone)]
-pub struct RequestOptions {
-    /// Maximum tokens to generate
-    pub max_tokens: i32,
-    /// Sampling temperature
-    pub temperature: f64,
-    /// Top-p (nucleus) sampling
-    pub top_p: f64,
-    /// Stop sequences
-    pub stop_sequences: Vec<String>,
-}
-
-impl Default for RequestOptions {
-    fn default() -> Self {
-        Self {
-            max_tokens: 0, // 0 means no limit
-            temperature: 1.0,
-            top_p: 1.0,
-            stop_sequences: Vec::new(),
-        }
-    }
-}
-
 /// High-performance IPC client for communicating with PIE.
 ///
 /// Uses a lock-based design instead of actors to minimize overhead in the hot path.
 /// All socket operations are thread-safe via internal locks.
 pub struct IPCClient {
-    /// Push socket for requests
     request_socket: Option<Socket>,
-    /// Sub socket for responses
     response_socket: Option<Socket>,
-    /// Req socket for management
     management_socket: Option<Socket>,
-
-    /// Unique channel ID for this client
     response_channel_id: u64,
-    /// Request ID counter
     request_id_counter: AtomicU64,
-
-    /// Active request senders - protected by mutex
     active_requests: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseDelta>>>>,
-
-    /// Listener thread handle
     listener_handle: Option<JoinHandle<()>>,
-    /// Signal to stop listener
     should_stop: Arc<AtomicBool>,
+    event_callback: Option<EventCallback>,
 }
 
 impl IPCClient {
@@ -170,7 +164,28 @@ impl IPCClient {
             active_requests: Arc::new(Mutex::new(HashMap::new())),
             listener_handle: None,
             should_stop: Arc::new(AtomicBool::new(false)),
+            event_callback: None,
         }
+    }
+
+    /// Create a new IPC client with an event callback.
+    pub fn with_event_callback(callback: EventCallback) -> Self {
+        Self {
+            request_socket: None,
+            response_socket: None,
+            management_socket: None,
+            response_channel_id: rand_u64(),
+            request_id_counter: AtomicU64::new(0),
+            active_requests: Arc::new(Mutex::new(HashMap::new())),
+            listener_handle: None,
+            should_stop: Arc::new(AtomicBool::new(false)),
+            event_callback: Some(callback),
+        }
+    }
+
+    /// Set the event callback for handling engine events.
+    pub fn set_event_callback(&mut self, callback: EventCallback) {
+        self.event_callback = Some(callback);
     }
 
     /// Connect to PIE IPC endpoints.
@@ -208,9 +223,31 @@ impl IPCClient {
         Ok(())
     }
 
-    /// Disconnect from PIE.
+    /// Disconnect from PIE with graceful shutdown.
+    ///
+    /// Sends error deltas to all pending requests before closing.
     pub fn disconnect(&mut self) {
         self.should_stop.store(true, Ordering::SeqCst);
+
+        // Send error deltas to all pending requests (graceful shutdown)
+        {
+            let requests = self
+                .active_requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+
+            for (request_id, tx) in requests.iter() {
+                let error_delta = ResponseDelta {
+                    request_id: *request_id,
+                    is_final_delta: true,
+                    finish_reason: Some("error".to_string()),
+                    content: Some("Engine process disconnected.".to_string()),
+                    error: Some("Engine process disconnected.".to_string()),
+                    ..Default::default()
+                };
+                let _ = tx.send(error_delta);
+            }
+        }
 
         if let Some(handle) = self.listener_handle.take() {
             let _ = handle.join();
@@ -232,44 +269,6 @@ impl IPCClient {
             self.request_id_counter.store(1, Ordering::SeqCst);
         }
         id + 1
-    }
-
-    /// Send an inference request and receive streaming responses.
-    pub fn send_request(
-        &self,
-        request_id: u64,
-        model_id: &str,
-        model_path: &str,
-        prompt: &str,
-        options: RequestOptions,
-    ) -> Result<mpsc::UnboundedReceiver<ResponseDelta>> {
-        let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
-
-        // Build request payload
-        let payload = build_request_payload(
-            request_id,
-            model_id,
-            model_path,
-            RequestType::Generation,
-            self.response_channel_id,
-            prompt,
-            options.max_tokens,
-            options.temperature,
-            options.top_p,
-            &options.stop_sequences,
-        )?;
-
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        self.active_requests
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(request_id, tx);
-
-        let msg = nng::Message::from(payload.as_slice());
-        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
-
-        Ok(rx)
     }
 
     /// Send a batched request with multiple prompts in ONE IPC message.
@@ -330,6 +329,7 @@ impl IPCClient {
         let active_requests = Arc::clone(&self.active_requests);
         let should_stop = Arc::clone(&self.should_stop);
         let response_channel_id = self.response_channel_id;
+        let event_callback = self.event_callback.clone();
 
         let handle = thread::Builder::new()
             .name("orchard-ipc-listener".to_string())
@@ -340,6 +340,7 @@ impl IPCClient {
                         active_requests,
                         should_stop,
                         response_channel_id,
+                        event_callback,
                     );
                 }
             });
@@ -369,12 +370,13 @@ fn run_response_listener(
     active_requests: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseDelta>>>>,
     should_stop: Arc<AtomicBool>,
     response_channel_id: u64,
+    event_callback: Option<EventCallback>,
 ) {
     let response_topic = format!("resp:{:x}:", response_channel_id);
     let response_topic_bytes = response_topic.as_bytes();
 
-    // Set receive timeout for polling
-    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(100)));
+    // Set receive timeout for responsive polling (10ms for better latency)
+    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(10)));
 
     while !should_stop.load(Ordering::SeqCst) {
         match socket.recv() {
@@ -408,6 +410,10 @@ fn run_response_listener(
                         }
                     }
                 }
+                // Check if it's an engine event
+                else if data.starts_with(EVENT_TOPIC_PREFIX) {
+                    handle_engine_event(data, &event_callback);
+                }
             }
             Err(nng::Error::TimedOut) => {
                 // Normal timeout, continue polling
@@ -420,6 +426,67 @@ fn run_response_listener(
                 }
             }
         }
+    }
+
+    // Graceful shutdown: notify any remaining pending requests
+    log::info!("IPC listener shutting down");
+    let requests = active_requests
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    if !requests.is_empty() {
+        log::warn!(
+            "IPC listener exiting with {} active requests; failing them.",
+            requests.len()
+        );
+
+        for (request_id, tx) in requests.iter() {
+            let error_delta = ResponseDelta {
+                request_id: *request_id,
+                is_final_delta: true,
+                finish_reason: Some("error".to_string()),
+                content: Some("Engine process disconnected.".to_string()),
+                error: Some("Engine process disconnected.".to_string()),
+                ..Default::default()
+            };
+            let _ = tx.send(error_delta);
+        }
+    }
+}
+
+/// Handle an engine event (telemetry, model_loaded, etc.)
+fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
+    // Event format: __PIE_EVENT__:<event_name>\x00<json_body>
+    let parts: Vec<&[u8]> = data.splitn(2, |&b| b == 0).collect();
+    if parts.len() != 2 {
+        log::warn!("Received malformed event message");
+        return;
+    }
+
+    let (topic_part, json_body) = (parts[0], parts[1]);
+
+    // Extract event name from topic: "__PIE_EVENT__:<event_name>"
+    let event_name = if topic_part.len() > EVENT_TOPIC_PREFIX.len() {
+        String::from_utf8_lossy(&topic_part[EVENT_TOPIC_PREFIX.len()..]).to_string()
+    } else {
+        log::warn!("Event message has empty event name");
+        return;
+    };
+
+    // Parse JSON payload
+    let payload: Value = match serde_json::from_slice(json_body) {
+        Ok(v) => v,
+        Err(e) => {
+            log::error!("Failed to parse engine event payload: {}", e);
+            return;
+        }
+    };
+
+    log::debug!("Received engine event: {}", event_name);
+
+    // Dispatch to callback if registered
+    if let Some(callback) = event_callback {
+        callback(&event_name, &payload);
     }
 }
 
@@ -455,12 +522,12 @@ mod tests {
     }
 
     #[test]
-    fn test_default_options() {
-        let options = RequestOptions::default();
-        assert_eq!(options.max_tokens, 0);
-        assert_eq!(options.temperature, 1.0);
-        assert_eq!(options.top_p, 1.0);
-        assert!(options.stop_sequences.is_empty());
+    fn test_response_delta_default() {
+        let delta = ResponseDelta::default();
+        assert_eq!(delta.request_id, 0);
+        assert!(!delta.is_final_delta);
+        assert!(delta.tokens.is_empty());
+        assert!(delta.top_logprobs.is_empty());
     }
 
     #[test]

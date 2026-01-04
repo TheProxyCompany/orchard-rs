@@ -4,7 +4,7 @@
 
 use crate::defaults;
 use crate::error::{Error, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::Serialize as SerializeTrait};
 use serde_json::{json, Value};
 
 /// A single prompt payload for batched requests.
@@ -113,115 +113,13 @@ fn align(offset: usize) -> usize {
     }
 }
 
-/// Build a request payload for PIE.
-///
-/// # Arguments
-/// * `request_id` - Unique request identifier
-/// * `model_id` - Model identifier string
-/// * `model_path` - Path to model weights
-/// * `request_type` - Type of request (generation, embedding, etc.)
-/// * `response_channel_id` - Channel ID for routing responses
-/// * `prompt` - The prompt text
-/// * `options` - Sampling and generation options
-#[allow(clippy::too_many_arguments)]
-pub fn build_request_payload(
-    request_id: u64,
-    model_id: &str,
-    model_path: &str,
-    request_type: RequestType,
-    response_channel_id: u64,
-    prompt: &str,
-    max_tokens: i32,
-    temperature: f64,
-    top_p: f64,
-    stop_sequences: &[String],
-) -> Result<Vec<u8>> {
-    let prompt_bytes = prompt.as_bytes();
-
-    // Calculate blob layout
-    let text_offset = 0usize;
-    let text_size = prompt_bytes.len();
-    let total_size = align(text_size);
-
-    // Build layout for text segment
-    let layout_data = encode_layout(&[(SegmentType::Text, text_size)]);
-
-    // Reserve blob space
-    let layout_offset = align(total_size);
-    let final_size = layout_offset + layout_data.len();
-
-    // Build prompt metadata
-    let prompt_metadata = json!({
-        "prompt_index": 0,
-        "num_candidates": 1,
-        "best_of": 1,
-        "final_candidates": 1,
-        "max_generated_tokens": max_tokens,
-        "text_offset": text_offset,
-        "text_size": text_size,
-        "image_data_offset": 0,
-        "image_data_size": 0,
-        "image_sizes_offset": 0,
-        "image_count": 0,
-        "capability_data_offset": 0,
-        "capability_data_size": 0,
-        "capabilities": [],
-        "layout_offset": layout_offset,
-        "layout_count": 1,
-        "temperature": temperature,
-        "top_p": top_p,
-        "top_k": -1,
-        "min_p": 0.0,
-        "rng_seed": 0,
-        "top_logprobs": 0,
-        "frequency_penalty": 0.0,
-        "presence_penalty": 0.0,
-        "repetition_context_size": 0,
-        "repetition_penalty": 1.0,
-        "stop_sequences": stop_sequences,
-        "tool_schemas_json": "",
-        "response_format_json": "",
-        "logit_bias": [],
-    });
-
-    // Build full metadata
-    let metadata = json!({
-        "request_id": request_id,
-        "model_id": model_id,
-        "model_path": model_path,
-        "request_type": request_type as i32,
-        "request_channel_id": 0,
-        "response_channel_id": response_channel_id,
-        "prompts": [prompt_metadata],
-    });
-
-    let metadata_bytes = serde_json::to_vec(&metadata)?;
-
-    if metadata_bytes.len() > u32::MAX as usize {
-        return Err(Error::Serialization(
-            "Metadata exceeds 4-byte length prefix capacity".to_string(),
-        ));
-    }
-
-    // Build payload buffer
-    let mut payload = vec![0u8; final_size];
-
-    // Copy text
-    payload[text_offset..text_offset + text_size].copy_from_slice(prompt_bytes);
-
-    // Copy layout
-    payload[layout_offset..layout_offset + layout_data.len()].copy_from_slice(&layout_data);
-
-    // Build frame: [4 bytes length][metadata][payload]
-    let mut frame = Vec::with_capacity(4 + metadata_bytes.len() + payload.len());
-
-    // Write length as little-endian u32
-    let length = metadata_bytes.len() as u32;
-    frame.extend_from_slice(&length.to_le_bytes());
-    frame.extend_from_slice(&metadata_bytes);
-    frame.extend_from_slice(&payload);
-
-    Ok(frame)
+/// Serialize JSON to compact format (no spaces after separators, matching Python).
+fn serialize_json_compact(value: &Value) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    let formatter = serde_json::ser::CompactFormatter;
+    let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
+    SerializeTrait::serialize(value, &mut serializer)?;
+    Ok(buffer)
 }
 
 /// Encode layout segments.
@@ -318,6 +216,12 @@ pub fn build_batch_request_payload(
             prompt.layout.len()
         };
 
+        // Validate layout if explicitly provided
+        if !prompt.layout.is_empty() {
+            let total_image_size: usize = prompt.image_buffers.iter().map(|b| b.len()).sum();
+            validate_layout(text_bytes.len(), total_image_size, &prompt.layout, index)?;
+        }
+
         // Reserve space for all blob data
         let (text_offset, text_size) = reserve_blob(text_bytes);
         let (image_sizes_offset, _) = reserve_blob(image_span_bytes);
@@ -383,7 +287,8 @@ pub fn build_batch_request_payload(
         "prompts": prompt_metadata_list,
     });
 
-    let metadata_bytes = serde_json::to_vec(&metadata)?;
+    // Use compact JSON serialization (no spaces, matching Python)
+    let metadata_bytes = serialize_json_compact(&metadata)?;
 
     if metadata_bytes.len() > u32::MAX as usize {
         return Err(Error::Serialization(
@@ -405,6 +310,41 @@ pub fn build_batch_request_payload(
     frame.extend_from_slice(&payload);
 
     Ok(frame)
+}
+
+/// Validate that layout bytes match actual content sizes.
+fn validate_layout(
+    text_size: usize,
+    image_data_size: usize,
+    layout: &[LayoutEntry],
+    prompt_index: usize,
+) -> Result<()> {
+    let mut layout_text_bytes = 0usize;
+    let mut layout_image_bytes = 0usize;
+
+    for entry in layout {
+        match entry.segment_type.as_str() {
+            "text" => layout_text_bytes += entry.length,
+            "image" => layout_image_bytes += entry.length,
+            _ => {} // capabilities are handled separately
+        }
+    }
+
+    if layout_text_bytes != text_size {
+        return Err(Error::Serialization(format!(
+            "Prompt {}: Layout text bytes ({}) != actual text size ({})",
+            prompt_index, layout_text_bytes, text_size
+        )));
+    }
+
+    if layout_image_bytes != image_data_size {
+        return Err(Error::Serialization(format!(
+            "Prompt {}: Layout image bytes ({}) != actual image size ({})",
+            prompt_index, layout_image_bytes, image_data_size
+        )));
+    }
+
+    Ok(())
 }
 
 /// Encode image buffers into span array and concatenated data.
@@ -460,18 +400,22 @@ mod tests {
     }
 
     #[test]
-    fn test_build_request_payload() {
-        let payload = build_request_payload(
+    fn test_build_batch_request_payload() {
+        let prompt = PromptPayload {
+            prompt: "Hello, world!".to_string(),
+            max_generated_tokens: 100,
+            temperature: 0.7,
+            top_p: 0.9,
+            ..Default::default()
+        };
+
+        let payload = build_batch_request_payload(
             1,
             "test-model",
             "/path/to/model",
             RequestType::Generation,
             12345,
-            "Hello, world!",
-            100,
-            0.7,
-            0.9,
-            &[],
+            &[prompt],
         )
         .unwrap();
 
@@ -485,5 +429,71 @@ mod tests {
         let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
         assert_eq!(metadata["request_id"], 1);
         assert_eq!(metadata["model_id"], "test-model");
+        assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_validate_layout_success() {
+        let layout = vec![
+            LayoutEntry {
+                segment_type: "text".to_string(),
+                length: 100,
+            },
+            LayoutEntry {
+                segment_type: "image".to_string(),
+                length: 5000,
+            },
+        ];
+
+        let result = validate_layout(100, 5000, &layout, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_layout_text_mismatch() {
+        let layout = vec![
+            LayoutEntry {
+                segment_type: "text".to_string(),
+                length: 50, // Mismatch!
+            },
+        ];
+
+        let result = validate_layout(100, 0, &layout, 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("text bytes"));
+    }
+
+    #[test]
+    fn test_validate_layout_image_mismatch() {
+        let layout = vec![
+            LayoutEntry {
+                segment_type: "text".to_string(),
+                length: 100,
+            },
+            LayoutEntry {
+                segment_type: "image".to_string(),
+                length: 1000, // Mismatch!
+            },
+        ];
+
+        let result = validate_layout(100, 5000, &layout, 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("image"));
+    }
+
+    #[test]
+    fn test_compact_json_serialization() {
+        let value = serde_json::json!({
+            "key": "value",
+            "number": 42
+        });
+
+        let compact = serialize_json_compact(&value).unwrap();
+        let compact_str = String::from_utf8(compact).unwrap();
+
+        // Should not have spaces after colons or commas
+        assert!(!compact_str.contains(": "));
+        assert!(!compact_str.contains(", "));
+        assert!(compact_str.contains(":") && compact_str.contains(","));
     }
 }

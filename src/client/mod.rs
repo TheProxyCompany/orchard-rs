@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
-use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
-use crate::ipc::client::{IPCClient, RequestOptions, ResponseDelta};
-use crate::ipc::serialization::PromptPayload;
+use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
+use crate::ipc::client::{IPCClient, ResponseDelta};
+use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload};
 use crate::model::registry::ModelRegistry;
 
 pub use moondream::{
@@ -222,8 +222,8 @@ impl Client {
             .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        // Build layout (currently unused, but validates the multimodal structure)
-        let _layout_segments = build_multimodal_layout(
+        // Build layout for multimodal content
+        let layout_segments = build_multimodal_layout(
             &prompt_text,
             &image_buffers,
             &capabilities,
@@ -247,20 +247,52 @@ impl Client {
             final_prompt = final_prompt.replace(coord, "");
         }
 
-        // Send request
-        let options = RequestOptions {
-            max_tokens: params.max_tokens,
+        // Serialize tools and response_format to JSON strings (matching Python)
+        let tool_schemas_json = if params.tools.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&params.tools).unwrap_or_default()
+        };
+        let response_format_json = params
+            .response_format
+            .as_ref()
+            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+            .unwrap_or_default();
+
+        // Build PromptPayload with full multimodal data
+        let prompt_payload = PromptPayload {
+            prompt: final_prompt,
+            image_buffers,
+            capabilities: convert_capabilities(&capabilities),
+            layout: convert_layout(&layout_segments),
+            max_generated_tokens: params.max_tokens,
             temperature: params.temperature,
             top_p: params.top_p,
+            top_k: params.top_k,
+            min_p: params.min_p,
+            rng_seed: params.rng_seed,
             stop_sequences: params.stop.clone(),
+            num_candidates: params.n,
+            best_of: params.best_of,
+            final_candidates: params.final_candidates,
+            frequency_penalty: params.frequency_penalty,
+            presence_penalty: params.presence_penalty,
+            repetition_penalty: params.repetition_penalty,
+            repetition_context_size: params.repetition_context_size,
+            top_logprobs: params.top_logprobs,
+            logit_bias: params.logit_bias.clone(),
+            tool_schemas_json,
+            response_format_json,
+            task_name: params.task_name.clone(),
+            reasoning_effort: params.reasoning_effort.clone(),
         };
 
-        let rx = self.ipc.send_request(
+        // Use unified batch request path (even for single prompts)
+        let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             model_id,
             &info.model_path,
-            &final_prompt,
-            options,
+            &[prompt_payload],
         )?;
 
         if stream {
@@ -347,7 +379,7 @@ impl Client {
 
         for messages in &conversations {
             // Build multimodal content (pass instructions if provided)
-            let (messages_for_template, _image_buffers, _capabilities, _content_order) =
+            let (messages_for_template, image_buffers, capabilities, content_order) =
                 build_multimodal_messages(&info.formatter, messages, params.instructions.as_deref())
                     .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
@@ -363,6 +395,22 @@ impl Client {
                 .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
+            // Build layout for multimodal content
+            let layout_segments = build_multimodal_layout(
+                &prompt_text,
+                &image_buffers,
+                &capabilities,
+                &content_order,
+                info.formatter
+                    .control_tokens
+                    .start_image_token
+                    .as_deref()
+                    .unwrap_or(info.formatter.default_image_placeholder()),
+                info.formatter.should_clip_image_placeholder(),
+                info.formatter.control_tokens.coord_placeholder.as_deref(),
+            )
+            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+
             // Build final prompt (with placeholders removed if needed)
             let mut final_prompt = prompt_text;
             if info.formatter.should_clip_image_placeholder() {
@@ -374,6 +422,9 @@ impl Client {
 
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
+                image_buffers,
+                capabilities: convert_capabilities(&capabilities),
+                layout: convert_layout(&layout_segments),
                 max_generated_tokens: params.max_tokens,
                 temperature: params.temperature,
                 top_p: params.top_p,
@@ -394,7 +445,6 @@ impl Client {
                 response_format_json: response_format_json.clone(),
                 task_name: params.task_name.clone(),
                 reasoning_effort: params.reasoning_effort.clone(),
-                ..Default::default()
             });
         }
 
@@ -438,6 +488,30 @@ impl Client {
 
         Ok(responses)
     }
+}
+
+/// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
+fn convert_capabilities(capabilities: &[CapabilityInput]) -> Vec<CapabilityEntry> {
+    capabilities
+        .iter()
+        .enumerate()
+        .map(|(position, cap)| CapabilityEntry {
+            name: cap.name.clone(),
+            position,
+            payload: cap.payload.clone(),
+        })
+        .collect()
+}
+
+/// Convert LayoutSegment from multimodal to LayoutEntry for serialization.
+fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
+    segments
+        .iter()
+        .map(|seg| LayoutEntry {
+            segment_type: seg.segment_type.clone(),
+            length: seg.length,
+        })
+        .collect()
 }
 
 /// Result of a chat operation.
