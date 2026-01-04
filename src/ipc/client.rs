@@ -32,11 +32,30 @@ pub struct ResponseDelta {
     pub finish_reason: Option<String>,
     /// Error message if request failed
     pub error: Option<String>,
+    /// Token IDs in this delta
+    pub tokens: Vec<i32>,
+    /// Modal decoder identifier (e.g., "moondream3.coord")
+    pub modal_decoder_id: Option<String>,
+    /// Base64-encoded modal decoder output bytes
+    pub modal_bytes_b64: Option<String>,
+    /// Prompt token count
+    pub prompt_token_count: Option<u32>,
+    /// Generation length so far
+    pub generation_len: Option<u32>,
 }
 
 impl ResponseDelta {
     /// Parse from JSON value.
     pub fn from_json(json: &Value) -> Self {
+        let tokens = json["tokens"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_i64().map(|n| n as i32))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self {
             request_id: json["request_id"].as_u64().unwrap_or(0),
             prompt_index: json["prompt_index"].as_u64().map(|v| v as u32),
@@ -44,6 +63,11 @@ impl ResponseDelta {
             is_final_delta: json["is_final_delta"].as_bool().unwrap_or(false),
             finish_reason: json["finish_reason"].as_str().map(String::from),
             error: json["error"].as_str().map(String::from),
+            tokens,
+            modal_decoder_id: json["modal_decoder_id"].as_str().map(String::from),
+            modal_bytes_b64: json["modal_bytes_b64"].as_str().map(String::from),
+            prompt_token_count: json["prompt_token_count"].as_u64().map(|v| v as u32),
+            generation_len: json["generation_len"].as_u64().map(|v| v as u32),
         }
     }
 }
@@ -412,5 +436,21 @@ mod tests {
         assert_eq!(options.temperature, 1.0);
         assert_eq!(options.top_p, 1.0);
         assert!(options.stop_sequences.is_empty());
+    }
+
+    #[test]
+    fn test_response_delta_from_json() {
+        let json = serde_json::json!({
+            "request_id": 123,
+            "content": "Hello",
+            "is_final_delta": false,
+            "tokens": [1, 2, 3],
+            "modal_decoder_id": "moondream3.coord",
+            "modal_bytes_b64": "AAAA"
+        });
+        let delta = ResponseDelta::from_json(&json);
+        assert_eq!(delta.request_id, 123);
+        assert_eq!(delta.tokens, vec![1, 2, 3]);
+        assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
     }
 }

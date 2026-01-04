@@ -34,6 +34,12 @@ pub struct ClientDelta {
     pub prompt_token_count: Option<u32>,
     /// Current generation length
     pub generation_len: Option<u32>,
+    /// Token IDs in this delta
+    pub tokens: Vec<i32>,
+    /// Modal decoder identifier (e.g., "moondream3.coord")
+    pub modal_decoder_id: Option<String>,
+    /// Base64-encoded modal decoder output bytes
+    pub modal_bytes_b64: Option<String>,
 }
 
 impl From<ResponseDelta> for ClientDelta {
@@ -45,8 +51,11 @@ impl From<ResponseDelta> for ClientDelta {
             is_final: delta.is_final_delta,
             finish_reason: delta.finish_reason,
             error: delta.error,
-            prompt_token_count: None,
-            generation_len: None,
+            prompt_token_count: delta.prompt_token_count,
+            generation_len: delta.generation_len,
+            tokens: delta.tokens,
+            modal_decoder_id: delta.modal_decoder_id,
+            modal_bytes_b64: delta.modal_bytes_b64,
         }
     }
 }
@@ -97,6 +106,11 @@ mod tests {
             is_final_delta: false,
             finish_reason: None,
             error: None,
+            tokens: vec![1, 2, 3],
+            modal_decoder_id: Some("moondream3.coord".to_string()),
+            modal_bytes_b64: Some("AAAA".to_string()),
+            prompt_token_count: Some(10),
+            generation_len: Some(5),
         };
 
         let delta = ClientDelta::from(response);
@@ -104,5 +118,7 @@ mod tests {
         assert_eq!(delta.prompt_index, Some(0));
         assert_eq!(delta.content, Some("Hello".to_string()));
         assert!(!delta.is_final);
+        assert_eq!(delta.tokens, vec![1, 2, 3]);
+        assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
     }
 }

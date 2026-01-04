@@ -2,6 +2,7 @@
 //!
 //! Provides the main user-facing interface for LLM inference.
 
+mod moondream;
 mod response;
 
 use std::collections::HashMap;
@@ -16,6 +17,11 @@ use crate::ipc::client::{IPCClient, RequestOptions, ResponseDelta};
 use crate::ipc::serialization::PromptPayload;
 use crate::model::registry::ModelRegistry;
 
+pub use moondream::{
+    BoundingBox, CaptionResult, DetectResult, DetectedObject, GazeResult, GroundingSpan,
+    MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
+    MOONDREAM_MODEL_ID,
+};
 pub use response::{ClientDelta, ClientResponse, UsageStats};
 
 /// Errors that can occur during client operations.
@@ -84,6 +90,9 @@ pub struct SamplingParams {
     /// Number of candidates to generate
     #[serde(default = "default_n")]
     pub n: i32,
+    /// Task name for specialized tasks (e.g., "caption_normal", "point", "detect")
+    #[serde(default)]
+    pub task_name: Option<String>,
 }
 
 fn default_max_tokens() -> i32 {
@@ -119,6 +128,7 @@ impl Default for SamplingParams {
             presence_penalty: 0.0,
             repetition_penalty: default_repetition_penalty(),
             n: default_n(),
+            task_name: None,
         }
     }
 }

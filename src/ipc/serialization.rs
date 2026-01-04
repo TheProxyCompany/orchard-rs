@@ -53,6 +53,9 @@ pub struct PromptPayload {
     /// Repetition penalty
     #[serde(default = "default_one_f64")]
     pub repetition_penalty: f64,
+    /// Task name for specialized tasks (e.g., "caption_normal", "point", "detect")
+    #[serde(default)]
+    pub task_name: Option<String>,
 }
 
 fn default_temperature() -> f64 { 1.0 }
@@ -358,6 +361,7 @@ pub fn build_batch_request_payload(
             "tool_schemas_json": "",
             "response_format_json": "",
             "logit_bias": [],
+            "task_name": prompt.task_name,
         });
 
         prompt_metadata_list.push(prompt_meta);
