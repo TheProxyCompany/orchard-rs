@@ -195,23 +195,18 @@ impl ChatFormatter {
     }
 
     fn find_profile_dir(model_type: &str) -> Result<std::path::PathBuf> {
-        // Look for embedded profiles first (in the crate's data directory)
-        // Then fall back to the Python package's profiles
+        // Look for profiles in the bundled submodule
         let candidates = [
-            // Relative to the crate
+            // Bundled profiles submodule (primary)
+            Some(
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("profiles")
+                    .join(model_type),
+            ),
+            // Relative to working directory (fallback)
             std::env::current_dir()
                 .ok()
                 .map(|p| p.join("profiles").join(model_type)),
-            // In the orchard-py package (for development)
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.join("../orchard-py/orchard/formatter/profiles").join(model_type)),
-            // Absolute path to orchard-py
-            Some(
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../orchard-py/orchard/formatter/profiles")
-                    .join(model_type),
-            ),
         ];
 
         for candidate in candidates.into_iter().flatten() {
