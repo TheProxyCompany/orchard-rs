@@ -46,11 +46,11 @@ impl EnginePaths {
             .join("com.theproxycompany");
 
         Ok(Self {
-            pid_file: cache_dir.join("pie.pid"),
-            refs_file: cache_dir.join("pie.refs"),
-            lock_file: cache_dir.join("pie.lock"),
-            ready_file: cache_dir.join("pie.ready"),
-            engine_log_file: cache_dir.join("pie.log"),
+            pid_file: cache_dir.join("engine.pid"),
+            refs_file: cache_dir.join("engine.refs"),
+            lock_file: cache_dir.join("engine.lock"),
+            ready_file: cache_dir.join("engine.ready"),
+            engine_log_file: cache_dir.join("engine.log"),
             client_log_file: cache_dir.join("client.log"),
             cache_dir,
         })
@@ -183,22 +183,31 @@ impl InferenceEngine {
             .lock_exclusive()
             .map_err(|e| Error::LockFailed(e.to_string()))?;
 
+        // Helper to clean up all state and socket files
+        let cleanup_all = |paths: &EnginePaths| {
+            remove_if_exists(&paths.pid_file);
+            remove_if_exists(&paths.ready_file);
+            remove_if_exists(&paths.refs_file);
+            let ipc_dir = paths.cache_dir.join("ipc");
+            if ipc_dir.exists() {
+                remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+            }
+        };
+
         let pid = match read_pid_file(&paths.pid_file) {
             Some(p) if pid_is_alive(p) => p,
             _ => {
                 log::info!("Engine is not running. Cleaning up stale files.");
-                remove_if_exists(&paths.pid_file);
-                remove_if_exists(&paths.ready_file);
-                remove_if_exists(&paths.refs_file);
+                cleanup_all(&paths);
                 return Ok(());
             }
         };
         log::info!("Sending shutdown signal to engine process {}", pid);
 
         if stop_engine_process(pid, timeout) {
-            remove_if_exists(&paths.pid_file);
-            remove_if_exists(&paths.ready_file);
-            remove_if_exists(&paths.refs_file);
+            cleanup_all(&paths);
             reap_engine_process(pid);
             log::info!("Engine process {} terminated gracefully", pid);
             Ok(())
@@ -235,9 +244,17 @@ impl InferenceEngine {
         if !engine_running && alive_refs.is_empty() {
             log::debug!("Inference engine not running. Launching new instance.");
 
-            // Clean up stale files
+            // Clean up stale state files
             remove_if_exists(&self.paths.pid_file);
             remove_if_exists(&self.paths.ready_file);
+
+            // Clean up stale IPC socket files (left over from crashed engine)
+            let ipc_dir = self.paths.cache_dir.join("ipc");
+            if ipc_dir.exists() {
+                remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+            }
 
             self.launch_engine().await?;
             self.wait_for_engine_ready().await?;
@@ -378,10 +395,20 @@ impl InferenceEngine {
     }
 
     fn stop_engine_locked(&mut self, pid: u32) -> Result<()> {
-        if !pid_is_alive(pid) {
-            log::debug!("Engine PID {} already exited", pid);
+        let cleanup_files = || {
             remove_if_exists(&self.paths.pid_file);
             remove_if_exists(&self.paths.ready_file);
+            let ipc_dir = self.paths.cache_dir.join("ipc");
+            if ipc_dir.exists() {
+                remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
+                remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+            }
+        };
+
+        if !pid_is_alive(pid) {
+            log::debug!("Engine PID {} already exited", pid);
+            cleanup_files();
             return Ok(());
         }
 
@@ -393,8 +420,7 @@ impl InferenceEngine {
         }
 
         reap_engine_process(pid);
-        remove_if_exists(&self.paths.pid_file);
-        remove_if_exists(&self.paths.ready_file);
+        cleanup_files();
 
         log::info!("Engine PID {} stopped", pid);
         Ok(())

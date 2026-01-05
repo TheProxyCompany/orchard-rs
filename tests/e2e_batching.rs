@@ -1,12 +1,13 @@
 //! End-to-end batching tests.
 //!
+//! Mirrors orchard-py/tests/test_e2e_batching.py
 //! Tests batched inference where multiple prompts are processed together.
 //! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{BatchChatResult, Client, EngineFetcher, ModelRegistry, SamplingParams};
+use orchard::{BatchChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "moondream3";
 
@@ -18,11 +19,11 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 }
 
 /// Test homogeneous batched chat completion with identical parameters.
+/// Mirrors: test_e2e_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_batched_homogeneous() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -59,11 +60,11 @@ async fn test_chat_completion_batched_homogeneous() {
 }
 
 /// Test batched requests with different content per conversation.
+/// Mirrors: test_e2e_batching.py::test_chat_completion_batched_heterogeneous (prompts only)
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_batched_different_content() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -90,14 +91,17 @@ async fn test_chat_completion_batched_different_content() {
 
     println!("Greeting: {}", responses[0].text.trim());
     println!("Colors: {}", responses[1].text.trim());
+
+    // Both should have content
+    assert!(!responses[0].text.trim().is_empty(), "Greeting should not be empty");
+    assert!(!responses[1].text.trim().is_empty(), "Colors should not be empty");
 }
 
 /// Test that empty batch returns empty responses.
 #[tokio::test]
 #[ignore]
 async fn test_empty_batch() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");

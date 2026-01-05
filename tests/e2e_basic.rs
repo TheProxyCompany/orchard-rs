@@ -1,11 +1,12 @@
 //! End-to-end basic chat completion tests.
 //!
+//! Mirrors orchard-py/tests/test_e2e_basic.py and test_e2e_multi_token.py
 //! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{Client, EngineFetcher, ModelRegistry, SamplingParams};
+use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
 
@@ -17,12 +18,12 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 }
 
 /// Test basic non-streaming chat completion with a single token.
+/// Mirrors: test_e2e_basic.py::test_chat_completion_first_token
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_first_token() {
-    // Ensure engine is available (downloads if needed)
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    // InferenceEngine spawns PIE if not running, waits for ready
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -58,19 +59,63 @@ async fn test_chat_completion_first_token() {
     }
 }
 
+/// Test multi-token generation - "What is the capital of France?" should produce "Paris"
+/// Mirrors: test_e2e_multi_token.py::test_chat_completion_multi_token_non_streaming
+#[tokio::test]
+#[ignore]
+async fn test_chat_completion_capital_of_france() {
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
+
+    let registry = Arc::new(ModelRegistry::new().unwrap());
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+
+    let params = SamplingParams {
+        max_tokens: 10,
+        temperature: 0.0, // Greedy for deterministic output
+        ..Default::default()
+    };
+
+    let messages = vec![make_message("user", "What is the capital of France?")];
+
+    let result = client.achat(MODEL_ID, messages, params, false).await;
+    assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
+
+    match result.unwrap() {
+        orchard::ChatResult::Complete(response) => {
+            println!("Response: {}", response.text);
+            assert!(
+                response.text.contains("Paris"),
+                "Expected 'Paris' in response but got: '{}'",
+                response.text
+            );
+            assert!(
+                response.usage.prompt_tokens > 0,
+                "Expected prompt_tokens > 0"
+            );
+            assert!(
+                response.usage.completion_tokens > 0,
+                "Expected completion_tokens > 0"
+            );
+        }
+        orchard::ChatResult::Stream(_) => {
+            panic!("Expected complete response, got stream");
+        }
+    }
+}
+
 /// Test multi-token generation with deterministic sampling.
+/// Mirrors: test_e2e_basic.py::test_chat_completion_multi_token
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_multi_token() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
     let params = SamplingParams {
         max_tokens: 64,
-        temperature: 0.0, // Greedy sampling
+        temperature: 0.0,
         ..Default::default()
     };
 
@@ -95,32 +140,6 @@ async fn test_chat_completion_multi_token() {
             panic!("Expected complete response, got stream");
         }
     }
-}
-
-/// Test synchronous chat interface (from async context).
-#[tokio::test]
-#[ignore]
-async fn test_sync_chat_completion() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
-
-    let params = SamplingParams {
-        max_tokens: 32,
-        temperature: 0.7,
-        ..Default::default()
-    };
-
-    let messages = vec![make_message("user", "Say hello in one sentence.")];
-
-    let result = client.chat(MODEL_ID, messages, params);
-    assert!(result.is_ok(), "Sync chat request failed: {:?}", result.err());
-
-    let response = result.unwrap();
-    assert!(!response.text.is_empty(), "Response text should not be empty");
-    println!("Sync response: {}", response.text);
 }
 
 #[cfg(test)]

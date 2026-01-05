@@ -1,14 +1,15 @@
 //! End-to-end stop sequence tests.
 //!
-//! Tests that generation stops at specified sequences.
+//! Mirrors orchard-py/tests/test_e2e_stop_sequences.py
+//! Tests that generation stops at specified sequences with real content assertions.
 //! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{Client, EngineFetcher, ModelRegistry, SamplingParams};
+use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
 
-const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
+const MODEL_ID: &str = "moondream3";
 
 fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
@@ -17,12 +18,78 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
     msg
 }
 
+/// Test stop sequence on "blue" - should output red, white, blue and stop at blue
+/// Mirrors: test_e2e_stop_sequences.py::test_chat_completion_respects_stop_sequence
+#[tokio::test]
+#[ignore]
+async fn test_stop_sequence_national_colors() {
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
+
+    let registry = Arc::new(ModelRegistry::new().unwrap());
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+
+    let params = SamplingParams {
+        max_tokens: 100,
+        temperature: 0.0,
+        stop: vec!["blue".to_string()],
+        ..Default::default()
+    };
+
+    let messages = vec![make_message(
+        "user",
+        "What are the national colors of the United States of America?",
+    )];
+
+    let result = client.achat(MODEL_ID, messages, params, false).await;
+    assert!(result.is_ok(), "Stop sequence test failed: {:?}", result.err());
+
+    match result.unwrap() {
+        orchard::ChatResult::Complete(response) => {
+            let text = response.text.to_lowercase();
+            println!("Output: {}", response.text);
+
+            // Should contain red, white, and blue
+            assert!(
+                text.contains("red"),
+                "Expected 'red' in response but got: '{}'",
+                response.text
+            );
+            assert!(
+                text.contains("white"),
+                "Expected 'white' in response but got: '{}'",
+                response.text
+            );
+            assert!(
+                text.contains("blue"),
+                "Expected 'blue' in response but got: '{}'",
+                response.text
+            );
+
+            // Should end with "blue" (the stop sequence)
+            assert!(
+                text.trim().ends_with("blue"),
+                "Expected response to end with 'blue' but got: '{}'",
+                response.text
+            );
+
+            // Finish reason should be "stop"
+            assert_eq!(
+                response.finish_reason.as_deref(),
+                Some("stop"),
+                "Finish reason should be 'stop'"
+            );
+        }
+        orchard::ChatResult::Stream(_) => {
+            panic!("Expected complete response, got stream");
+        }
+    }
+}
+
 /// Test stop sequence on newline.
 #[tokio::test]
 #[ignore]
 async fn test_stop_on_newline() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -71,8 +138,7 @@ async fn test_stop_on_newline() {
 #[tokio::test]
 #[ignore]
 async fn test_stop_on_word() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -113,8 +179,7 @@ async fn test_stop_on_word() {
 #[tokio::test]
 #[ignore]
 async fn test_multiple_stop_sequences() {
-    let fetcher = EngineFetcher::new();
-    fetcher.get_engine_path().await.expect("Failed to get engine path");
+    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
