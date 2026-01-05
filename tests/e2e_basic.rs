@@ -4,11 +4,43 @@
 //! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
+
+/// Session-scoped test fixture. Created once, shared across all tests.
+struct TestFixture {
+    _runtime: tokio::runtime::Runtime,
+    _engine: InferenceEngine,
+    client: Client,
+}
+
+static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
+
+fn init_fixture() -> TestFixture {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("Failed to create runtime");
+
+    let (engine, client) = rt.block_on(async {
+        let engine = InferenceEngine::new().await.expect("Failed to start engine");
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        let client = Client::connect(registry).await.expect("Failed to connect");
+        (engine, client)
+    });
+
+    TestFixture { _runtime: rt, _engine: engine, client }
+}
+
+async fn get_fixture() -> &'static TestFixture {
+    tokio::task::spawn_blocking(|| FIXTURE.get_or_init(init_fixture))
+        .await
+        .expect("spawn_blocking failed")
+}
 
 fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
@@ -22,11 +54,7 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_first_token() {
-    // InferenceEngine spawns PIE if not running, waits for ready
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
 
     let params = SamplingParams {
         max_tokens: 1,
@@ -36,7 +64,7 @@ async fn test_chat_completion_first_token() {
 
     let messages = vec![make_message("user", "Hello!")];
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
@@ -64,20 +92,17 @@ async fn test_chat_completion_first_token() {
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_capital_of_france() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
 
     let params = SamplingParams {
         max_tokens: 10,
-        temperature: 0.0, // Greedy for deterministic output
+        temperature: 0.0,
         ..Default::default()
     };
 
     let messages = vec![make_message("user", "What is the capital of France?")];
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
@@ -108,10 +133,7 @@ async fn test_chat_completion_capital_of_france() {
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_multi_token() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
 
     let params = SamplingParams {
         max_tokens: 64,
@@ -124,7 +146,7 @@ async fn test_chat_completion_multi_token() {
         "Provide one friendly sentence introducing yourself.",
     )];
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
