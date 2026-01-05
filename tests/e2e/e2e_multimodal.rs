@@ -2,14 +2,15 @@
 //!
 //! Mirrors orchard-py/tests/test_e2e_multimodal.py
 //! Tests image-based inference with vision-capable models using real test images.
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use base64::Engine;
-use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
+use orchard::SamplingParams;
+
+use crate::fixture::get_fixture;
 
 const MODEL_ID: &str = "moondream3";
 
@@ -51,10 +52,8 @@ fn make_image_message(role: &str, text: &str, image_base64: &str) -> HashMap<Str
 #[tokio::test]
 #[ignore]
 async fn test_multimodal_apple_image() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 50,
@@ -93,10 +92,8 @@ async fn test_multimodal_apple_image() {
 #[tokio::test]
 #[ignore]
 async fn test_multimodal_moondream_image() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 50,

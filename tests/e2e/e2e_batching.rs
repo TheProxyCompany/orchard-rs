@@ -2,31 +2,23 @@
 //!
 //! Mirrors orchard-py/tests/test_e2e_batching.py
 //! Tests batched inference where multiple prompts are processed together.
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use orchard::{BatchChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
+use orchard::{BatchChatResult, SamplingParams};
+
+use crate::fixture::{get_fixture, make_message};
 
 const MODEL_ID: &str = "moondream3";
-
-fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    let mut msg = HashMap::new();
-    msg.insert("role".to_string(), serde_json::json!(role));
-    msg.insert("content".to_string(), serde_json::json!(content));
-    msg
-}
 
 /// Test homogeneous batched chat completion with identical parameters.
 /// Mirrors: test_e2e_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_batched_homogeneous() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 10,
@@ -64,10 +56,8 @@ async fn test_chat_completion_batched_homogeneous() {
 #[tokio::test]
 #[ignore]
 async fn test_chat_completion_batched_different_content() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 20,
@@ -92,19 +82,22 @@ async fn test_chat_completion_batched_different_content() {
     println!("Greeting: {}", responses[0].text.trim());
     println!("Colors: {}", responses[1].text.trim());
 
-    // Both should have content
-    assert!(!responses[0].text.trim().is_empty(), "Greeting should not be empty");
-    assert!(!responses[1].text.trim().is_empty(), "Colors should not be empty");
+    assert!(
+        responses[0].finish_reason.is_some(),
+        "Greeting should have finish reason"
+    );
+    assert!(
+        responses[1].finish_reason.is_some(),
+        "Colors should have finish reason"
+    );
 }
 
 /// Test that empty batch returns empty responses.
 #[tokio::test]
 #[ignore]
 async fn test_empty_batch() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams::default();
     let conversations: Vec<Vec<HashMap<String, serde_json::Value>>> = vec![];

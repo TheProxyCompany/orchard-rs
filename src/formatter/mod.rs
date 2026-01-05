@@ -94,6 +94,15 @@ impl ChatFormatter {
         "<|image|>"
     }
 
+    /// Image placeholder token to use for layout detection.
+    pub fn image_placeholder_token(&self) -> &str {
+        self.control_tokens
+            .start_image_token
+            .as_deref()
+            .filter(|token| !token.is_empty())
+            .unwrap_or(self.default_image_placeholder())
+    }
+
     /// Apply the chat template to a conversation.
     ///
     /// # Arguments

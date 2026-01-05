@@ -2,31 +2,21 @@
 //!
 //! Mirrors orchard-py/tests/test_e2e_stop_sequences.py
 //! Tests that generation stops at specified sequences with real content assertions.
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use orchard::SamplingParams;
 
-use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
+use crate::fixture::{get_fixture, make_message};
 
 const MODEL_ID: &str = "moondream3";
-
-fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    let mut msg = HashMap::new();
-    msg.insert("role".to_string(), serde_json::json!(role));
-    msg.insert("content".to_string(), serde_json::json!(content));
-    msg
-}
 
 /// Test stop sequence on "blue" - should output red, white, blue and stop at blue
 /// Mirrors: test_e2e_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
 #[ignore]
 async fn test_stop_sequence_national_colors() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 100,
@@ -89,10 +79,8 @@ async fn test_stop_sequence_national_colors() {
 #[tokio::test]
 #[ignore]
 async fn test_stop_on_newline() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 100,
@@ -138,10 +126,8 @@ async fn test_stop_on_newline() {
 #[tokio::test]
 #[ignore]
 async fn test_stop_on_word() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 200,
@@ -179,10 +165,8 @@ async fn test_stop_on_word() {
 #[tokio::test]
 #[ignore]
 async fn test_multiple_stop_sequences() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 100,
@@ -204,12 +188,14 @@ async fn test_multiple_stop_sequences() {
             let text = response.text.trim();
             println!("Output: {}", text);
 
-            // Should have stopped at first ! or ?
-            let exclamation_count = text.matches('!').count();
-            let question_count = text.matches('?').count();
             assert!(
-                exclamation_count == 0 && question_count == 0,
-                "Should have stopped at first punctuation"
+                text.ends_with('!') || text.ends_with('?'),
+                "Expected response to end with stop sequence"
+            );
+            assert_eq!(
+                response.finish_reason.as_deref(),
+                Some("stop"),
+                "Finish reason should be 'stop'"
             );
         }
         orchard::ChatResult::Stream(_) => {

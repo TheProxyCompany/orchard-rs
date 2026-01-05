@@ -1,53 +1,13 @@
 //! End-to-end basic chat completion tests.
 //!
 //! Mirrors orchard-py/tests/test_e2e_basic.py and test_e2e_multi_token.py
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use orchard::SamplingParams;
 
-use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
+use crate::fixture::{get_fixture, make_message};
 
 const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
-
-/// Session-scoped test fixture. Created once, shared across all tests.
-struct TestFixture {
-    _runtime: tokio::runtime::Runtime,
-    _engine: InferenceEngine,
-    client: Client,
-}
-
-static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
-
-fn init_fixture() -> TestFixture {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("Failed to create runtime");
-
-    let (engine, client) = rt.block_on(async {
-        let engine = InferenceEngine::new().await.expect("Failed to start engine");
-        let registry = Arc::new(ModelRegistry::new().unwrap());
-        let client = Client::connect(registry).await.expect("Failed to connect");
-        (engine, client)
-    });
-
-    TestFixture { _runtime: rt, _engine: engine, client }
-}
-
-async fn get_fixture() -> &'static TestFixture {
-    tokio::task::spawn_blocking(|| FIXTURE.get_or_init(init_fixture))
-        .await
-        .expect("spawn_blocking failed")
-}
-
-fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    let mut msg = HashMap::new();
-    msg.insert("role".to_string(), serde_json::json!(role));
-    msg.insert("content".to_string(), serde_json::json!(content));
-    msg
-}
 
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_e2e_basic.py::test_chat_completion_first_token

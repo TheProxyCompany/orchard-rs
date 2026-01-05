@@ -2,29 +2,19 @@
 //!
 //! Mirrors orchard-py/tests/test_e2e_client.py
 //! Tests the embedded IPC client with both streaming and non-streaming.
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use orchard::SamplingParams;
 
-use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    let mut msg = HashMap::new();
-    msg.insert("role".to_string(), serde_json::json!(role));
-    msg.insert("content".to_string(), serde_json::json!(content));
-    msg
-}
+use crate::fixture::{get_fixture, make_message};
 
 /// Test non-streaming chat with exact token count - Llama model
 /// Mirrors: test_e2e_client.py::test_client_chat_non_streaming (Llama variant)
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_non_streaming_llama_poem() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 5,
@@ -65,10 +55,8 @@ async fn test_client_chat_non_streaming_llama_poem() {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_non_streaming_llama_plea() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 5,
@@ -105,10 +93,8 @@ async fn test_client_chat_non_streaming_llama_plea() {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_non_streaming_moondream_poem() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 5,
@@ -145,10 +131,8 @@ async fn test_client_chat_non_streaming_moondream_poem() {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_streaming_llama_artist() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 96,
@@ -193,10 +177,8 @@ async fn test_client_chat_streaming_llama_artist() {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_streaming_llama_movie() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 96,
@@ -241,10 +223,8 @@ async fn test_client_chat_streaming_llama_movie() {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_streaming_moondream_artist() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 96,

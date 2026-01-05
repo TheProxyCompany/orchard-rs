@@ -2,31 +2,21 @@
 //!
 //! Mirrors orchard-py/tests/test_e2e_structured_generation.py
 //! Tests JSON schema-constrained generation.
-//! Run with: cargo test -- --ignored
+//! Run with: cargo test --test e2e -- --ignored
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use orchard::SamplingParams;
 
-use orchard::{Client, InferenceEngine, ModelRegistry, SamplingParams};
+use crate::fixture::{get_fixture, make_message};
 
 const MODEL_ID: &str = "moondream3";
-
-fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    let mut msg = HashMap::new();
-    msg.insert("role".to_string(), serde_json::json!(role));
-    msg.insert("content".to_string(), serde_json::json!(content));
-    msg
-}
 
 /// Test generation with JSON schema response format.
 /// Mirrors: test_e2e_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
 #[ignore]
 async fn test_json_structured_output() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let schema = serde_json::json!({
         "type": "object",
@@ -53,6 +43,13 @@ async fn test_json_structured_output() {
     let params = SamplingParams {
         max_tokens: 100,
         temperature: 0.0,
+        response_format: Some(serde_json::json!({
+            "type": "json_schema",
+            "name": "color_summary",
+            "description": null,
+            "strict": true,
+            "json_schema": schema,
+        })),
         ..Default::default()
     };
 
@@ -127,10 +124,8 @@ async fn test_json_structured_output() {
 #[tokio::test]
 #[ignore]
 async fn test_list_structured_output() {
-    let _engine = InferenceEngine::new().await.expect("Failed to start engine");
-
-    let registry = Arc::new(ModelRegistry::new().unwrap());
-    let client = Client::connect(registry).await.expect("Failed to connect to engine");
+    let fixture = get_fixture().await;
+    let client = &fixture.client;
 
     let params = SamplingParams {
         max_tokens: 50,

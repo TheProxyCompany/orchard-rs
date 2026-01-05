@@ -271,11 +271,7 @@ impl Client {
             &image_buffers,
             &capabilities,
             &content_order,
-            info.formatter
-                .control_tokens
-                .start_image_token
-                .as_deref()
-                .unwrap_or(info.formatter.default_image_placeholder()),
+            info.formatter.image_placeholder_token(),
             info.formatter.should_clip_image_placeholder(),
             info.formatter.control_tokens.coord_placeholder.as_deref(),
         )
@@ -462,11 +458,7 @@ impl Client {
                 &image_buffers,
                 &capabilities,
                 &content_order,
-                info.formatter
-                    .control_tokens
-                    .start_image_token
-                    .as_deref()
-                    .unwrap_or(info.formatter.default_image_placeholder()),
+                info.formatter.image_placeholder_token(),
                 info.formatter.should_clip_image_placeholder(),
                 info.formatter.control_tokens.coord_placeholder.as_deref(),
             )

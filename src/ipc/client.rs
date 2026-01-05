@@ -101,10 +101,15 @@ pub struct IPCClient {
     management_socket: Arc<Mutex<Option<Socket>>>,
     response_channel_id: u64,
     request_id_counter: AtomicU64,
-    active_requests: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseDelta>>>>,
+    active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     listener_handle: Option<JoinHandle<()>>,
     should_stop: Arc<AtomicBool>,
     event_callback: Option<EventCallback>,
+}
+
+struct ActiveRequest {
+    sender: mpsc::UnboundedSender<ResponseDelta>,
+    remaining_finals: usize,
 }
 
 impl IPCClient {
@@ -199,7 +204,7 @@ impl IPCClient {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
 
-            for (request_id, tx) in requests.iter() {
+            for (request_id, entry) in requests.iter() {
                 let error_delta = ResponseDelta {
                     request_id: *request_id,
                     is_final_delta: true,
@@ -208,7 +213,7 @@ impl IPCClient {
                     error: Some("Engine process disconnected.".to_string()),
                     ..Default::default()
                 };
-                let _ = tx.send(error_delta);
+                let _ = entry.sender.send(error_delta);
             }
         }
 
@@ -257,11 +262,24 @@ impl IPCClient {
         )?;
 
         let (tx, rx) = mpsc::unbounded_channel();
+        let remaining_finals = prompts
+            .iter()
+            .map(|prompt| {
+                let num_candidates = prompt.num_candidates.max(1);
+                let best_of = prompt.best_of.unwrap_or(num_candidates).max(1);
+                let final_candidates = prompt.final_candidates.unwrap_or(best_of).max(1);
+                final_candidates as usize
+            })
+            .sum::<usize>()
+            .max(1);
 
         self.active_requests
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(request_id, tx);
+            .insert(request_id, ActiveRequest {
+                sender: tx,
+                remaining_finals,
+            });
 
         let msg = nng::Message::from(payload.as_slice());
         socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
@@ -363,7 +381,7 @@ impl Drop for IPCClient {
 /// Response listener - runs on dedicated thread for minimal latency.
 fn run_response_listener(
     socket: Socket,
-    active_requests: Arc<Mutex<HashMap<u64, mpsc::UnboundedSender<ResponseDelta>>>>,
+    active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     should_stop: Arc<AtomicBool>,
     response_channel_id: u64,
     event_callback: Option<EventCallback>,
@@ -387,21 +405,30 @@ fn run_response_listener(
                         let request_id = delta.request_id;
                         let is_final = delta.is_final_delta;
 
-                        let sender = active_requests
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .get(&request_id)
-                            .cloned();
+                        let sender = {
+                            let mut requests = active_requests
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            if let Some(entry) = requests.get_mut(&request_id) {
+                                if is_final {
+                                    entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
+                                    if entry.remaining_finals == 0 {
+                                        let sender = entry.sender.clone();
+                                        requests.remove(&request_id);
+                                        Some(sender)
+                                    } else {
+                                        Some(entry.sender.clone())
+                                    }
+                                } else {
+                                    Some(entry.sender.clone())
+                                }
+                            } else {
+                                None
+                            }
+                        };
 
                         if let Some(tx) = sender {
                             let _ = tx.send(delta);
-
-                            if is_final {
-                                active_requests
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
-                                    .remove(&request_id);
-                            }
                         }
                     }
                 }
@@ -435,7 +462,7 @@ fn run_response_listener(
             requests.len()
         );
 
-        for (request_id, tx) in requests.iter() {
+        for (request_id, entry) in requests.iter() {
             let error_delta = ResponseDelta {
                 request_id: *request_id,
                 is_final_delta: true,
@@ -444,7 +471,7 @@ fn run_response_listener(
                 error: Some("Engine process disconnected.".to_string()),
                 ..Default::default()
             };
-            let _ = tx.send(error_delta);
+            let _ = entry.sender.send(error_delta);
         }
     }
 }
