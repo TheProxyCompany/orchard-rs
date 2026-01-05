@@ -62,8 +62,8 @@ pub struct ModelEntry {
     pub resolved: Option<ResolvedModel>,
     pub bytes_downloaded: Option<u64>,
     pub bytes_total: Option<u64>,
-    /// Oneshot sender for activation completion (set when ACTIVATING)
-    pub activation_tx: Option<oneshot::Sender<Result<(), String>>>,
+    /// Activation completion waiters (set when ACTIVATING)
+    pub activation_waiters: Vec<oneshot::Sender<Result<(), String>>>,
 }
 
 impl Default for ModelEntry {
@@ -76,7 +76,7 @@ impl Default for ModelEntry {
             resolved: None,
             bytes_downloaded: None,
             bytes_total: None,
-            activation_tx: None,
+            activation_waiters: Vec::new(),
         }
     }
 }
@@ -181,13 +181,26 @@ impl ModelRegistry {
             let entry = entries.get_mut(canonical_id)
                 .ok_or_else(|| format!("Model '{}' not in registry", canonical_id))?;
 
-            // If already activating, we can't start another activation
-            if entry.state == ModelLoadState::Activating {
-                return Err(format!("Model '{}' is already activating", canonical_id));
+            match entry.state {
+                ModelLoadState::Ready => {
+                    let _ = tx.send(Ok(()));
+                    return Ok(rx);
+                }
+                ModelLoadState::Failed => {
+                    let message = entry.error.clone()
+                        .unwrap_or_else(|| format!("Model '{}' failed to load", canonical_id));
+                    let _ = tx.send(Err(message));
+                    return Ok(rx);
+                }
+                ModelLoadState::Activating => {
+                    entry.activation_waiters.push(tx);
+                    return Ok(rx);
+                }
+                _ => {
+                    entry.state = ModelLoadState::Activating;
+                    entry.activation_waiters.push(tx);
+                }
             }
-
-            entry.state = ModelLoadState::Activating;
-            entry.activation_tx = Some(tx);
         }
 
         // Get IPC client
@@ -267,7 +280,7 @@ impl ModelRegistry {
             entry.notify.notify_waiters();
 
             // Signal activation complete
-            if let Some(tx) = entry.activation_tx.take() {
+            for tx in entry.activation_waiters.drain(..) {
                 let _ = tx.send(Ok(()));
             }
         }
@@ -282,7 +295,7 @@ impl ModelRegistry {
             entry.notify.notify_waiters();
 
             // Signal activation failed
-            if let Some(tx) = entry.activation_tx.take() {
+            for tx in entry.activation_waiters.drain(..) {
                 let _ = tx.send(Err(error.to_string()));
             }
         }
@@ -341,6 +354,7 @@ impl ModelRegistry {
         entry.bytes_downloaded = None;
         entry.bytes_total = None;
         entry.notify = Arc::new(Notify::new());
+        entry.activation_waiters.clear();
 
         if resolved.source == "local" || resolved.source == "hf_cache" {
             match ChatFormatter::new(&resolved.model_path) {
@@ -472,25 +486,26 @@ impl ModelRegistry {
     ) -> Result<(ModelLoadState, Option<ModelInfo>, Option<String>), String> {
         let canonical_id = self.canonicalize(model_id).await?;
 
-        // Single lock acquisition: get state and notify handle together
-        let (state, info, error, notify) = {
+        let _notify: Arc<Notify>;
+        let notified = {
             let entries = self.entries.read().await;
             let entry = entries
                 .get(&canonical_id)
                 .ok_or_else(|| format!("Model '{}' has not been scheduled", model_id))?;
-            (entry.state, entry.info.clone(), entry.error.clone(), entry.notify.clone())
-        };
 
-        // Notify is edge-triggered: if notify_waiters() fired before we wait, the signal is lost.
-        // Return immediately unless we're in a state that will transition.
-        if !matches!(state, ModelLoadState::Downloading | ModelLoadState::Activating) {
-            return Ok((state, info, error));
-        }
+            // Notify is edge-triggered: arm the waiter while holding the lock.
+            if !matches!(entry.state, ModelLoadState::Downloading | ModelLoadState::Activating) {
+                return Ok((entry.state, entry.info.clone(), entry.error.clone()));
+            }
+
+            _notify = entry.notify.clone();
+            _notify.notified()
+        };
 
         // Wait for state transition
         match timeout {
-            Some(d) => { let _ = tokio::time::timeout(d, notify.notified()).await; }
-            None => notify.notified().await,
+            Some(d) => { let _ = tokio::time::timeout(d, notified).await; }
+            None => notified.await,
         }
 
         // Re-read final state
@@ -571,6 +586,9 @@ impl ModelRegistry {
         if let Some(entry) = entries.get_mut(&canonical_id) {
             entry.state = ModelLoadState::Ready;
             entry.notify.notify_waiters();
+            for tx in entry.activation_waiters.drain(..) {
+                let _ = tx.send(Ok(()));
+            }
         }
     }
 
@@ -588,8 +606,8 @@ impl ModelRegistry {
             entry.notify.notify_waiters();
 
             // Signal activation failed if waiting
-            if let Some(tx) = entry.activation_tx.take() {
-                let _ = tx.send(Err(error));
+            for tx in entry.activation_waiters.drain(..) {
+                let _ = tx.send(Err(error.clone()));
             }
         }
     }
