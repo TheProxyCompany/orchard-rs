@@ -314,8 +314,9 @@ impl InferenceEngine {
             .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(250)))
             .map_err(|e| Error::StartupFailed(format!("Failed to set timeout: {}", e)))?;
 
+        // Non-blocking dial - nng will reconnect automatically in background
         socket
-            .dial(&response_url)
+            .dial_async(&response_url)
             .map_err(|e| Error::StartupFailed(format!("Failed to dial {}: {}", response_url, e)))?;
 
         let deadline = Instant::now() + self.startup_timeout;
