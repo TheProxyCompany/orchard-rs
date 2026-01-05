@@ -16,6 +16,24 @@ pub fn pid_is_alive(pid: u32) -> bool {
 
     #[cfg(unix)]
     {
+        #[cfg(target_os = "macos")]
+        {
+            let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+            let info_size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+            let result = unsafe {
+                libc::proc_pidinfo(
+                    pid as libc::c_int,
+                    libc::PROC_PIDTBSDINFO,
+                    0,
+                    &mut info as *mut _ as *mut libc::c_void,
+                    info_size,
+                )
+            };
+            if result == info_size && info.pbi_status == libc::SZOMB {
+                return false;
+            }
+        }
+
         // Signal 0 doesn't send a signal but checks if the process exists
         unsafe {
             let result = libc::kill(pid as libc::pid_t, 0);
