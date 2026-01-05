@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use minijinja::{context, Environment, Value};
+use minijinja_contrib::pycompat::unknown_method_callback;
 
 pub use control_tokens::{ControlTokens, Role, RoleTags};
 pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
@@ -108,6 +109,7 @@ impl ChatFormatter {
         task: Option<&str>,
     ) -> Result<String> {
         let mut env = Environment::new();
+        env.set_unknown_method_callback(unknown_method_callback);
         env.add_template("chat", &self.template_source)
             .map_err(|e| Error::Template(e.to_string()))?;
 

@@ -188,12 +188,14 @@ impl Client {
     pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
         // Create event callback that routes model_loaded events to registry
         let registry_for_events = Arc::clone(&registry);
+        let runtime_handle = tokio::runtime::Handle::current();
         let event_callback: EventCallback = Arc::new(move |event_name: &str, payload: &Value| {
             if event_name == "model_loaded" {
                 let registry = Arc::clone(&registry_for_events);
                 let payload = payload.clone();
                 // Spawn a task to handle the event (handle_model_loaded is async)
-                tokio::spawn(async move {
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
                     registry.handle_model_loaded(&payload).await;
                 });
             }

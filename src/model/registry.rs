@@ -462,6 +462,9 @@ impl ModelRegistry {
     }
 
     /// Wait for a model to finish loading.
+    ///
+    /// Returns immediately if state is already terminal (Loading/Ready/Failed).
+    /// Only blocks if state is Downloading or Activating.
     pub async fn await_model(
         &self,
         model_id: &str,
@@ -469,34 +472,32 @@ impl ModelRegistry {
     ) -> Result<(ModelLoadState, Option<ModelInfo>, Option<String>), String> {
         let canonical_id = self.canonicalize(model_id).await?;
 
-        let notify = {
+        // Single lock acquisition: get state and notify handle together
+        let (state, info, error, notify) = {
             let entries = self.entries.read().await;
             let entry = entries
                 .get(&canonical_id)
                 .ok_or_else(|| format!("Model '{}' has not been scheduled", model_id))?;
-            entry.notify.clone()
+            (entry.state, entry.info.clone(), entry.error.clone(), entry.notify.clone())
         };
 
-        // Wait for notification or timeout
-        if let Some(duration) = timeout {
-            if tokio::time::timeout(duration, notify.notified())
-                .await
-                .is_err()
-            {
-                let entries = self.entries.read().await;
-                if let Some(entry) = entries.get(&canonical_id) {
-                    return Ok((entry.state, entry.info.clone(), entry.error.clone()));
-                }
-            }
-        } else {
-            notify.notified().await;
+        // Notify is edge-triggered: if notify_waiters() fired before we wait, the signal is lost.
+        // Return immediately unless we're in a state that will transition.
+        if !matches!(state, ModelLoadState::Downloading | ModelLoadState::Activating) {
+            return Ok((state, info, error));
         }
 
+        // Wait for state transition
+        match timeout {
+            Some(d) => { let _ = tokio::time::timeout(d, notify.notified()).await; }
+            None => notify.notified().await,
+        }
+
+        // Re-read final state
         let entries = self.entries.read().await;
         let entry = entries
             .get(&canonical_id)
             .ok_or_else(|| format!("Model '{}' not found", canonical_id))?;
-
         Ok((entry.state, entry.info.clone(), entry.error.clone()))
     }
 
