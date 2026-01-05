@@ -1,29 +1,13 @@
 //! End-to-end basic chat completion tests.
 //!
-//! These tests require a running PIE instance and model weights.
-//! Set PIE_LOCAL_BUILD to run integration tests.
+//! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{Client, ModelRegistry, SamplingParams};
+use orchard::{Client, EngineFetcher, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
-
-/// Check if PIE is available for testing.
-fn pie_available() -> bool {
-    std::env::var("PIE_LOCAL_BUILD").is_ok()
-}
-
-/// Skip test if PIE is not available.
-macro_rules! require_pie {
-    () => {
-        if !pie_available() {
-            eprintln!("SKIPPED: PIE_LOCAL_BUILD not set. Set it to run integration tests.");
-            return;
-        }
-    };
-}
 
 fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
@@ -34,8 +18,11 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 
 /// Test basic non-streaming chat completion with a single token.
 #[tokio::test]
+#[ignore]
 async fn test_chat_completion_first_token() {
-    require_pie!();
+    // Ensure engine is available (downloads if needed)
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -73,8 +60,10 @@ async fn test_chat_completion_first_token() {
 
 /// Test multi-token generation with deterministic sampling.
 #[tokio::test]
+#[ignore]
 async fn test_chat_completion_multi_token() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -110,8 +99,10 @@ async fn test_chat_completion_multi_token() {
 
 /// Test synchronous chat interface (from async context).
 #[tokio::test]
+#[ignore]
 async fn test_sync_chat_completion() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -124,7 +115,6 @@ async fn test_sync_chat_completion() {
 
     let messages = vec![make_message("user", "Say hello in one sentence.")];
 
-    // Test that sync chat() works from within async context
     let result = client.chat(MODEL_ID, messages, params);
     assert!(result.is_ok(), "Sync chat request failed: {:?}", result.err());
 

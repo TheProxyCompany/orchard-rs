@@ -1,29 +1,14 @@
 //! End-to-end stop sequence tests.
 //!
 //! Tests that generation stops at specified sequences.
-//! Set PIE_LOCAL_BUILD to run integration tests.
+//! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{Client, ModelRegistry, SamplingParams};
+use orchard::{Client, EngineFetcher, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
-
-/// Check if PIE is available for testing.
-fn pie_available() -> bool {
-    std::env::var("PIE_LOCAL_BUILD").is_ok()
-}
-
-/// Skip test if PIE is not available.
-macro_rules! require_pie {
-    () => {
-        if !pie_available() {
-            eprintln!("SKIPPED: PIE_LOCAL_BUILD not set. Set it to run integration tests.");
-            return;
-        }
-    };
-}
 
 fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
@@ -34,8 +19,10 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 
 /// Test stop sequence on newline.
 #[tokio::test]
+#[ignore]
 async fn test_stop_on_newline() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -82,8 +69,10 @@ async fn test_stop_on_newline() {
 
 /// Test stop sequence on specific word.
 #[tokio::test]
+#[ignore]
 async fn test_stop_on_word() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -122,8 +111,10 @@ async fn test_stop_on_word() {
 
 /// Test multiple stop sequences.
 #[tokio::test]
+#[ignore]
 async fn test_multiple_stop_sequences() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");

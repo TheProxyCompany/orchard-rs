@@ -1,30 +1,15 @@
 //! End-to-end multimodal tests.
 //!
 //! Tests image-based inference with vision-capable models.
-//! Set PIE_LOCAL_BUILD to run integration tests.
+//! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use base64::Engine;
-use orchard::{Client, ModelRegistry, SamplingParams};
+use orchard::{Client, EngineFetcher, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "moondream3";
-
-/// Check if PIE is available for testing.
-fn pie_available() -> bool {
-    std::env::var("PIE_LOCAL_BUILD").is_ok()
-}
-
-/// Skip test if PIE is not available.
-macro_rules! require_pie {
-    () => {
-        if !pie_available() {
-            eprintln!("SKIPPED: PIE_LOCAL_BUILD not set. Set it to run integration tests.");
-            return;
-        }
-    };
-}
 
 #[allow(dead_code)]
 fn make_text_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
@@ -50,7 +35,6 @@ fn make_image_message(role: &str, text: &str, image_base64: &str) -> HashMap<Str
 /// Create a simple 2x2 red test image in JPEG format as base64.
 fn create_test_image_base64() -> String {
     // This is a minimal valid JPEG: 2x2 pixels, all red
-    // In a real test, you'd load a proper test image
     let minimal_jpeg: &[u8] = &[
         0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
         0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
@@ -88,8 +72,10 @@ fn create_test_image_base64() -> String {
 
 /// Test image captioning with moondream3.
 #[tokio::test]
+#[ignore]
 async fn test_image_captioning() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -123,8 +109,10 @@ async fn test_image_captioning() {
 
 /// Test visual question answering.
 #[tokio::test]
+#[ignore]
 async fn test_visual_question_answering() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");

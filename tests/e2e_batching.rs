@@ -1,34 +1,14 @@
 //! End-to-end batching tests.
 //!
 //! Tests batched inference where multiple prompts are processed together.
-//! These tests verify:
-//! - ONE IPC message is sent for all prompts (not N separate messages)
-//! - prompt_index correctly demultiplexes responses
-//! - Responses are correlated back to their prompts
-//!
-//! Set PIE_LOCAL_BUILD to run these tests against a real engine.
+//! Run with: cargo test -- --ignored
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchard::{BatchChatResult, Client, ModelRegistry, SamplingParams};
+use orchard::{BatchChatResult, Client, EngineFetcher, ModelRegistry, SamplingParams};
 
 const MODEL_ID: &str = "moondream3";
-
-/// Check if PIE is available for testing.
-fn pie_available() -> bool {
-    std::env::var("PIE_LOCAL_BUILD").is_ok()
-}
-
-/// Skip test if PIE is not available.
-macro_rules! require_pie {
-    () => {
-        if !pie_available() {
-            eprintln!("SKIPPED: PIE_LOCAL_BUILD not set. Set it to run integration tests.");
-            return;
-        }
-    };
-}
 
 fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
@@ -38,14 +18,11 @@ fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value>
 }
 
 /// Test homogeneous batched chat completion with identical parameters.
-///
-/// Verifies that:
-/// - Multiple conversations are sent in ONE IPC message
-/// - Each response is correctly identified by prompt_index
-/// - Responses are returned in order
 #[tokio::test]
+#[ignore]
 async fn test_chat_completion_batched_homogeneous() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -83,8 +60,10 @@ async fn test_chat_completion_batched_homogeneous() {
 
 /// Test batched requests with different content per conversation.
 #[tokio::test]
+#[ignore]
 async fn test_chat_completion_batched_different_content() {
-    require_pie!();
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
 
     let registry = Arc::new(ModelRegistry::new().unwrap());
     let client = Client::connect(registry).await.expect("Failed to connect to engine");
@@ -109,34 +88,30 @@ async fn test_chat_completion_batched_different_content() {
     };
     assert_eq!(responses.len(), 2, "Should have 2 responses");
 
-    // First response should be short (greeting)
     println!("Greeting: {}", responses[0].text.trim());
-
-    // Second response should list colors
     println!("Colors: {}", responses[1].text.trim());
 }
 
 /// Test that empty batch returns empty responses.
 #[tokio::test]
+#[ignore]
 async fn test_empty_batch() {
-    // This test doesn't require PIE - it tests edge case handling
+    let fetcher = EngineFetcher::new();
+    fetcher.get_engine_path().await.expect("Failed to get engine path");
+
     let registry = Arc::new(ModelRegistry::new().unwrap());
+    let client = Client::connect(registry).await.expect("Failed to connect to engine");
 
-    // Connection may fail without PIE, but that's ok for this test
-    if let Ok(client) = Client::connect(registry).await {
-        let params = SamplingParams::default();
-        let conversations: Vec<Vec<HashMap<String, serde_json::Value>>> = vec![];
+    let params = SamplingParams::default();
+    let conversations: Vec<Vec<HashMap<String, serde_json::Value>>> = vec![];
 
-        let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
-        match result {
-            Ok(BatchChatResult::Complete(responses)) => {
-                assert!(responses.is_empty(), "Empty batch should return empty responses")
-            }
-            Ok(BatchChatResult::Stream(_)) => panic!("Expected complete result, got stream"),
-            Err(_) => {
-                // Expected without PIE running
-            }
+    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
+    match result {
+        Ok(BatchChatResult::Complete(responses)) => {
+            assert!(responses.is_empty(), "Empty batch should return empty responses")
         }
+        Ok(BatchChatResult::Stream(_)) => panic!("Expected complete result, got stream"),
+        Err(e) => panic!("Empty batch should succeed: {:?}", e),
     }
 }
 
