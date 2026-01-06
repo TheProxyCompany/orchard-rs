@@ -10,8 +10,8 @@ use nng::options::Options;
 
 use crate::engine::fetch::EngineFetcher;
 use crate::engine::multiprocess::{
-    filter_alive_pids, pid_is_alive, read_pid_file, read_ref_pids, reap_engine_process,
-    stop_engine_process, write_pid_file, write_ref_pids,
+    filter_alive_pids, pid_is_alive, pid_is_engine, read_pid_file, read_ref_pids,
+    reap_engine_process, stop_engine_process, write_pid_file, write_ref_pids,
 };
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{response_url, EVENT_TOPIC_PREFIX};
@@ -204,6 +204,15 @@ impl InferenceEngine {
                 return Ok(());
             }
         };
+
+        if !pid_is_engine(pid) {
+            log::warn!(
+                "PID {} does not belong to proxy_inference_engine; cleaning stale files.",
+                pid
+            );
+            cleanup_all(&paths);
+            return Ok(());
+        }
         log::info!("Sending shutdown signal to engine process {}", pid);
 
         if stop_engine_process(pid, timeout) {
@@ -409,6 +418,15 @@ impl InferenceEngine {
 
         if !pid_is_alive(pid) {
             log::debug!("Engine PID {} already exited", pid);
+            cleanup_files();
+            return Ok(());
+        }
+
+        if !pid_is_engine(pid) {
+            log::warn!(
+                "PID {} does not belong to proxy_inference_engine; cleaning stale files.",
+                pid
+            );
             cleanup_files();
             return Ok(());
         }

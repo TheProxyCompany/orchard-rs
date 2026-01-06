@@ -10,26 +10,15 @@ use std::time::{Duration, Instant};
 
 /// Check if a process is still alive.
 pub fn pid_is_alive(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
-    }
+  if pid == 0 {
+    return false;
+  }
 
     #[cfg(unix)]
     {
         #[cfg(target_os = "macos")]
         {
-            let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-            let info_size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
-            let result = unsafe {
-                libc::proc_pidinfo(
-                    pid as libc::c_int,
-                    libc::PROC_PIDTBSDINFO,
-                    0,
-                    &mut info as *mut _ as *mut libc::c_void,
-                    info_size,
-                )
-            };
-            if result == info_size && info.pbi_status == libc::SZOMB {
+            if pid_is_zombie(pid) {
                 return false;
             }
         }
@@ -50,6 +39,56 @@ pub fn pid_is_alive(pid: u32) -> bool {
     {
         true // Non-Unix: can't check liveness, assume running
     }
+}
+
+#[cfg(target_os = "macos")]
+fn pid_is_zombie(pid: u32) -> bool {
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let info_size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    let result = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            info_size,
+        )
+    };
+    result == info_size && info.pbi_status == libc::SZOMB
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pid_is_zombie(_pid: u32) -> bool {
+    false
+}
+
+/// Check if a PID belongs to the PIE engine binary.
+#[cfg(target_os = "macos")]
+pub fn pid_is_engine(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+
+    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    let result = unsafe {
+        libc::proc_pidpath(
+            pid as libc::c_int,
+            buf.as_mut_ptr() as *mut libc::c_void,
+            buf.len() as u32,
+        )
+    };
+    if result <= 0 {
+        return false;
+    }
+
+    let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const i8) };
+    let path = cstr.to_string_lossy();
+    path.ends_with("/proxy_inference_engine")
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn pid_is_engine(_pid: u32) -> bool {
+    true
 }
 
 /// Read a PID from a file.
@@ -124,6 +163,9 @@ pub fn stop_engine_process(pid: u32, timeout: Duration) -> bool {
     if wait_for_exit(pid as u32, timeout) {
         return true;
     }
+    if pid_is_zombie(pid as u32) {
+        return true;
+    }
 
     log::warn!("Engine did not respond to SIGINT, sending SIGTERM");
 
@@ -135,13 +177,20 @@ pub fn stop_engine_process(pid: u32, timeout: Duration) -> bool {
     if wait_for_exit(pid as u32, timeout) {
         return true;
     }
+    if pid_is_zombie(pid as u32) {
+        return true;
+    }
 
     log::error!("Engine did not respond to SIGTERM, sending SIGKILL");
 
     // Last resort: SIGKILL
     unsafe { libc::kill(pid, SIGKILL) };
 
-    !pid_is_alive(pid as u32)
+    if wait_for_exit(pid as u32, Duration::from_secs(5)) {
+        return true;
+    }
+
+    pid_is_zombie(pid as u32)
 }
 
 #[cfg(not(unix))]
