@@ -40,9 +40,16 @@ async fn test_chat_completion_batched_homogeneous() {
     };
     assert_eq!(responses.len(), 2, "Should have 2 responses (one per conversation)");
 
+    let mut output_lines = Vec::new();
+    for (i, response) in responses.iter().enumerate() {
+        output_lines.push(format!("Response {}: {}", i, response.text));
+    }
+    if !output_lines.is_empty() {
+        println!("{}", output_lines.join("\n"));
+    }
+
     for (i, response) in responses.iter().enumerate() {
         assert!(!response.text.is_empty(), "Response {} should have content", i);
-        println!("Response {}: {}", i, response.text);
         assert!(
             response.finish_reason.is_some(),
             "Response {} should have finish reason",
@@ -79,8 +86,11 @@ async fn test_chat_completion_batched_different_content() {
     };
     assert_eq!(responses.len(), 2, "Should have 2 responses");
 
-    println!("Greeting: {}", responses[0].text.trim());
-    println!("Colors: {}", responses[1].text.trim());
+    let output_lines = vec![
+        format!("Greeting: {}", responses[0].text.trim()),
+        format!("Colors: {}", responses[1].text.trim()),
+    ];
+    println!("{}", output_lines.join("\n"));
 
     assert!(
         responses[0].finish_reason.is_some(),

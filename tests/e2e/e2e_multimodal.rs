@@ -74,7 +74,8 @@ async fn test_multimodal_apple_image() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let output_text = response.text.to_lowercase();
-            println!("Output text: {}", output_text);
+            let output_lines = vec![format!("Output text: {}", output_text)];
+            println!("{}", output_lines.join("\n"));
             assert!(
                 output_text.contains("apple"),
                 "Expected 'apple' in response but got: '{}'",
@@ -114,7 +115,8 @@ async fn test_multimodal_moondream_image() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let output_text = response.text.to_lowercase();
-            println!("Output text: {}", output_text);
+            let output_lines = vec![format!("Output text: {}", output_text)];
+            println!("{}", output_lines.join("\n"));
             assert!(
                 output_text.contains("burger"),
                 "Expected 'burger' in response but got: '{}'",

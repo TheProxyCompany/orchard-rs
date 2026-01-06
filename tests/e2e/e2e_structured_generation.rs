@@ -61,7 +61,7 @@ async fn test_json_structured_output() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.trim();
-            println!("Structured output: {}", text);
+            let mut output_lines = vec![format!("Structured output: {}", text)];
 
             // Find JSON in response (may be wrapped in markdown code blocks)
             let json_str = if text.starts_with("```") {
@@ -82,6 +82,27 @@ async fn test_json_structured_output() {
 
             // Parse as JSON
             let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
+            if let Ok(value) = parsed.as_ref() {
+                if let Some(obj) = value.as_object() {
+                    if let Some(color_obj) = obj.get("color").and_then(|v| v.as_object()) {
+                        let r = color_obj.get("R").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                        let g = color_obj.get("G").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                        let b = color_obj.get("B").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                        if let Some(confidence) = obj.get("confidence").and_then(|v| v.as_f64()) {
+                            output_lines.push(format!(
+                                "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {}) with confidence {}\x1b[0m",
+                                r, g, b, MODEL_ID, r, g, b, confidence
+                            ));
+                        } else {
+                            output_lines.push(format!(
+                                "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {})\x1b[0m",
+                                r, g, b, MODEL_ID, r, g, b
+                            ));
+                        }
+                    }
+                }
+            }
+            println!("{}", output_lines.join("\n"));
             assert!(parsed.is_ok(), "Output should be valid JSON: {}", json_str);
 
             let value = parsed.unwrap();
@@ -96,23 +117,6 @@ async fn test_json_structured_output() {
             assert!(color_obj.contains_key("R"), "Should have 'R' field");
             assert!(color_obj.contains_key("G"), "Should have 'G' field");
             assert!(color_obj.contains_key("B"), "Should have 'B' field");
-
-            // Extract and display color
-            let r = color_obj.get("R").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-            let g = color_obj.get("G").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-            let b = color_obj.get("B").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-
-            if let Some(confidence) = obj.get("confidence").and_then(|v| v.as_f64()) {
-                println!(
-                    "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {}) with confidence {}\x1b[0m",
-                    r, g, b, MODEL_ID, r, g, b, confidence
-                );
-            } else {
-                println!(
-                    "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {})\x1b[0m",
-                    r, g, b, MODEL_ID, r, g, b
-                );
-            }
         }
         orchard::ChatResult::Stream(_) => {
             panic!("Expected complete response, got stream");
@@ -144,7 +148,8 @@ async fn test_list_structured_output() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.trim();
-            println!("List output:\n{}", text);
+            let output_lines = vec![format!("List output:\n{}", text)];
+            println!("{}", output_lines.join("\n"));
 
             let lines: Vec<_> = text.lines().filter(|l| !l.is_empty()).collect();
             assert!(

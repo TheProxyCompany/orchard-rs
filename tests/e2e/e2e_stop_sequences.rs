@@ -36,7 +36,8 @@ async fn test_stop_sequence_national_colors() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.to_lowercase();
-            println!("Output: {}", response.text);
+            let output_lines = vec![format!("Output: {}", response.text)];
+            println!("{}", output_lines.join("\n"));
 
             // Should contain red, white, and blue
             assert!(
@@ -100,7 +101,8 @@ async fn test_stop_on_newline() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.trim();
-            println!("Output: {}", text);
+            let output_lines = vec![format!("Output: {}", text)];
+            println!("{}", output_lines.join("\n"));
 
             // Should have stopped before second line
             let newline_count = text.matches('\n').count();
@@ -147,7 +149,8 @@ async fn test_stop_on_word() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text;
-            println!("Output: {}", text);
+            let output_lines = vec![format!("Output: {}", text)];
+            println!("{}", output_lines.join("\n"));
 
             // Should not contain numbers after 5
             assert!(
@@ -186,7 +189,8 @@ async fn test_multiple_stop_sequences() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.trim();
-            println!("Output: {}", text);
+            let output_lines = vec![format!("Output: {}", text)];
+            println!("{}", output_lines.join("\n"));
 
             assert!(
                 text.ends_with('!') || text.ends_with('?'),

@@ -25,15 +25,16 @@ async fn test_client_chat_non_streaming_llama_poem() {
     let prompt = "You have 5 output tokens. Respond with a 5 token poem.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
+            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text));
+            println!("{}", output_lines.join("\n"));
             assert!(!response.text.trim().is_empty(), "Response should have content");
-            println!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text);
             assert!(
                 response.usage.completion_tokens > 0,
                 "Should have generated tokens"
@@ -67,15 +68,16 @@ async fn test_client_chat_non_streaming_llama_plea() {
     let prompt = "You have 5 output tokens. Respond with a 5 token plea for more tokens.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
+            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text));
+            println!("{}", output_lines.join("\n"));
             assert!(!response.text.trim().is_empty(), "Response should have content");
-            println!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text);
             assert_eq!(
                 response.usage.completion_tokens, 5,
                 "Expected exactly 5 completion tokens, got {}",
@@ -105,15 +107,16 @@ async fn test_client_chat_non_streaming_moondream_poem() {
     let prompt = "You have 5 output tokens. Respond with a 5 token poem.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("moondream3", messages, params, false).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
+            output_lines.push(format!("moondream3: {}", response.text));
+            println!("{}", output_lines.join("\n"));
             assert!(!response.text.trim().is_empty(), "Response should have content");
-            println!("moondream3: {}", response.text);
             assert_eq!(
                 response.usage.completion_tokens, 5,
                 "Expected exactly 5 completion tokens, got {}",
@@ -143,8 +146,7 @@ async fn test_client_chat_streaming_llama_artist() {
     let prompt = "Respond with your favorite musical artist of the last 10 years.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
-    print!("meta-llama/Llama-3.1-8B-Instruct: ");
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
@@ -156,12 +158,12 @@ async fn test_client_chat_streaming_llama_artist() {
 
             while let Some(delta) = stream.recv().await {
                 if let Some(text) = &delta.content {
-                    print!("{}", text);
                     content.push_str(text);
                 }
                 deltas.push(delta);
             }
-            println!();
+            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", content));
+            println!("{}", output_lines.join("\n"));
 
             assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
             assert!(!content.trim().is_empty(), "Expected non-empty content");
@@ -189,8 +191,7 @@ async fn test_client_chat_streaming_llama_movie() {
     let prompt = "Respond with your favorite movie of the last 10 years.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
-    print!("meta-llama/Llama-3.1-8B-Instruct: ");
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
@@ -202,12 +203,12 @@ async fn test_client_chat_streaming_llama_movie() {
 
             while let Some(delta) = stream.recv().await {
                 if let Some(text) = &delta.content {
-                    print!("{}", text);
                     content.push_str(text);
                 }
                 deltas.push(delta);
             }
-            println!();
+            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", content));
+            println!("{}", output_lines.join("\n"));
 
             assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
             assert!(!content.trim().is_empty(), "Expected non-empty content");
@@ -235,8 +236,7 @@ async fn test_client_chat_streaming_moondream_artist() {
     let prompt = "Respond with your favorite musical artist of the last 10 years.";
     let messages = vec![make_message("user", prompt)];
 
-    println!("User: {}", prompt);
-    print!("moondream3: ");
+    let mut output_lines = vec![format!("User: {}", prompt)];
 
     let result = client.achat("moondream3", messages, params, true).await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
@@ -248,12 +248,12 @@ async fn test_client_chat_streaming_moondream_artist() {
 
             while let Some(delta) = stream.recv().await {
                 if let Some(text) = &delta.content {
-                    print!("{}", text);
                     content.push_str(text);
                 }
                 deltas.push(delta);
             }
-            println!();
+            output_lines.push(format!("moondream3: {}", content));
+            println!("{}", output_lines.join("\n"));
 
             assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
             assert!(!content.trim().is_empty(), "Expected non-empty content");

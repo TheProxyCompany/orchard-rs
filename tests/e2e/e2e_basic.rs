@@ -67,7 +67,8 @@ async fn test_chat_completion_capital_of_france() {
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            println!("Response: {}", response.text);
+            let output_lines = vec![format!("Response: {}", response.text)];
+            println!("{}", output_lines.join("\n"));
             assert!(
                 response.text.contains("Paris"),
                 "Expected 'Paris' in response but got: '{}'",
@@ -112,7 +113,8 @@ async fn test_chat_completion_multi_token() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             assert!(!response.text.is_empty(), "Response text should not be empty");
-            println!("Generated text: {}", response.text);
+            let output_lines = vec![format!("Generated text: {}", response.text)];
+            println!("{}", output_lines.join("\n"));
             assert!(
                 response.usage.completion_tokens > 0,
                 "Should have generated tokens"
