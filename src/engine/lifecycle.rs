@@ -250,7 +250,7 @@ impl InferenceEngine {
         let engine_running = engine_pid.map(pid_is_alive).unwrap_or(false);
 
         // Launch engine if needed
-        if !engine_running && alive_refs.is_empty() {
+        if !engine_running {
             log::debug!("Inference engine not running. Launching new instance.");
 
             // Clean up stale state files
