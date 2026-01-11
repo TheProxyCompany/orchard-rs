@@ -4,8 +4,10 @@ pub mod control_tokens;
 pub mod multimodal;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 
+use minijinja::value::Object;
 use minijinja::{context, Environment, Value};
 use minijinja_contrib::pycompat::unknown_method_callback;
 
@@ -13,6 +15,65 @@ pub use control_tokens::{ControlTokens, Role, RoleTags};
 pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
 
 use crate::error::{Error, Result};
+
+/// Wrapper that renders as text but exposes an indexable `type` field for Jinja.
+/// Mirrors Python's _RenderableText behavior.
+#[derive(Debug, Clone)]
+struct RenderableText(String);
+
+impl fmt::Display for RenderableText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Object for RenderableText {
+    fn get_value(self: &std::sync::Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "type" => Some(Value::from("text")),
+            "text" => Some(Value::from(self.0.clone())),
+            _ => None,
+        }
+    }
+}
+
+/// Placeholder wrapper that renders as empty text and reports `type=image`.
+#[derive(Debug, Clone)]
+struct RenderableImage;
+
+impl fmt::Display for RenderableImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl Object for RenderableImage {
+    fn get_value(self: &std::sync::Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "type" => Some(Value::from("image")),
+            _ => None,
+        }
+    }
+}
+
+/// Placeholder wrapper for capability inputs. Renders as empty.
+#[derive(Debug, Clone)]
+struct RenderableCapability;
+
+impl fmt::Display for RenderableCapability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl Object for RenderableCapability {
+    fn get_value(self: &std::sync::Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "type" => Some(Value::from("capability")),
+            _ => None,
+        }
+    }
+}
 
 /// Determine model type from config.
 fn determine_model_type(config: &serde_json::Value) -> &str {
@@ -207,6 +268,25 @@ impl ChatFormatter {
                 Value::from(arr.iter().map(Self::json_to_minijinja).collect::<Vec<_>>())
             }
             serde_json::Value::Object(obj) => {
+                // Check if this is a content part with a "type" field
+                // If so, wrap it in the appropriate Renderable type
+                if let Some(type_val) = obj.get("type").and_then(|v| v.as_str()) {
+                    match type_val {
+                        "text" => {
+                            if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
+                                return Value::from_object(RenderableText(text.to_string()));
+                            }
+                        }
+                        "image" => {
+                            return Value::from_object(RenderableImage);
+                        }
+                        "capability" => {
+                            return Value::from_object(RenderableCapability);
+                        }
+                        _ => {}
+                    }
+                }
+                // Default: convert to a regular map
                 let map: std::collections::BTreeMap<String, Value> = obj
                     .iter()
                     .map(|(k, v)| (k.clone(), Self::json_to_minijinja(v)))
