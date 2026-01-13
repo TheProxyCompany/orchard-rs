@@ -2,7 +2,13 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use ctor::dtor;
 use orchard::{Client, InferenceEngine, ModelRegistry};
+
+#[dtor]
+fn cleanup_engine() {
+    let _ = InferenceEngine::shutdown(Duration::from_secs(30));
+}
 
 const PRELOAD_MODELS: [&str; 2] = [
     "meta-llama/Llama-3.1-8B-Instruct",
