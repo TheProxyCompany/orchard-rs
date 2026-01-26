@@ -119,13 +119,13 @@ impl ModelRegistry {
         let (_state, canonical_id) = self
             .schedule_model(requested_model_id, false)
             .await
-            .map_err(|e| Error::ModelNotReady(e))?;
+            .map_err(Error::ModelNotReady)?;
 
         // Wait for local readiness (download + formatter)
         let (state, info, error) = self
             .await_model(&canonical_id, None)
             .await
-            .map_err(|e| Error::ModelNotReady(e))?;
+            .map_err(Error::ModelNotReady)?;
 
         if state == ModelLoadState::Failed {
             return Err(Error::ModelNotReady(error.unwrap_or_else(|| {
@@ -160,7 +160,7 @@ impl ModelRegistry {
         let activation_rx = self
             .send_load_model_command(requested_model_id, &canonical_id, &info)
             .await
-            .map_err(|e| Error::ModelNotReady(e))?;
+            .map_err(Error::ModelNotReady)?;
 
         // Wait for activation to complete
         match activation_rx.await {
