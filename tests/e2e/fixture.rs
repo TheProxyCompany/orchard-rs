@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use ctor::dtor;
@@ -16,6 +16,7 @@ pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
     _engine: InferenceEngine,
     pub(crate) client: Client,
+    pub(crate) registry: Arc<ModelRegistry>,
 }
 
 static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
@@ -34,12 +35,12 @@ fn init_fixture() -> TestFixture {
         .build()
         .expect("Failed to create runtime");
 
-    let (engine, client) = rt.block_on(async {
+    let (engine, client, registry) = rt.block_on(async {
         let engine = InferenceEngine::new()
             .await
             .expect("Failed to start engine");
-        let registry = std::sync::Arc::new(ModelRegistry::new().unwrap());
-        let client = Client::connect(std::sync::Arc::clone(&registry))
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        let client = Client::connect(Arc::clone(&registry))
             .await
             .expect("Failed to connect");
 
@@ -50,13 +51,14 @@ fn init_fixture() -> TestFixture {
                 .unwrap_or_else(|e| panic!("Failed to preload model {}: {}", model_id, e));
         }
 
-        (engine, client)
+        (engine, client, registry)
     });
 
     TestFixture {
         _runtime: rt,
         _engine: engine,
         client,
+        registry,
     }
 }
 

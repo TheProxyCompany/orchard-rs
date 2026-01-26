@@ -267,9 +267,12 @@ impl MoondreamClient {
         image_data_url: Option<&str>,
         spatial_refs: &[SpatialRef],
         reasoning: bool,
-        params: SamplingParams,
+        mut params: SamplingParams,
     ) -> Result<QueryResult> {
         let messages = self.build_query_messages(prompt, image_data_url, spatial_refs);
+
+        // Pass reasoning flag to chat template
+        params.reasoning = reasoning;
 
         // Get streaming response
         let result = self

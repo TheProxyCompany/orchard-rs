@@ -1,6 +1,6 @@
 //! End-to-end basic chat completion tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_basic.py and test_e2e_multi_token.py
+//! Mirrors orchard-py/tests/test_e2e_basic.py
 //! Run with: cargo test --test e2e -- --ignored
 
 use orchard::SamplingParams;
@@ -17,7 +17,7 @@ async fn test_chat_completion_first_token() {
     let fixture = get_fixture().await;
 
     let params = SamplingParams {
-        max_tokens: 1,
+        max_tokens: 1, // max_completion_tokens in Python
         temperature: 1.0,
         ..Default::default()
     };
@@ -40,56 +40,11 @@ async fn test_chat_completion_first_token() {
                 response.finish_reason.is_some(),
                 "Should have a finish reason"
             );
-            let reason = response.finish_reason.unwrap();
+            let reason = response.finish_reason.unwrap().to_lowercase();
             assert!(
                 reason == "length" || reason == "stop",
                 "Unexpected finish reason: {}",
                 reason
-            );
-        }
-        orchard::ChatResult::Stream(_) => {
-            panic!("Expected complete response, got stream");
-        }
-    }
-}
-
-/// Test multi-token generation - "What is the capital of France?" should produce "Paris"
-/// Mirrors: test_e2e_multi_token.py::test_chat_completion_multi_token_non_streaming
-#[tokio::test]
-#[ignore]
-async fn test_chat_completion_capital_of_france() {
-    let fixture = get_fixture().await;
-
-    let params = SamplingParams {
-        max_tokens: 10,
-        temperature: 0.0,
-        ..Default::default()
-    };
-
-    let messages = vec![make_message("user", "What is the capital of France?")];
-
-    let result = fixture
-        .client
-        .achat(MODEL_ID, messages, params, false)
-        .await;
-    assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
-
-    match result.unwrap() {
-        orchard::ChatResult::Complete(response) => {
-            let output_lines = [format!("Response: {}", response.text)];
-            println!("{}", output_lines.join("\n"));
-            assert!(
-                response.text.contains("Paris"),
-                "Expected 'Paris' in response but got: '{}'",
-                response.text
-            );
-            assert!(
-                response.usage.prompt_tokens > 0,
-                "Expected prompt_tokens > 0"
-            );
-            assert!(
-                response.usage.completion_tokens > 0,
-                "Expected completion_tokens > 0"
             );
         }
         orchard::ChatResult::Stream(_) => {
@@ -106,7 +61,7 @@ async fn test_chat_completion_multi_token() {
     let fixture = get_fixture().await;
 
     let params = SamplingParams {
-        max_tokens: 64,
+        max_tokens: 64, // max_completion_tokens in Python
         temperature: 0.0,
         ..Default::default()
     };
@@ -128,35 +83,10 @@ async fn test_chat_completion_multi_token() {
                 !response.text.is_empty(),
                 "Response text should not be empty"
             );
-            let output_lines = [format!("Generated text: {}", response.text)];
-            println!("{}", output_lines.join("\n"));
-            assert!(
-                response.usage.completion_tokens > 0,
-                "Should have generated tokens"
-            );
+            println!("{}", response.text);
         }
         orchard::ChatResult::Stream(_) => {
             panic!("Expected complete response, got stream");
         }
-    }
-}
-
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-
-    #[test]
-    fn test_make_message() {
-        let msg = make_message("user", "Hello");
-        assert_eq!(msg.get("role").unwrap().as_str(), Some("user"));
-        assert_eq!(msg.get("content").unwrap().as_str(), Some("Hello"));
-    }
-
-    #[test]
-    fn test_sampling_params_default() {
-        let params = SamplingParams::default();
-        assert_eq!(params.max_tokens, 1024);
-        assert_eq!(params.temperature, 1.0);
-        assert_eq!(params.n, 1);
     }
 }

@@ -37,6 +37,10 @@ impl Object for RenderableText {
             _ => None,
         }
     }
+
+    fn render(self: &std::sync::Arc<Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// Placeholder wrapper that renders as empty text and reports `type=image`.
@@ -182,6 +186,9 @@ impl ChatFormatter {
     ) -> Result<String> {
         let mut env = Environment::new();
         env.set_unknown_method_callback(unknown_method_callback);
+        // Match Python's Jinja2 Environment config
+        env.set_trim_blocks(true);
+        env.set_lstrip_blocks(true);
         env.add_template("chat", &self.template_source)
             .map_err(|e| Error::Template(e.to_string()))?;
 
