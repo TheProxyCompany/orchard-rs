@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
 
       - name: Bump version
         id: version
@@ -45,6 +46,7 @@ jobs:
           sed -i '' "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
 
           echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "previous=${CURRENT}" >> $GITHUB_OUTPUT
           echo "Bumped version: ${CURRENT} → ${NEW_VERSION}"
 
       - name: Build
@@ -62,15 +64,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
+          git add Cargo.toml Cargo.lock
           git commit -m "v${{ steps.version.outputs.version }}"
           git push
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            --notes-start-tag "${{ steps.version.outputs.previous }}"
