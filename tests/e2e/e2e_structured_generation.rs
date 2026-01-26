@@ -152,11 +152,11 @@ async fn test_list_structured_output() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let text = response.text.trim();
-            let output_lines = vec![format!("List output:\n{}", text)];
+            let output_lines = [format!("List output:\n{}", text)];
             println!("{}", output_lines.join("\n"));
 
             let lines: Vec<_> = text.lines().filter(|l| !l.is_empty()).collect();
-            assert!(lines.len() >= 1, "Should have at least one line of output");
+            assert!(!lines.is_empty(), "Should have at least one line of output");
         }
         orchard::ChatResult::Stream(_) => {
             panic!("Expected complete response, got stream");

@@ -101,7 +101,7 @@ async fn test_chat_completion_batched_different_content() {
     };
     assert_eq!(responses.len(), 2, "Should have 2 responses");
 
-    let output_lines = vec![
+    let output_lines = [
         format!("Greeting: {}", responses[0].text.trim()),
         format!("Colors: {}", responses[1].text.trim()),
     ];
@@ -194,7 +194,7 @@ mod unit_tests {
     /// Test conversation construction.
     #[test]
     fn test_batch_conversation_construction() {
-        let conversations = vec![
+        let conversations = [
             vec![make_message("user", "Hello")],
             vec![make_message("user", "World")],
         ];

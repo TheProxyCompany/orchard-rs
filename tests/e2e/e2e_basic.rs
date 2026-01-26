@@ -76,7 +76,7 @@ async fn test_chat_completion_capital_of_france() {
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            let output_lines = vec![format!("Response: {}", response.text)];
+            let output_lines = [format!("Response: {}", response.text)];
             println!("{}", output_lines.join("\n"));
             assert!(
                 response.text.contains("Paris"),
@@ -128,7 +128,7 @@ async fn test_chat_completion_multi_token() {
                 !response.text.is_empty(),
                 "Response text should not be empty"
             );
-            let output_lines = vec![format!("Generated text: {}", response.text)];
+            let output_lines = [format!("Generated text: {}", response.text)];
             println!("{}", output_lines.join("\n"));
             assert!(
                 response.usage.completion_tokens > 0,
