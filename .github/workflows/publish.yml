@@ -69,10 +69,10 @@ jobs:
           git push
 
       - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          gh release create "${{ steps.version.outputs.version }}" \
-            --title "v${{ steps.version.outputs.version }}" \
-            --generate-notes \
-            --notes-start-tag "${{ steps.version.outputs.previous }}"
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
