@@ -67,7 +67,10 @@ async fn test_chat_completion_structured_json_response() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             let content = response.text.trim();
-            assert!(!content.is_empty(), "Expected structured content in completion.");
+            assert!(
+                !content.is_empty(),
+                "Expected structured content in completion."
+            );
 
             // Find JSON in response
             let start = content.find('{');
@@ -106,10 +109,7 @@ async fn test_chat_completion_structured_json_response() {
 
             // Verify confidence if present
             if let Some(confidence) = obj.get("confidence") {
-                assert!(
-                    confidence.is_number(),
-                    "'confidence' should be a number"
-                );
+                assert!(confidence.is_number(), "'confidence' should be a number");
             }
 
             // Print colored output like Python

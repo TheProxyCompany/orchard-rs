@@ -81,7 +81,10 @@ async fn test_moondream_reasoning_grounding() {
         let grounding = &reasoning.grounding;
         println!("{:?}", grounding);
 
-        assert!(!grounding.is_empty(), "Grounding output should not be empty");
+        assert!(
+            !grounding.is_empty(),
+            "Grounding output should not be empty"
+        );
 
         for ground in grounding {
             assert!(!ground.points.is_empty(), "Should have points");

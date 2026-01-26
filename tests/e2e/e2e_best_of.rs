@@ -37,10 +37,7 @@ async fn test_chat_completion_best_of_selects_top_n() {
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
             // Only the top-n (n=1) choice should be returned
-            assert!(
-                !response.text.is_empty(),
-                "Response should have content"
-            );
+            assert!(!response.text.is_empty(), "Response should have content");
             println!("{}", response.text);
 
             // Usage should reflect that all best_of candidates were generated

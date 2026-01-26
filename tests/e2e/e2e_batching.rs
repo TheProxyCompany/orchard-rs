@@ -44,8 +44,16 @@ async fn test_chat_completion_batched_homogeneous() {
 
     for (index, response) in responses.iter().enumerate() {
         println!("{}", response.text);
-        assert!(!response.text.is_empty(), "Response {} should have content", index);
-        assert!(response.finish_reason.is_some(), "Response {} should have finish_reason", index);
+        assert!(
+            !response.text.is_empty(),
+            "Response {} should have content",
+            index
+        );
+        assert!(
+            response.finish_reason.is_some(),
+            "Response {} should have finish_reason",
+            index
+        );
     }
 }
 

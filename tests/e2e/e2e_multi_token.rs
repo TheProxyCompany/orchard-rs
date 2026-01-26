@@ -19,7 +19,7 @@ async fn test_chat_completion_multi_token_non_streaming() {
 
     let params = SamplingParams {
         temperature: 0.0,
-        max_tokens: 10, // max_completion_tokens in Python
+        max_tokens: 10,  // max_completion_tokens in Python
         top_logprobs: 5, // logprobs=True, top_logprobs=5 in Python
         ..Default::default()
     };

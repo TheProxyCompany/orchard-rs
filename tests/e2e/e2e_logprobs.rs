@@ -33,10 +33,7 @@ async fn test_chat_completion_with_logprobs() {
         orchard::ChatResult::Complete(response) => {
             // Check that we have deltas with logprobs
             // Note: The IPC client stores logprobs in ClientDelta.top_logprobs
-            assert!(
-                !response.text.is_empty(),
-                "Response should have content"
-            );
+            assert!(!response.text.is_empty(), "Response should have content");
 
             // Check logprobs in deltas
             for delta in &response.deltas {
@@ -148,7 +145,10 @@ async fn test_chat_completion_logprobs_streaming() {
                 if !chunk.top_logprobs.is_empty() {
                     // Verify structure if present
                     for token_logprobs in &chunk.top_logprobs {
-                        assert!(token_logprobs.len() <= 3, "Should not exceed requested amount");
+                        assert!(
+                            token_logprobs.len() <= 3,
+                            "Should not exceed requested amount"
+                        );
                     }
                 }
             }

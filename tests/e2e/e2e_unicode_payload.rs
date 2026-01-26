@@ -57,7 +57,10 @@ async fn test_unicode_payload_round_trip() {
             );
 
             let full_content: String = chunks.join("");
-            assert!(!full_content.is_empty(), "Expected non-empty streamed content");
+            assert!(
+                !full_content.is_empty(),
+                "Expected non-empty streamed content"
+            );
             assert!(
                 !full_content.contains(replacement_char),
                 "Replacement char found in final content"

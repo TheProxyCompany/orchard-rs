@@ -41,18 +41,9 @@ async fn test_chat_completion_respects_stop_sequence() {
             let content = response.text.to_lowercase();
             println!("{}", response.text);
 
-            assert!(
-                content.contains("red"),
-                "Expected 'red' in response"
-            );
-            assert!(
-                content.contains("white"),
-                "Expected 'white' in response"
-            );
-            assert!(
-                content.contains("blue"),
-                "Expected 'blue' in response"
-            );
+            assert!(content.contains("red"), "Expected 'red' in response");
+            assert!(content.contains("white"), "Expected 'white' in response");
+            assert!(content.contains("blue"), "Expected 'blue' in response");
             assert!(
                 content.ends_with("blue"),
                 "Expected response to end with 'blue' but got: '{}'",

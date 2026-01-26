@@ -192,7 +192,9 @@ async fn run_sequential_request_determinism(model_id: &str) {
             "Provide one friendly sentence introducing yourself.",
         )];
 
-        let result = client.achat(model_id, messages, params.clone(), false).await;
+        let result = client
+            .achat(model_id, messages, params.clone(), false)
+            .await;
         assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
         match result.unwrap() {
