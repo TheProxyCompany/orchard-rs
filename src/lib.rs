@@ -14,7 +14,8 @@ pub use error::{Error, Result};
 pub use ipc::client::{EventCallback, IPCClient, ResponseDelta};
 pub use ipc::endpoints;
 pub use ipc::serialization::{
-    build_batch_request_payload, CapabilityEntry, LayoutEntry, PromptPayload, RequestType, SegmentType,
+    build_batch_request_payload, CapabilityEntry, LayoutEntry, PromptPayload, RequestType,
+    SegmentType,
 };
 
 pub use engine::fetch::EngineFetcher;
@@ -26,12 +27,13 @@ pub use model::resolver::{ModelResolver, ResolvedModel};
 
 pub use formatter::control_tokens::{ControlTokens, Role, RoleTags};
 pub use formatter::multimodal::{
-    build_multimodal_layout, build_multimodal_messages, CapabilityInput, ContentType,
-    LayoutSegment,
+    build_multimodal_layout, build_multimodal_messages, CapabilityInput, ContentType, LayoutSegment,
 };
 pub use formatter::ChatFormatter;
 
-pub use client::{BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, SamplingParams, UsageStats};
+pub use client::{
+    BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, SamplingParams, UsageStats,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

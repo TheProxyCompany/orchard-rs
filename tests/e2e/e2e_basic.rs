@@ -24,12 +24,18 @@ async fn test_chat_completion_first_token() {
 
     let messages = vec![make_message("user", "Hello!")];
 
-    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture
+        .client
+        .achat(MODEL_ID, messages, params, false)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            assert!(!response.text.is_empty(), "Response text should not be empty");
+            assert!(
+                !response.text.is_empty(),
+                "Response text should not be empty"
+            );
             assert!(
                 response.finish_reason.is_some(),
                 "Should have a finish reason"
@@ -62,7 +68,10 @@ async fn test_chat_completion_capital_of_france() {
 
     let messages = vec![make_message("user", "What is the capital of France?")];
 
-    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture
+        .client
+        .achat(MODEL_ID, messages, params, false)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
@@ -107,12 +116,18 @@ async fn test_chat_completion_multi_token() {
         "Provide one friendly sentence introducing yourself.",
     )];
 
-    let result = fixture.client.achat(MODEL_ID, messages, params, false).await;
+    let result = fixture
+        .client
+        .achat(MODEL_ID, messages, params, false)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            assert!(!response.text.is_empty(), "Response text should not be empty");
+            assert!(
+                !response.text.is_empty(),
+                "Response text should not be empty"
+            );
             let output_lines = vec![format!("Generated text: {}", response.text)];
             println!("{}", output_lines.join("\n"));
             assert!(

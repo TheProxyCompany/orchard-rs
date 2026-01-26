@@ -56,7 +56,11 @@ async fn test_json_structured_output() {
     let messages = vec![make_message("user", &prompt)];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Structured generation failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Structured generation failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -152,10 +156,7 @@ async fn test_list_structured_output() {
             println!("{}", output_lines.join("\n"));
 
             let lines: Vec<_> = text.lines().filter(|l| !l.is_empty()).collect();
-            assert!(
-                lines.len() >= 1,
-                "Should have at least one line of output"
-            );
+            assert!(lines.len() >= 1, "Should have at least one line of output");
         }
         orchard::ChatResult::Stream(_) => {
             panic!("Expected complete response, got stream");

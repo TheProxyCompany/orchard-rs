@@ -69,7 +69,14 @@ impl ModelResolver {
 
         // 3. Resolve via HuggingFace
         let resolved = self
-            .resolve_huggingface(hf_repo, if hf_repo != identifier { Some(identifier) } else { None })
+            .resolve_huggingface(
+                hf_repo,
+                if hf_repo != identifier {
+                    Some(identifier)
+                } else {
+                    None
+                },
+            )
             .await?;
 
         self.resolved_cache.insert(cache_key, resolved.clone());
@@ -86,13 +93,18 @@ impl ModelResolver {
 
         // Check absolute path
         if path.is_absolute() && path.is_dir() {
-            return Ok(Some(self.build_resolved_model(path, "local", None, None).await?));
+            return Ok(Some(
+                self.build_resolved_model(path, "local", None, None).await?,
+            ));
         }
 
         // Check relative path
         if path.is_dir() {
             let resolved = std::fs::canonicalize(&path)?;
-            return Ok(Some(self.build_resolved_model(resolved, "local", None, None).await?));
+            return Ok(Some(
+                self.build_resolved_model(resolved, "local", None, None)
+                    .await?,
+            ));
         }
 
         Ok(None)
@@ -112,10 +124,7 @@ impl ModelResolver {
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| config_path),
             Err(e) => {
-                return Err(Error::DownloadFailed(
-                    repo_id.to_string(),
-                    e.to_string(),
-                ));
+                return Err(Error::DownloadFailed(repo_id.to_string(), e.to_string()));
             }
         };
 
@@ -254,7 +263,6 @@ impl ModelResolver {
         metadata
     }
 }
-
 
 #[cfg(test)]
 mod tests {

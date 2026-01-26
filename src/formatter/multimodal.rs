@@ -52,8 +52,18 @@ pub fn build_multimodal_messages(
     Vec<(ContentType, usize)>,
 )> {
     let available_roles: std::collections::HashSet<String> = [
-        formatter.control_tokens.roles.system.as_ref().map(|_| "system"),
-        formatter.control_tokens.roles.agent.as_ref().map(|_| "agent"),
+        formatter
+            .control_tokens
+            .roles
+            .system
+            .as_ref()
+            .map(|_| "system"),
+        formatter
+            .control_tokens
+            .roles
+            .agent
+            .as_ref()
+            .map(|_| "agent"),
         formatter.control_tokens.roles.user.as_ref().map(|_| "user"),
         formatter.control_tokens.roles.tool.as_ref().map(|_| "tool"),
     ]
@@ -86,7 +96,10 @@ pub fn build_multimodal_messages(
             .map(|r| normalize_role(r, &available_roles))
             .unwrap_or_else(|| "user".to_string());
 
-        let content = message.get("content").cloned().unwrap_or(serde_json::Value::Null);
+        let content = message
+            .get("content")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         if let Some(text) = content.as_str() {
             let mut msg = HashMap::new();
@@ -209,8 +222,8 @@ pub fn build_multimodal_layout(
         return Ok(layout);
     }
 
-    let image_regex = Regex::new(&regex::escape(placeholder_token))
-        .expect("escaped regex is always valid");
+    let image_regex =
+        Regex::new(&regex::escape(placeholder_token)).expect("escaped regex is always valid");
     let image_matches: Vec<_> = image_regex.find_iter(prompt_text).collect();
 
     if image_matches.len() != image_buffers.len() {
@@ -221,8 +234,8 @@ pub fn build_multimodal_layout(
     }
 
     let coord_placeholder = coord_placeholder.unwrap_or("<|coord|>");
-    let coord_regex = Regex::new(&regex::escape(coord_placeholder))
-        .expect("escaped regex is always valid");
+    let coord_regex =
+        Regex::new(&regex::escape(coord_placeholder)).expect("escaped regex is always valid");
     let coord_matches: Vec<_> = coord_regex.find_iter(prompt_text).collect();
     let use_coord_placeholders = !coord_matches.is_empty();
 
@@ -433,8 +446,10 @@ mod tests {
 
     #[test]
     fn test_normalize_role() {
-        let roles: std::collections::HashSet<String> =
-            ["system", "agent", "user"].iter().map(|s| s.to_string()).collect();
+        let roles: std::collections::HashSet<String> = ["system", "agent", "user"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         assert_eq!(normalize_role("assistant", &roles), "agent");
         assert_eq!(normalize_role("model", &roles), "agent");

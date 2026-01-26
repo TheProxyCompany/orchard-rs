@@ -12,7 +12,9 @@ use minijinja::{context, Environment, Value};
 use minijinja_contrib::pycompat::unknown_method_callback;
 
 pub use control_tokens::{ControlTokens, Role, RoleTags};
-pub use multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
+pub use multimodal::{
+    build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
+};
 
 use crate::error::{Error, Result};
 
@@ -190,11 +192,11 @@ impl ChatFormatter {
         let interactions: Vec<Value> = conversation
             .iter()
             .map(|msg| {
-                let role = msg
-                    .get("role")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("user");
-                let content = msg.get("content").cloned().unwrap_or(serde_json::Value::Null);
+                let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+                let content = msg
+                    .get("content")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let content_value = Self::json_to_minijinja(&content);
 
                 let map: std::collections::BTreeMap<String, Value> = [

@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 /// Check if a process is still alive.
 pub fn pid_is_alive(pid: u32) -> bool {
-  if pid == 0 {
-    return false;
-  }
+    if pid == 0 {
+        return false;
+    }
 
     #[cfg(unix)]
     {

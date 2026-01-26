@@ -89,7 +89,6 @@ impl Default for ResponseDelta {
     }
 }
 
-
 /// High-performance IPC client for communicating with PIE.
 ///
 /// Uses a lock-based design instead of actors to minimize overhead in the hot path.
@@ -180,7 +179,10 @@ impl IPCClient {
         let management_socket = Socket::new(Protocol::Req0)?;
         management_socket.dial(&management_url())?;
         {
-            let mut mgmt = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+            let mut mgmt = self
+                .management_socket
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *mgmt = Some(management_socket);
         }
 
@@ -224,7 +226,10 @@ impl IPCClient {
         self.request_socket = None;
         self.response_socket = None;
         {
-            let mut mgmt = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+            let mut mgmt = self
+                .management_socket
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *mgmt = None;
         }
 
@@ -276,10 +281,13 @@ impl IPCClient {
         self.active_requests
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(request_id, ActiveRequest {
-                sender: tx,
-                remaining_finals,
-            });
+            .insert(
+                request_id,
+                ActiveRequest {
+                    sender: tx,
+                    remaining_finals,
+                },
+            );
 
         let msg = nng::Message::from(payload.as_slice());
         socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
@@ -290,7 +298,11 @@ impl IPCClient {
     /// Send a management command asynchronously.
     ///
     /// Uses spawn_blocking internally since NNG sockets are sync.
-    pub async fn send_management_command_async(&self, command: Value, timeout: Duration) -> Result<Value> {
+    pub async fn send_management_command_async(
+        &self,
+        command: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
         let socket_arc = Arc::clone(&self.management_socket);
 
         tokio::task::spawn_blocking(move || {
@@ -319,7 +331,10 @@ impl IPCClient {
     ///
     /// Prefer `send_management_command_async` in async contexts.
     pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
-        let guard = self.management_socket.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self
+            .management_socket
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let socket = guard.as_ref().ok_or(Error::NotConnected)?;
 
         // Set timeout
@@ -406,12 +421,12 @@ fn run_response_listener(
                         let is_final = delta.is_final_delta;
 
                         let sender = {
-                            let mut requests = active_requests
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner());
+                            let mut requests =
+                                active_requests.lock().unwrap_or_else(|e| e.into_inner());
                             if let Some(entry) = requests.get_mut(&request_id) {
                                 if is_final {
-                                    entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
+                                    entry.remaining_finals =
+                                        entry.remaining_finals.saturating_sub(1);
                                     if entry.remaining_finals == 0 {
                                         let sender = entry.sender.clone();
                                         requests.remove(&request_id);
@@ -452,9 +467,7 @@ fn run_response_listener(
 
     // Graceful shutdown: notify any remaining pending requests
     log::info!("IPC listener shutting down");
-    let requests = active_requests
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
 
     if !requests.is_empty() {
         log::warn!(
@@ -521,7 +534,11 @@ fn rand_u64() -> u64 {
     let random: u32 = rand::thread_rng().gen();
 
     let channel_id = (pid << 32) | (random as u64);
-    if channel_id == 0 { 1 } else { channel_id }
+    if channel_id == 0 {
+        1
+    } else {
+        channel_id
+    }
 }
 
 #[cfg(test)]

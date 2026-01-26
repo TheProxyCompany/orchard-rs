@@ -251,13 +251,10 @@ impl MoondreamClient {
             "text": prompt
         }));
 
-        vec![HashMap::from([(
-            "role".to_string(),
-            serde_json::json!("user"),
-        ), (
-            "content".to_string(),
-            serde_json::json!(content),
-        )])]
+        vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!(content)),
+        ])]
     }
 
     /// Query the model with an image and prompt.
@@ -306,9 +303,10 @@ impl MoondreamClient {
             let mut append_content = true;
 
             // Check for coordinate modal decoder output
-            if let (Some(ref decoder_id), Some(ref bytes_b64)) =
-                (&client_delta.modal_decoder_id, &client_delta.modal_bytes_b64)
-            {
+            if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
+                &client_delta.modal_decoder_id,
+                &client_delta.modal_bytes_b64,
+            ) {
                 if decoder_id.ends_with(".coord") && in_ground_block {
                     if let Ok(coord_value) = Self::decode_coordinate(bytes_b64) {
                         current_coords.push(coord_value);
@@ -540,9 +538,10 @@ impl MoondreamClient {
             let client_delta = ClientDelta::from(delta);
 
             // Check for coordinate modal decoder output
-            if let (Some(ref decoder_id), Some(ref bytes_b64)) =
-                (&client_delta.modal_decoder_id, &client_delta.modal_bytes_b64)
-            {
+            if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
+                &client_delta.modal_decoder_id,
+                &client_delta.modal_bytes_b64,
+            ) {
                 if decoder_id.ends_with(".coord") {
                     if let Ok(coord_value) = Self::decode_coordinate(bytes_b64) {
                         coords.push(coord_value);
@@ -614,9 +613,10 @@ impl MoondreamClient {
         while let Some(delta) = rx.recv().await {
             let client_delta = ClientDelta::from(delta);
 
-            if let (Some(ref decoder_id), Some(ref bytes_b64)) =
-                (&client_delta.modal_decoder_id, &client_delta.modal_bytes_b64)
-            {
+            if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
+                &client_delta.modal_decoder_id,
+                &client_delta.modal_bytes_b64,
+            ) {
                 if decoder_id.ends_with(".coord") {
                     if let Ok(coord_value) = Self::decode_coordinate(bytes_b64) {
                         coords.push(coord_value);
@@ -699,9 +699,10 @@ impl MoondreamClient {
         while let Some(delta) = rx.recv().await {
             let client_delta = ClientDelta::from(delta);
 
-            if let (Some(ref decoder_id), Some(ref bytes_b64)) =
-                (&client_delta.modal_decoder_id, &client_delta.modal_bytes_b64)
-            {
+            if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
+                &client_delta.modal_decoder_id,
+                &client_delta.modal_bytes_b64,
+            ) {
                 if decoder_id.ends_with(".coord") {
                     if let Ok(coord_value) = Self::decode_coordinate(bytes_b64) {
                         coords.push(coord_value);

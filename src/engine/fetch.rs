@@ -79,27 +79,21 @@ impl EngineFetcher {
     }
 
     /// Download and install the engine binary.
-    pub async fn download_engine(
-        &self,
-        channel: &str,
-        version: Option<&str>,
-    ) -> Result<()> {
+    pub async fn download_engine(&self, channel: &str, version: Option<&str>) -> Result<()> {
         let manifest = self.fetch_manifest(channel).await?;
 
         let version = match version {
             Some(v) => v.to_string(),
-            None => {
-                manifest
-                    .get("latest")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        Error::InvalidManifest(format!(
-                            "No latest version defined for {} channel",
-                            channel
-                        ))
-                    })?
-                    .to_string()
-            }
+            None => manifest
+                .get("latest")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    Error::InvalidManifest(format!(
+                        "No latest version defined for {} channel",
+                        channel
+                    ))
+                })?
+                .to_string(),
         };
 
         let versions = manifest
@@ -117,10 +111,9 @@ impl EngineFetcher {
             ))
         })?;
 
-        let url = info
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::InvalidManifest(format!("No download URL for version {}", version)))?;
+        let url = info.get("url").and_then(|v| v.as_str()).ok_or_else(|| {
+            Error::InvalidManifest(format!("No download URL for version {}", version))
+        })?;
 
         let expected_sha256 = info.get("sha256").and_then(|v| v.as_str());
 
@@ -157,7 +150,9 @@ impl EngineFetcher {
     }
 
     async fn fetch_manifest(&self, channel: &str) -> Result<serde_json::Value> {
-        let installed = self.get_installed_version().unwrap_or_else(|| "unknown".into());
+        let installed = self
+            .get_installed_version()
+            .unwrap_or_else(|| "unknown".into());
 
         let response = self
             .client
@@ -209,7 +204,11 @@ impl EngineFetcher {
                     if attempt == MAX_RETRIES - 1 {
                         return Err(e);
                     }
-                    log::warn!("Download attempt {} failed: {}, retrying...", attempt + 1, e);
+                    log::warn!(
+                        "Download attempt {} failed: {}, retrying...",
+                        attempt + 1,
+                        e
+                    );
                 }
             }
         }
@@ -223,10 +222,7 @@ impl EngineFetcher {
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::Network(format!(
-                "HTTP {}",
-                response.status()
-            )));
+            return Err(Error::Network(format!("HTTP {}", response.status())));
         }
 
         let bytes = response.bytes().await?;
@@ -307,7 +303,6 @@ impl Default for EngineFetcher {
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

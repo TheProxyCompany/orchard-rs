@@ -1,5 +1,3 @@
-#[path = "e2e/fixture.rs"]
-mod fixture;
 #[path = "e2e/e2e_basic.rs"]
 mod e2e_basic;
 #[path = "e2e/e2e_batching.rs"]
@@ -12,3 +10,5 @@ mod e2e_multimodal;
 mod e2e_stop_sequences;
 #[path = "e2e/e2e_structured_generation.rs"]
 mod e2e_structured_generation;
+#[path = "e2e/fixture.rs"]
+mod fixture;

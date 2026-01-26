@@ -27,7 +27,9 @@ fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment};
+use crate::formatter::multimodal::{
+    build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
+};
 use crate::ipc::client::{EventCallback, IPCClient, ResponseDelta};
 use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload};
 use crate::model::registry::ModelRegistry;
@@ -262,7 +264,12 @@ impl Client {
         // Apply template with reasoning flag
         let prompt_text = info
             .formatter
-            .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
+            .apply_template(
+                &messages_for_template,
+                true,
+                reasoning_flag,
+                params.task_name.as_deref(),
+            )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
         // Build layout for multimodal content
@@ -437,8 +444,12 @@ impl Client {
         for messages in &conversations {
             // Build multimodal content (pass instructions if provided)
             let (messages_for_template, image_buffers, capabilities, content_order) =
-                build_multimodal_messages(&info.formatter, messages, params.instructions.as_deref())
-                    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+                build_multimodal_messages(
+                    &info.formatter,
+                    messages,
+                    params.instructions.as_deref(),
+                )
+                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
             if messages_for_template.is_empty() {
                 return Err(ClientError::RequestFailed(
@@ -449,7 +460,12 @@ impl Client {
             // Apply template with reasoning flag
             let prompt_text = info
                 .formatter
-                .apply_template(&messages_for_template, true, reasoning_flag, params.task_name.as_deref())
+                .apply_template(
+                    &messages_for_template,
+                    true,
+                    reasoning_flag,
+                    params.task_name.as_deref(),
+                )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
             // Build layout for multimodal content
@@ -572,7 +588,7 @@ fn convert_capabilities(capabilities: &[CapabilityInput]) -> Vec<CapabilityEntry
         .iter()
         .map(|cap| CapabilityEntry {
             name: cap.name.clone(),
-            position: 0,  // Always 0, matching Python
+            position: 0, // Always 0, matching Python
             payload: cap.payload.clone(),
         })
         .collect()

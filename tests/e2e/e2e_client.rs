@@ -27,14 +27,22 @@ async fn test_client_chat_non_streaming_llama_poem() {
 
     let mut output_lines = vec![format!("User: {}", prompt)];
 
-    let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false).await;
+    let result = client
+        .achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text));
+            output_lines.push(format!(
+                "meta-llama/Llama-3.1-8B-Instruct: {}",
+                response.text
+            ));
             println!("{}", output_lines.join("\n"));
-            assert!(!response.text.trim().is_empty(), "Response should have content");
+            assert!(
+                !response.text.trim().is_empty(),
+                "Response should have content"
+            );
             assert!(
                 response.usage.completion_tokens > 0,
                 "Should have generated tokens"
@@ -70,14 +78,22 @@ async fn test_client_chat_non_streaming_llama_plea() {
 
     let mut output_lines = vec![format!("User: {}", prompt)];
 
-    let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false).await;
+    let result = client
+        .achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, false)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
-            output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", response.text));
+            output_lines.push(format!(
+                "meta-llama/Llama-3.1-8B-Instruct: {}",
+                response.text
+            ));
             println!("{}", output_lines.join("\n"));
-            assert!(!response.text.trim().is_empty(), "Response should have content");
+            assert!(
+                !response.text.trim().is_empty(),
+                "Response should have content"
+            );
             assert_eq!(
                 response.usage.completion_tokens, 5,
                 "Expected exactly 5 completion tokens, got {}",
@@ -116,7 +132,10 @@ async fn test_client_chat_non_streaming_moondream_poem() {
         orchard::ChatResult::Complete(response) => {
             output_lines.push(format!("moondream3: {}", response.text));
             println!("{}", output_lines.join("\n"));
-            assert!(!response.text.trim().is_empty(), "Response should have content");
+            assert!(
+                !response.text.trim().is_empty(),
+                "Response should have content"
+            );
             assert_eq!(
                 response.usage.completion_tokens, 5,
                 "Expected exactly 5 completion tokens, got {}",
@@ -148,7 +167,9 @@ async fn test_client_chat_streaming_llama_artist() {
 
     let mut output_lines = vec![format!("User: {}", prompt)];
 
-    let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true).await;
+    let result = client
+        .achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
@@ -165,7 +186,11 @@ async fn test_client_chat_streaming_llama_artist() {
             output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", content));
             println!("{}", output_lines.join("\n"));
 
-            assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
+            assert!(
+                deltas.len() > 1,
+                "Expected multiple deltas, got {}",
+                deltas.len()
+            );
             assert!(!content.trim().is_empty(), "Expected non-empty content");
         }
         orchard::ChatResult::Complete(_) => {
@@ -193,7 +218,9 @@ async fn test_client_chat_streaming_llama_movie() {
 
     let mut output_lines = vec![format!("User: {}", prompt)];
 
-    let result = client.achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true).await;
+    let result = client
+        .achat("meta-llama/Llama-3.1-8B-Instruct", messages, params, true)
+        .await;
     assert!(result.is_ok(), "Chat request failed: {:?}", result.err());
 
     match result.unwrap() {
@@ -210,7 +237,11 @@ async fn test_client_chat_streaming_llama_movie() {
             output_lines.push(format!("meta-llama/Llama-3.1-8B-Instruct: {}", content));
             println!("{}", output_lines.join("\n"));
 
-            assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
+            assert!(
+                deltas.len() > 1,
+                "Expected multiple deltas, got {}",
+                deltas.len()
+            );
             assert!(!content.trim().is_empty(), "Expected non-empty content");
         }
         orchard::ChatResult::Complete(_) => {
@@ -255,7 +286,11 @@ async fn test_client_chat_streaming_moondream_artist() {
             output_lines.push(format!("moondream3: {}", content));
             println!("{}", output_lines.join("\n"));
 
-            assert!(deltas.len() > 1, "Expected multiple deltas, got {}", deltas.len());
+            assert!(
+                deltas.len() > 1,
+                "Expected multiple deltas, got {}",
+                deltas.len()
+            );
             assert!(!content.trim().is_empty(), "Expected non-empty content");
         }
         orchard::ChatResult::Complete(_) => {

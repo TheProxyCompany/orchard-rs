@@ -335,7 +335,8 @@ impl InferenceEngine {
             if let Some(ref child) = self.launch_process {
                 if !pid_is_alive(child.id()) {
                     return Err(Error::StartupFailed(
-                        "Engine process exited before signaling readiness; check the engine log".into()
+                        "Engine process exited before signaling readiness; check the engine log"
+                            .into(),
                     ));
                 }
             }
@@ -481,7 +482,10 @@ mod tests {
     #[test]
     fn test_engine_paths() {
         let paths = EnginePaths::new().expect("cache dir should be available");
-        assert!(paths.cache_dir.to_string_lossy().contains("com.theproxycompany"));
+        assert!(paths
+            .cache_dir
+            .to_string_lossy()
+            .contains("com.theproxycompany"));
     }
 
     #[test]
@@ -494,7 +498,11 @@ mod tests {
             .collect();
 
         // All IDs must be unique (HashSet dedupes)
-        assert_eq!(ids.len(), 1000, "Channel IDs must be unique across rapid calls");
+        assert_eq!(
+            ids.len(),
+            1000,
+            "Channel IDs must be unique across rapid calls"
+        );
 
         // All IDs must be non-zero
         assert!(!ids.contains(&0), "Channel ID must never be zero");

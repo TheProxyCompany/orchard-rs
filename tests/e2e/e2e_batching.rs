@@ -31,14 +31,20 @@ async fn test_chat_completion_batched_homogeneous() {
         vec![make_message("user", "Give me a fun fact about space.")],
     ];
 
-    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
+    let result = client
+        .achat_batch(MODEL_ID, conversations, params, false)
+        .await;
     assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
 
     let responses = match result.unwrap() {
         BatchChatResult::Complete(responses) => responses,
         BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
     };
-    assert_eq!(responses.len(), 2, "Should have 2 responses (one per conversation)");
+    assert_eq!(
+        responses.len(),
+        2,
+        "Should have 2 responses (one per conversation)"
+    );
 
     let mut output_lines = Vec::new();
     for (i, response) in responses.iter().enumerate() {
@@ -49,7 +55,11 @@ async fn test_chat_completion_batched_homogeneous() {
     }
 
     for (i, response) in responses.iter().enumerate() {
-        assert!(!response.text.is_empty(), "Response {} should have content", i);
+        assert!(
+            !response.text.is_empty(),
+            "Response {} should have content",
+            i
+        );
         assert!(
             response.finish_reason.is_some(),
             "Response {} should have finish reason",
@@ -74,10 +84,15 @@ async fn test_chat_completion_batched_different_content() {
 
     let conversations = vec![
         vec![make_message("user", "Respond with a single word greeting.")],
-        vec![make_message("user", "List three colors separated by commas.")],
+        vec![make_message(
+            "user",
+            "List three colors separated by commas.",
+        )],
     ];
 
-    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
+    let result = client
+        .achat_batch(MODEL_ID, conversations, params, false)
+        .await;
     assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
 
     let responses = match result.unwrap() {
@@ -112,10 +127,15 @@ async fn test_empty_batch() {
     let params = SamplingParams::default();
     let conversations: Vec<Vec<HashMap<String, serde_json::Value>>> = vec![];
 
-    let result = client.achat_batch(MODEL_ID, conversations, params, false).await;
+    let result = client
+        .achat_batch(MODEL_ID, conversations, params, false)
+        .await;
     match result {
         Ok(BatchChatResult::Complete(responses)) => {
-            assert!(responses.is_empty(), "Empty batch should return empty responses")
+            assert!(
+                responses.is_empty(),
+                "Empty batch should return empty responses"
+            )
         }
         Ok(BatchChatResult::Stream(_)) => panic!("Expected complete result, got stream"),
         Err(e) => panic!("Empty batch should succeed: {:?}", e),
@@ -125,7 +145,7 @@ async fn test_empty_batch() {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    use orchard::ipc::serialization::{PromptPayload, build_batch_request_payload, RequestType};
+    use orchard::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
 
     /// Test that batch serialization produces valid metadata with prompt_index.
     #[test]
@@ -150,16 +170,25 @@ mod unit_tests {
             RequestType::Generation,
             12345,
             &prompts,
-        ).expect("Failed to build batch payload");
+        )
+        .expect("Failed to build batch payload");
 
         // Parse metadata to verify prompt_index
         let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
         let metadata: serde_json::Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
 
-        let prompts_meta = metadata["prompts"].as_array().expect("prompts should be an array");
+        let prompts_meta = metadata["prompts"]
+            .as_array()
+            .expect("prompts should be an array");
         assert_eq!(prompts_meta.len(), 2, "Should have 2 prompt entries");
-        assert_eq!(prompts_meta[0]["prompt_index"], 0, "First prompt should have index 0");
-        assert_eq!(prompts_meta[1]["prompt_index"], 1, "Second prompt should have index 1");
+        assert_eq!(
+            prompts_meta[0]["prompt_index"], 0,
+            "First prompt should have index 0"
+        );
+        assert_eq!(
+            prompts_meta[1]["prompt_index"], 1,
+            "Second prompt should have index 1"
+        );
     }
 
     /// Test conversation construction.

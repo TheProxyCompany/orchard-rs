@@ -4,7 +4,7 @@
 
 use crate::defaults;
 use crate::error::{Error, Result};
-use serde::{Deserialize, Serialize, ser::Serialize as SerializeTrait};
+use serde::{ser::Serialize as SerializeTrait, Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// A single prompt payload for batched requests.
@@ -157,7 +157,9 @@ pub fn build_batch_request_payload(
     prompts: &[PromptPayload],
 ) -> Result<Vec<u8>> {
     if prompts.is_empty() {
-        return Err(Error::Serialization("At least one prompt is required".to_string()));
+        return Err(Error::Serialization(
+            "At least one prompt is required".to_string(),
+        ));
     }
 
     // Track blob fragments: (offset, data)
@@ -184,10 +186,12 @@ pub fn build_batch_request_payload(
         let text_bytes = prompt.prompt.as_bytes().to_vec();
 
         // Encode image buffers
-        let (image_span_bytes, image_count, image_data_bytes) = encode_image_buffers(&prompt.image_buffers);
+        let (image_span_bytes, image_count, image_data_bytes) =
+            encode_image_buffers(&prompt.image_buffers);
 
         // Encode capabilities
-        let (capability_metadata, capability_data_bytes) = encode_capabilities(&prompt.capabilities);
+        let (capability_metadata, capability_data_bytes) =
+            encode_capabilities(&prompt.capabilities);
 
         // Build layout
         let layout_data = if prompt.layout.is_empty() {
@@ -198,7 +202,9 @@ pub fn build_batch_request_payload(
             }
             encode_layout(&segments)
         } else {
-            let segments: Vec<(SegmentType, usize)> = prompt.layout.iter()
+            let segments: Vec<(SegmentType, usize)> = prompt
+                .layout
+                .iter()
                 .map(|e| {
                     let seg_type = match e.segment_type.as_str() {
                         "image" => SegmentType::Image,
@@ -234,7 +240,9 @@ pub fn build_batch_request_payload(
         let final_candidates = prompt.final_candidates.unwrap_or(best_of);
 
         // Convert logit_bias HashMap to array of {token, bias} objects (matching Python)
-        let logit_bias: Vec<Value> = prompt.logit_bias.iter()
+        let logit_bias: Vec<Value> = prompt
+            .logit_bias
+            .iter()
             .map(|(&k, &v)| json!({"token": k, "bias": v}))
             .collect();
 
@@ -451,12 +459,10 @@ mod tests {
 
     #[test]
     fn test_validate_layout_text_mismatch() {
-        let layout = vec![
-            LayoutEntry {
-                segment_type: "text".to_string(),
-                length: 50, // Mismatch!
-            },
-        ];
+        let layout = vec![LayoutEntry {
+            segment_type: "text".to_string(),
+            length: 50, // Mismatch!
+        }];
 
         let result = validate_layout(100, 0, &layout, 0);
         assert!(result.is_err());

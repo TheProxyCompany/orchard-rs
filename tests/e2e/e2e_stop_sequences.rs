@@ -31,7 +31,11 @@ async fn test_stop_sequence_national_colors() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Stop sequence test failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Stop sequence test failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -96,7 +100,11 @@ async fn test_stop_on_newline() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Stop sequence test failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Stop sequence test failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -144,7 +152,11 @@ async fn test_stop_on_word() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Stop sequence test failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Stop sequence test failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -184,7 +196,11 @@ async fn test_multiple_stop_sequences() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Multiple stop test failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Multiple stop test failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {

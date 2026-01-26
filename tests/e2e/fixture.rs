@@ -10,10 +10,7 @@ fn cleanup_engine() {
     let _ = InferenceEngine::shutdown(Duration::from_secs(30));
 }
 
-const PRELOAD_MODELS: [&str; 2] = [
-    "meta-llama/Llama-3.1-8B-Instruct",
-    "moondream3",
-];
+const PRELOAD_MODELS: [&str; 2] = ["meta-llama/Llama-3.1-8B-Instruct", "moondream3"];
 
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
@@ -38,7 +35,9 @@ fn init_fixture() -> TestFixture {
         .expect("Failed to create runtime");
 
     let (engine, client) = rt.block_on(async {
-        let engine = InferenceEngine::new().await.expect("Failed to start engine");
+        let engine = InferenceEngine::new()
+            .await
+            .expect("Failed to start engine");
         let registry = std::sync::Arc::new(ModelRegistry::new().unwrap());
         let client = Client::connect(std::sync::Arc::clone(&registry))
             .await

@@ -20,9 +20,8 @@ fn get_test_assets_dir() -> PathBuf {
 
 fn load_image_base64(filename: &str) -> String {
     let path = get_test_assets_dir().join(filename);
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| {
-        panic!("Failed to read test image {}: {}", path.display(), e)
-    });
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("Failed to read test image {}: {}", path.display(), e));
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 
@@ -34,7 +33,11 @@ fn make_text_message(role: &str, content: &str) -> HashMap<String, serde_json::V
     msg
 }
 
-fn make_image_message(role: &str, text: &str, image_base64: &str) -> HashMap<String, serde_json::Value> {
+fn make_image_message(
+    role: &str,
+    text: &str,
+    image_base64: &str,
+) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
     msg.insert("role".to_string(), serde_json::json!(role));
 
@@ -69,7 +72,11 @@ async fn test_multimodal_apple_image() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Multimodal request failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Multimodal request failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -110,7 +117,11 @@ async fn test_multimodal_moondream_image() {
     )];
 
     let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(result.is_ok(), "Multimodal request failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Multimodal request failed: {:?}",
+        result.err()
+    );
 
     match result.unwrap() {
         orchard::ChatResult::Complete(response) => {
@@ -136,8 +147,14 @@ mod unit_tests {
     #[test]
     fn test_assets_exist() {
         let assets_dir = get_test_assets_dir();
-        assert!(assets_dir.join("apple.jpg").exists(), "apple.jpg should exist");
-        assert!(assets_dir.join("moondream.jpg").exists(), "moondream.jpg should exist");
+        assert!(
+            assets_dir.join("apple.jpg").exists(),
+            "apple.jpg should exist"
+        );
+        assert!(
+            assets_dir.join("moondream.jpg").exists(),
+            "moondream.jpg should exist"
+        );
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::time::Duration;
 use hf_hub::api::tokio::ApiBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{Mutex, Notify, RwLock, oneshot};
+use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
 use crate::error::Error;
 use crate::formatter::ChatFormatter;
@@ -116,52 +116,65 @@ impl ModelRegistry {
     /// 4. Send load_model command to PIE
     /// 5. Wait for engine activation
     pub async fn ensure_loaded(&self, requested_model_id: &str) -> Result<ModelInfo, Error> {
-        let (_state, canonical_id) = self.schedule_model(requested_model_id, false).await
+        let (_state, canonical_id) = self
+            .schedule_model(requested_model_id, false)
+            .await
             .map_err(|e| Error::ModelNotReady(e))?;
 
         // Wait for local readiness (download + formatter)
-        let (state, info, error) = self.await_model(&canonical_id, None).await
+        let (state, info, error) = self
+            .await_model(&canonical_id, None)
+            .await
             .map_err(|e| Error::ModelNotReady(e))?;
 
         if state == ModelLoadState::Failed {
-            return Err(Error::ModelNotReady(
-                error.unwrap_or_else(|| format!("Model '{}' failed to load", canonical_id))
-            ));
+            return Err(Error::ModelNotReady(error.unwrap_or_else(|| {
+                format!("Model '{}' failed to load", canonical_id)
+            })));
         }
 
         if state == ModelLoadState::Ready {
-            return info.ok_or_else(|| Error::ModelNotReady("Model ready but info missing".to_string()));
+            return info
+                .ok_or_else(|| Error::ModelNotReady("Model ready but info missing".to_string()));
         }
 
         // At this point we have LOADING state with info - need to activate on PIE
-        let info = info.ok_or_else(|| Error::ModelNotReady(format!("Model '{}' info missing", canonical_id)))?;
+        let info = info.ok_or_else(|| {
+            Error::ModelNotReady(format!("Model '{}' info missing", canonical_id))
+        })?;
 
         // Check if already activating or ready
         {
             let entries = self.entries.read().await;
             if let Some(entry) = entries.get(&canonical_id) {
                 if entry.state == ModelLoadState::Ready {
-                    return entry.info.clone().ok_or_else(|| Error::ModelNotReady("Ready but no info".to_string()));
+                    return entry
+                        .info
+                        .clone()
+                        .ok_or_else(|| Error::ModelNotReady("Ready but no info".to_string()));
                 }
             }
         }
 
         // Send load_model command and wait for activation
-        let activation_rx = self.send_load_model_command(
-            requested_model_id,
-            &canonical_id,
-            &info,
-        ).await.map_err(|e| Error::ModelNotReady(e))?;
+        let activation_rx = self
+            .send_load_model_command(requested_model_id, &canonical_id, &info)
+            .await
+            .map_err(|e| Error::ModelNotReady(e))?;
 
         // Wait for activation to complete
         match activation_rx.await {
             Ok(Ok(())) => {
                 // Activation succeeded, get the ready info
-                self.get_if_ready(&canonical_id).await
-                    .ok_or_else(|| Error::ModelNotReady(format!("Model '{}' failed to activate", canonical_id)))
+                self.get_if_ready(&canonical_id).await.ok_or_else(|| {
+                    Error::ModelNotReady(format!("Model '{}' failed to activate", canonical_id))
+                })
             }
             Ok(Err(e)) => Err(Error::ModelNotReady(e)),
-            Err(_) => Err(Error::ModelNotReady(format!("Activation channel closed for '{}'", canonical_id))),
+            Err(_) => Err(Error::ModelNotReady(format!(
+                "Activation channel closed for '{}'",
+                canonical_id
+            ))),
         }
     }
 
@@ -178,7 +191,8 @@ impl ModelRegistry {
         // Set up activation state
         {
             let mut entries = self.entries.write().await;
-            let entry = entries.get_mut(canonical_id)
+            let entry = entries
+                .get_mut(canonical_id)
                 .ok_or_else(|| format!("Model '{}' not in registry", canonical_id))?;
 
             match entry.state {
@@ -187,7 +201,9 @@ impl ModelRegistry {
                     return Ok(rx);
                 }
                 ModelLoadState::Failed => {
-                    let message = entry.error.clone()
+                    let message = entry
+                        .error
+                        .clone()
                         .unwrap_or_else(|| format!("Model '{}' failed to load", canonical_id));
                     let _ = tx.send(Err(message));
                     return Ok(rx);
@@ -206,7 +222,9 @@ impl ModelRegistry {
         // Get IPC client
         let ipc = {
             let guard = self.ipc_client.read().await;
-            guard.clone().ok_or_else(|| "IPC client not set".to_string())?
+            guard
+                .clone()
+                .ok_or_else(|| "IPC client not set".to_string())?
         };
 
         // Build and send the command
@@ -218,12 +236,16 @@ impl ModelRegistry {
             "wait_for_completion": false,
         });
 
-        let response = ipc.send_management_command_async(command, Duration::from_secs(30))
+        let response = ipc
+            .send_management_command_async(command, Duration::from_secs(30))
             .await
             .map_err(|e| format!("Failed to send load_model command: {}", e))?;
 
         // Check response status
-        let status = response.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        let status = response
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         match status {
             "ok" => {
@@ -233,14 +255,25 @@ impl ModelRegistry {
             }
             "accepted" => {
                 // Async activation - wait for model_loaded event
-                log::debug!("Model '{}' activation accepted, waiting for model_loaded event", canonical_id);
+                log::debug!(
+                    "Model '{}' activation accepted, waiting for model_loaded event",
+                    canonical_id
+                );
             }
             _ => {
-                let message = response.get("message")
+                let message = response
+                    .get("message")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown error");
-                self.fail_activation(canonical_id, &format!("Engine rejected load_model: {}", message)).await;
-                return Err(format!("Engine rejected load_model for '{}': {}", requested_id, message));
+                self.fail_activation(
+                    canonical_id,
+                    &format!("Engine rejected load_model: {}", message),
+                )
+                .await;
+                return Err(format!(
+                    "Engine rejected load_model for '{}': {}",
+                    requested_id, message
+                ));
             }
         }
 
@@ -249,7 +282,8 @@ impl ModelRegistry {
 
     /// Parse capabilities from management response.
     fn parse_capabilities(&self, response: &Value) -> Option<HashMap<String, Vec<i32>>> {
-        response.get("data")
+        response
+            .get("data")
             .and_then(|d| d.get("load_model"))
             .and_then(|lm| lm.get("capabilities"))
             .and_then(|c| c.as_object())
@@ -257,7 +291,9 @@ impl ModelRegistry {
                 obj.iter()
                     .filter_map(|(k, v)| {
                         let vals: Vec<i32> = if let Some(arr) = v.as_array() {
-                            arr.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect()
+                            arr.iter()
+                                .filter_map(|x| x.as_i64().map(|n| n as i32))
+                                .collect()
                         } else if let Some(n) = v.as_i64() {
                             vec![n as i32]
                         } else {
@@ -270,7 +306,11 @@ impl ModelRegistry {
     }
 
     /// Complete activation successfully.
-    async fn complete_activation(&self, model_id: &str, capabilities: Option<HashMap<String, Vec<i32>>>) {
+    async fn complete_activation(
+        &self,
+        model_id: &str,
+        capabilities: Option<HashMap<String, Vec<i32>>>,
+    ) {
         let mut entries = self.entries.write().await;
         if let Some(entry) = entries.get_mut(model_id) {
             if let Some(ref mut info) = entry.info {
@@ -386,14 +426,18 @@ impl ModelRegistry {
         drop(entries);
 
         // Spawn download task
-        let hf_repo = resolved.hf_repo.clone().unwrap_or_else(|| resolved.canonical_id.clone());
+        let hf_repo = resolved
+            .hf_repo
+            .clone()
+            .unwrap_or_else(|| resolved.canonical_id.clone());
         let canonical_id_for_task = canonical_id.clone();
         let entries_ref = self.entries.clone();
 
         tokio::spawn(async move {
             let result = Self::download_model(&hf_repo).await;
 
-            let mut entries: tokio::sync::RwLockWriteGuard<'_, HashMap<String, ModelEntry>> = entries_ref.write().await;
+            let mut entries: tokio::sync::RwLockWriteGuard<'_, HashMap<String, ModelEntry>> =
+                entries_ref.write().await;
             if let Some(entry) = entries.get_mut(&canonical_id_for_task) {
                 match result {
                     Ok(download_path) => {
@@ -448,12 +492,14 @@ impl ModelRegistry {
             .map_err(|e| format!("Failed to download config.json: {}", e))?;
 
         // Get the cache directory where files are stored
-        let cache_dir = repo.get(".")
+        let cache_dir = repo
+            .get(".")
             .await
             .map_err(|e| format!("Failed to access repo: {}", e))?;
 
         // The parent directory is the model directory
-        let model_dir = cache_dir.parent()
+        let model_dir = cache_dir
+            .parent()
             .ok_or_else(|| "Invalid cache path".to_string())?
             .to_path_buf();
 
@@ -494,7 +540,10 @@ impl ModelRegistry {
                 .ok_or_else(|| format!("Model '{}' has not been scheduled", model_id))?;
 
             // Notify is edge-triggered: arm the waiter while holding the lock.
-            if !matches!(entry.state, ModelLoadState::Downloading | ModelLoadState::Activating) {
+            if !matches!(
+                entry.state,
+                ModelLoadState::Downloading | ModelLoadState::Activating
+            ) {
                 return Ok((entry.state, entry.info.clone(), entry.error.clone()));
             }
 
@@ -504,7 +553,9 @@ impl ModelRegistry {
 
         // Wait for state transition
         match timeout {
-            Some(d) => { let _ = tokio::time::timeout(d, notified).await; }
+            Some(d) => {
+                let _ = tokio::time::timeout(d, notified).await;
+            }
             None => notified.await,
         }
 
@@ -626,10 +677,13 @@ impl ModelRegistry {
 
         // Extract and update capabilities
         if let Some(caps) = payload.get("capabilities").and_then(|c| c.as_object()) {
-            let capabilities: HashMap<String, Vec<i32>> = caps.iter()
+            let capabilities: HashMap<String, Vec<i32>> = caps
+                .iter()
                 .filter_map(|(k, v)| {
                     let vals: Vec<i32> = if let Some(arr) = v.as_array() {
-                        arr.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect()
+                        arr.iter()
+                            .filter_map(|x| x.as_i64().map(|n| n as i32))
+                            .collect()
                     } else if let Some(n) = v.as_i64() {
                         vec![n as i32]
                     } else {
