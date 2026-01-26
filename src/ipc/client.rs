@@ -23,7 +23,7 @@ pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 /// Response delta from PIE.
 ///
 /// Uses serde for deserialization with sensible defaults for missing fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ResponseDelta {
     /// Request ID this delta belongs to
@@ -62,31 +62,6 @@ pub struct ResponseDelta {
     pub modal_decoder_id: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
-}
-
-impl Default for ResponseDelta {
-    fn default() -> Self {
-        Self {
-            request_id: 0,
-            sequence_id: None,
-            prompt_index: None,
-            candidate_index: None,
-            content: None,
-            content_len: None,
-            inline_content_bytes: None,
-            is_final_delta: false,
-            finish_reason: None,
-            error: None,
-            prompt_token_count: None,
-            num_tokens_in_delta: None,
-            generation_len: None,
-            tokens: Vec::new(),
-            top_logprobs: Vec::new(),
-            cumulative_logprob: None,
-            modal_decoder_id: None,
-            modal_bytes_b64: None,
-        }
-    }
 }
 
 /// High-performance IPC client for communicating with PIE.

@@ -41,6 +41,7 @@ pub struct LayoutSegment {
 /// - Image buffers (raw bytes)
 /// - Capability inputs
 /// - Content order (type, index) for layout building
+#[allow(clippy::type_complexity)]
 pub fn build_multimodal_messages(
     formatter: &ChatFormatter,
     items: &[HashMap<String, serde_json::Value>],

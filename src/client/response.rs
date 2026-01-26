@@ -70,24 +70,13 @@ impl From<ResponseDelta> for ClientDelta {
 }
 
 /// A complete response from a chat completion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClientResponse {
     pub text: String,
     pub finish_reason: Option<String>,
     pub usage: UsageStats,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deltas: Vec<ClientDelta>,
-}
-
-impl Default for ClientResponse {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            finish_reason: None,
-            usage: UsageStats::default(),
-            deltas: Vec::new(),
-        }
-    }
 }
 
 #[cfg(test)]
