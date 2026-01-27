@@ -38,7 +38,7 @@ pub struct ClientDelta {
     pub num_tokens_in_delta: Option<u32>,
     pub generation_len: Option<u32>,
     pub tokens: Vec<i32>,
-    pub top_logprobs: Vec<std::collections::HashMap<String, f64>>,
+    pub top_logprobs: Vec<crate::ipc::client::TokenLogProb>,
     pub cumulative_logprob: Option<f64>,
     pub modal_decoder_id: Option<String>,
     pub modal_bytes_b64: Option<String>,

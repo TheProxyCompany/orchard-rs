@@ -20,6 +20,18 @@ use tokio::sync::mpsc;
 /// Callback type for engine events (telemetry, model_loaded, etc.)
 pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 
+/// A single token's log probability info from PIE.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TokenLogProb {
+    /// The token string (or token ID as string)
+    pub token: String,
+    /// The log probability value
+    pub logprob: f64,
+    /// Optional bytes representation
+    pub bytes: Option<Vec<u8>>,
+}
+
 /// Response delta from PIE.
 ///
 /// Uses serde for deserialization with sensible defaults for missing fields.
@@ -54,8 +66,8 @@ pub struct ResponseDelta {
     pub generation_len: Option<u32>,
     /// Token IDs in this delta
     pub tokens: Vec<i32>,
-    /// Top log probabilities for each token
-    pub top_logprobs: Vec<HashMap<String, f64>>,
+    /// Top log probabilities for each token position
+    pub top_logprobs: Vec<TokenLogProb>,
     /// Cumulative log probability
     pub cumulative_logprob: Option<f64>,
     /// Modal decoder identifier (e.g., "moondream3.coord")
@@ -557,7 +569,7 @@ mod tests {
             "is_final_delta": false,
             "num_tokens_in_delta": 3,
             "tokens": [1, 2, 3],
-            "top_logprobs": [{"hello": -0.5}, {"world": -1.0}],
+            "top_logprobs": [{"token": "hello", "logprob": -0.5}, {"token": "world", "logprob": -1.0}],
             "cumulative_logprob": -1.5,
             "modal_decoder_id": "moondream3.coord",
             "modal_bytes_b64": "AAAA"

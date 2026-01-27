@@ -41,16 +41,17 @@ async fn test_chat_completion_structured_json_response() {
         serde_json::to_string_pretty(&schema).unwrap()
     );
 
+    // PIE expects the flattened format (matching Python's to_dict()):
+    // {"type": "json_schema", "name": ..., "strict": ..., "json_schema": <schema>}
+    // NOT the nested OpenAI format: {"type": "json_schema", "json_schema": {"name": ..., "schema": ...}}
     let params = SamplingParams {
         temperature,
         top_logprobs: 3, // logprobs=True, top_logprobs=3 in Python
         response_format: Some(serde_json::json!({
             "type": "json_schema",
-            "json_schema": {
-                "name": "color_summary",
-                "strict": true,
-                "schema": schema,
-            },
+            "name": "color_summary",
+            "strict": true,
+            "json_schema": schema,
         })),
         ..Default::default()
     };

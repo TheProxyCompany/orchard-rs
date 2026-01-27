@@ -21,7 +21,7 @@ tokio = { version = "1", features = ["sync", "rt", "macros", "process", "fs", "i
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 # HTTP client for binary fetching
 reqwest = { version = "0.12", features = ["stream", "json"] }
