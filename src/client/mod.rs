@@ -351,18 +351,53 @@ impl Client {
         if stream {
             Ok(ChatResult::Stream(rx))
         } else {
-            // Collect all deltas
-            let mut deltas = Vec::new();
+            // Determine how many candidates to expect
+            let best_of = params.best_of.unwrap_or(params.n).max(1) as usize;
+            let final_candidates = params.final_candidates.unwrap_or(params.n).max(1) as usize;
+
+            // Collect deltas grouped by candidate_index (matching Python's gather_non_streaming_batch_response)
+            let mut candidate_states: Vec<CandidateState> =
+                (0..best_of).map(|_| CandidateState::default()).collect();
+            let mut remaining_sequences = best_of;
             let mut rx = rx;
-            while let Some(delta) = rx.recv().await {
-                let is_final = delta.is_final_delta;
-                deltas.push(ClientDelta::from(delta));
-                if is_final {
-                    break;
+
+            while remaining_sequences > 0 {
+                match rx.recv().await {
+                    Some(delta) => {
+                        let candidate_index = delta.candidate_index.unwrap_or(0) as usize;
+                        if candidate_index >= candidate_states.len() {
+                            continue;
+                        }
+
+                        let state = &mut candidate_states[candidate_index];
+
+                        if let Some(content) = &delta.content {
+                            state.content.push_str(content);
+                        }
+                        state.completion_tokens += delta.tokens.len() as u32;
+                        if let Some(count) = delta.prompt_token_count {
+                            state.prompt_tokens = state.prompt_tokens.max(count);
+                        }
+
+                        let client_delta = ClientDelta::from(delta.clone());
+                        state.deltas.push(client_delta);
+
+                        if delta.is_final_delta && !state.completed {
+                            state.completed = true;
+                            state.finish_reason = delta.finish_reason.clone();
+                            state.cumulative_logprob = delta.cumulative_logprob;
+                            state.generation_len = delta.generation_len;
+                            remaining_sequences -= 1;
+                        }
+                    }
+                    None => break,
                 }
             }
 
-            Ok(ChatResult::Complete(aggregate_response(deltas)))
+            // Score and select best candidates (matching Python logic)
+            let selected = select_best_candidates(candidate_states, best_of, final_candidates);
+
+            Ok(ChatResult::Complete(build_response_from_candidates(selected)))
         }
     }
 
@@ -611,6 +646,85 @@ pub enum ChatResult {
     Complete(ClientResponse),
     /// Streaming response receiver
     Stream(mpsc::UnboundedReceiver<ResponseDelta>),
+}
+
+/// State for a single candidate during best_of collection.
+/// Mirrors Python's candidate state dict in gather_non_streaming_batch_response.
+#[derive(Default)]
+struct CandidateState {
+    content: String,
+    finish_reason: Option<String>,
+    completion_tokens: u32,
+    prompt_tokens: u32,
+    cumulative_logprob: Option<f64>,
+    generation_len: Option<u32>,
+    completed: bool,
+    deltas: Vec<ClientDelta>,
+}
+
+impl CandidateState {
+    /// Score for best_of selection: cumulative_logprob / generation_len
+    #[inline]
+    fn score(&self) -> f64 {
+        match (self.cumulative_logprob, self.generation_len) {
+            (Some(cumulative), Some(gen_len)) if gen_len > 0 => cumulative / gen_len as f64,
+            _ => f64::NEG_INFINITY,
+        }
+    }
+}
+
+/// Select the best candidates based on cumulative_logprob / generation_len.
+/// Sorts in-place and truncates to avoid allocations.
+fn select_best_candidates(
+    mut candidates: Vec<CandidateState>,
+    fanout: usize,
+    final_target: usize,
+) -> Vec<CandidateState> {
+    let final_target = final_target.min(candidates.len()).max(1);
+
+    if final_target >= fanout {
+        return candidates;
+    }
+
+    // Sort in-place by score descending
+    candidates.sort_by(|a, b| {
+        b.score()
+            .partial_cmp(&a.score())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    candidates.truncate(final_target);
+    candidates
+}
+
+/// Build a ClientResponse from selected candidates, consuming them to avoid clones.
+fn build_response_from_candidates(candidates: Vec<CandidateState>) -> ClientResponse {
+    let prompt_tokens = candidates.iter().map(|c| c.prompt_tokens).max().unwrap_or(0);
+    let completion_tokens: u32 = candidates.iter().map(|c| c.completion_tokens).sum();
+
+    let capacity: usize = candidates.iter().map(|c| c.deltas.len()).sum();
+    let mut all_deltas = Vec::with_capacity(capacity);
+    let mut text = String::new();
+    let mut finish_reason = None;
+
+    for candidate in candidates {
+        text.push_str(&candidate.content);
+        if candidate.finish_reason.is_some() {
+            finish_reason = candidate.finish_reason;
+        }
+        all_deltas.extend(candidate.deltas);
+    }
+
+    ClientResponse {
+        text,
+        finish_reason,
+        usage: UsageStats {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+        },
+        deltas: all_deltas,
+    }
 }
 
 /// Aggregate deltas into a complete response.
