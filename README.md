@@ -65,7 +65,7 @@ async fn main() -> Result<(), orchard::Error> {
 
 ## Model Profiles
 
-Chat templates and control tokens are loaded from the [orchard-models](https://github.com/TheProxyCompany/orchard-models) submodule at `profiles/`. This provides a single source of truth shared across all Orchard SDKs (Python, Rust, Swift).
+Chat templates and control tokens are loaded from the [Pantheon](https://github.com/TheProxyCompany/Pantheon) submodule at `profiles/`. This provides a single source of truth shared across all Orchard SDKs (Python, Rust, Swift).
 
 ## License
 
