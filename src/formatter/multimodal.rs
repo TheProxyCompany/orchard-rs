@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use super::ChatFormatter;
 use crate::error::{Error, Result};
 
+const DEFAULT_CAPABILITY_PLACEHOLDER: &str = "<|coord|>";
+
 /// A capability input with name and binary payload.
 #[derive(Debug, Clone)]
 pub struct CapabilityInput {
@@ -206,7 +208,7 @@ pub fn build_multimodal_layout(
     content_order: &[(ContentType, usize)],
     placeholder_token: &str,
     exclude_image_placeholder: bool,
-    coord_placeholder: Option<&str>,
+    capability_placeholder: Option<&str>,
 ) -> Result<Vec<LayoutSegment>> {
     let mut layout = Vec::new();
 
@@ -234,20 +236,20 @@ pub fn build_multimodal_layout(
         ));
     }
 
-    let coord_placeholder = coord_placeholder.unwrap_or("<|coord|>");
-    let coord_regex =
-        Regex::new(&regex::escape(coord_placeholder)).expect("escaped regex is always valid");
-    let coord_matches: Vec<_> = coord_regex.find_iter(prompt_text).collect();
-    let use_coord_placeholders = !coord_matches.is_empty();
+    // Preserve legacy behavior for profiles that rely on implicit coord placeholders.
+    let capability_placeholder_token =
+        capability_placeholder.unwrap_or(DEFAULT_CAPABILITY_PLACEHOLDER);
+    let capability_regex = Regex::new(&regex::escape(capability_placeholder_token))
+        .expect("escaped regex is always valid");
+    let capability_matches: Vec<_> = capability_regex.find_iter(prompt_text).collect();
+    let use_capability_placeholders = !capability_matches.is_empty();
 
-    if use_coord_placeholders {
-        let coord_caps: Vec<_> = capabilities.iter().filter(|c| c.name == "coord").collect();
-
-        if coord_matches.len() != coord_caps.len() {
+    if use_capability_placeholders {
+        if capability_matches.len() != capabilities.len() {
             return Err(Error::Other(format!(
-                "Mismatch between coord placeholders ({}) and coord capabilities ({})",
-                coord_matches.len(),
-                coord_caps.len()
+                "Mismatch between capability placeholders ({}) and capability parts ({})",
+                capability_matches.len(),
+                capabilities.len()
             )));
         }
 
@@ -256,14 +258,14 @@ pub fn build_multimodal_layout(
         for (idx, m) in image_matches.iter().enumerate() {
             all_placeholders.push((m.start(), m.end(), "image", idx));
         }
-        for (idx, m) in coord_matches.iter().enumerate() {
-            all_placeholders.push((m.start(), m.end(), "coord", idx));
+        for (idx, m) in capability_matches.iter().enumerate() {
+            all_placeholders.push((m.start(), m.end(), "capability", idx));
         }
 
         all_placeholders.sort_by_key(|p| p.0);
 
         let mut cursor = 0;
-        let mut coord_cap_idx = 0;
+        let mut cap_idx = 0;
 
         for (start, end, ptype, idx) in all_placeholders {
             let text_end = if ptype == "image" && !exclude_image_placeholder {
@@ -289,13 +291,13 @@ pub fn build_multimodal_layout(
                     name: None,
                 });
             } else {
-                let cap = &coord_caps[coord_cap_idx];
+                let cap = &capabilities[cap_idx];
                 layout.push(LayoutSegment {
                     segment_type: "capability".to_string(),
                     length: cap.payload.len(),
                     name: Some(cap.name.clone()),
                 });
-                coord_cap_idx += 1;
+                cap_idx += 1;
             }
 
             cursor = end;

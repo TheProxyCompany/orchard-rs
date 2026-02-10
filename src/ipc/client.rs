@@ -32,6 +32,24 @@ pub struct TokenLogProb {
     pub bytes: Option<Vec<u8>>,
 }
 
+/// A single state transition event emitted by PIE/PSE for structured outputs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResponseStateEvent {
+    /// Event type (e.g., item_started, content_delta, item_completed)
+    pub event_type: String,
+    /// Item type (e.g., message, tool_call, reasoning)
+    pub item_type: String,
+    /// Output index for this item in the response output array
+    pub output_index: u32,
+    /// Identifier for sub-items or tool names
+    pub identifier: String,
+    /// Delta text for streaming content updates
+    pub delta: String,
+    /// Optional final value for completion events
+    pub value: Option<Value>,
+}
+
 /// Response delta from PIE.
 ///
 /// Uses serde for deserialization with sensible defaults for missing fields.
@@ -74,6 +92,12 @@ pub struct ResponseDelta {
     pub modal_decoder_id: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
+    /// Structured state transition events used by Responses API.
+    pub state_events: Vec<ResponseStateEvent>,
+    /// Cached token count (input token cache hits).
+    pub cached_token_count: Option<u32>,
+    /// Reasoning token count, when available.
+    pub reasoning_tokens: Option<u32>,
 }
 
 /// High-performance IPC client for communicating with PIE.
@@ -554,6 +578,7 @@ mod tests {
         assert!(!delta.is_final_delta);
         assert!(delta.tokens.is_empty());
         assert!(delta.top_logprobs.is_empty());
+        assert!(delta.state_events.is_empty());
     }
 
     #[test]
@@ -584,6 +609,7 @@ mod tests {
         assert_eq!(delta.top_logprobs.len(), 2);
         assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
+        assert!(delta.state_events.is_empty());
     }
 
     #[test]
@@ -598,5 +624,36 @@ mod tests {
         assert!(delta.is_final_delta);
         assert!(delta.tokens.is_empty());
         assert!(delta.content.is_none());
+        assert!(delta.state_events.is_empty());
+    }
+
+    #[test]
+    fn test_response_delta_deserialize_with_state_events() {
+        let json = serde_json::json!({
+            "request_id": 7,
+            "is_final_delta": false,
+            "state_events": [
+                {
+                    "event_type": "item_started",
+                    "item_type": "message",
+                    "output_index": 0,
+                    "identifier": "",
+                    "delta": ""
+                },
+                {
+                    "event_type": "content_delta",
+                    "item_type": "message",
+                    "output_index": 0,
+                    "identifier": "",
+                    "delta": "hello"
+                }
+            ]
+        });
+
+        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
+        assert_eq!(delta.request_id, 7);
+        assert_eq!(delta.state_events.len(), 2);
+        assert_eq!(delta.state_events[0].event_type, "item_started");
+        assert_eq!(delta.state_events[1].delta, "hello");
     }
 }

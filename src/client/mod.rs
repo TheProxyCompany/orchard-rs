@@ -4,6 +4,7 @@
 
 mod moondream;
 mod response;
+mod responses;
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -40,6 +41,18 @@ pub use moondream::{
     MOONDREAM_MODEL_ID,
 };
 pub use response::{BatchChatResult, ClientDelta, ClientResponse, UsageStats};
+pub use responses::{
+    ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
+    FunctionCallArgumentsDoneEvent, IncompleteDetails, InputTokensDetails, OutputFunctionCall,
+    OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,
+    OutputTextContent, OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails,
+    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
+    ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
+    ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
+    ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
+    ResponsesResult, StreamErrorDetail, StreamErrorEvent,
+};
 
 /// Errors that can occur during client operations.
 #[derive(Error, Debug)]
@@ -128,6 +141,10 @@ pub struct SamplingParams {
     #[serde(default)]
     pub tools: Vec<serde_json::Value>,
     #[serde(default)]
+    pub tool_choice: Option<serde_json::Value>,
+    #[serde(default)]
+    pub max_tool_calls: Option<i32>,
+    #[serde(default)]
     pub response_format: Option<serde_json::Value>,
     #[serde(default)]
     pub reasoning: bool,
@@ -159,12 +176,23 @@ impl Default for SamplingParams {
             top_logprobs: 0,
             logit_bias: HashMap::new(),
             tools: Vec::new(),
+            tool_choice: None,
+            max_tool_calls: None,
             response_format: None,
             reasoning: false,
             reasoning_effort: None,
             instructions: None,
             task_name: None,
         }
+    }
+}
+
+fn tool_choice_to_string(tool_choice: Option<&Value>) -> String {
+    match tool_choice {
+        None | Some(Value::Null) => "auto".to_string(),
+        Some(Value::String(value)) => value.clone(),
+        Some(Value::Object(value)) => serde_json::to_string(value).unwrap_or_default(),
+        Some(other) => other.to_string(),
     }
 }
 
@@ -272,6 +300,8 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
+        let capability_placeholder = info.formatter.capability_placeholder_token();
+
         // Build layout for multimodal content
         let layout_segments = build_multimodal_layout(
             &prompt_text,
@@ -280,18 +310,11 @@ impl Client {
             &content_order,
             info.formatter.image_placeholder_token(),
             info.formatter.should_clip_image_placeholder(),
-            info.formatter.control_tokens.coord_placeholder.as_deref(),
+            capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
-        // Build final prompt (with placeholders removed if needed)
-        let mut final_prompt = prompt_text;
-        if info.formatter.should_clip_image_placeholder() {
-            final_prompt = final_prompt.replace(info.formatter.default_image_placeholder(), "");
-        }
-        if let Some(coord) = &info.formatter.control_tokens.coord_placeholder {
-            final_prompt = final_prompt.replace(coord, "");
-        }
+        let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
 
         // Serialize tools and response_format to JSON strings (matching Python)
         let tool_schemas_json = if params.tools.is_empty() {
@@ -304,6 +327,9 @@ impl Client {
             .as_ref()
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
+        let tool_calling_tokens = info.formatter.get_tool_calling_tokens().clone();
+        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
+        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
         // Build PromptPayload with full multimodal data
         // Generate unique RNG seed if not explicitly provided
@@ -335,6 +361,9 @@ impl Client {
             top_logprobs: params.top_logprobs,
             logit_bias: params.logit_bias.clone(),
             tool_schemas_json,
+            tool_calling_tokens,
+            tool_choice,
+            max_tool_calls,
             response_format_json,
             task_name: params.task_name.clone(),
             reasoning_effort: params.reasoning_effort.clone(),
@@ -397,7 +426,9 @@ impl Client {
             // Score and select best candidates (matching Python logic)
             let selected = select_best_candidates(candidate_states, best_of, final_candidates);
 
-            Ok(ChatResult::Complete(build_response_from_candidates(selected)))
+            Ok(ChatResult::Complete(build_response_from_candidates(
+                selected,
+            )))
         }
     }
 
@@ -472,6 +503,9 @@ impl Client {
             .as_ref()
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
+        let tool_calling_tokens = info.formatter.get_tool_calling_tokens().clone();
+        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
+        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
@@ -503,6 +537,8 @@ impl Client {
                 )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
+            let capability_placeholder = info.formatter.capability_placeholder_token();
+
             // Build layout for multimodal content
             let layout_segments = build_multimodal_layout(
                 &prompt_text,
@@ -511,18 +547,11 @@ impl Client {
                 &content_order,
                 info.formatter.image_placeholder_token(),
                 info.formatter.should_clip_image_placeholder(),
-                info.formatter.control_tokens.coord_placeholder.as_deref(),
+                capability_placeholder,
             )
             .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
-            // Build final prompt (with placeholders removed if needed)
-            let mut final_prompt = prompt_text;
-            if info.formatter.should_clip_image_placeholder() {
-                final_prompt = final_prompt.replace(info.formatter.default_image_placeholder(), "");
-            }
-            if let Some(coord) = &info.formatter.control_tokens.coord_placeholder {
-                final_prompt = final_prompt.replace(coord, "");
-            }
+            let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
 
             // Generate unique RNG seed for EACH prompt in batch
             let rng_seed = if params.rng_seed == 0 {
@@ -553,6 +582,9 @@ impl Client {
                 top_logprobs: params.top_logprobs,
                 logit_bias: params.logit_bias.clone(),
                 tool_schemas_json: tool_schemas_json.clone(),
+                tool_calling_tokens: tool_calling_tokens.clone(),
+                tool_choice: tool_choice.clone(),
+                max_tool_calls,
                 response_format_json: response_format_json.clone(),
                 task_name: params.task_name.clone(),
                 reasoning_effort: params.reasoning_effort.clone(),
@@ -699,7 +731,11 @@ fn select_best_candidates(
 
 /// Build a ClientResponse from selected candidates, consuming them to avoid clones.
 fn build_response_from_candidates(candidates: Vec<CandidateState>) -> ClientResponse {
-    let prompt_tokens = candidates.iter().map(|c| c.prompt_tokens).max().unwrap_or(0);
+    let prompt_tokens = candidates
+        .iter()
+        .map(|c| c.prompt_tokens)
+        .max()
+        .unwrap_or(0);
     let completion_tokens: u32 = candidates.iter().map(|c| c.completion_tokens).sum();
 
     let capacity: usize = candidates.iter().map(|c| c.deltas.len()).sum();

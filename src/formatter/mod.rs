@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use minijinja::value::Object;
+use minijinja::value::{Kwargs, Object};
 use minijinja::{context, Environment, Value};
 use minijinja_contrib::pycompat::unknown_method_callback;
 
@@ -17,6 +17,7 @@ pub use multimodal::{
 };
 
 use crate::error::{Error, Result};
+use crate::ipc::serialization::ToolCallingTokens;
 
 /// Wrapper that renders as text but exposes an indexable `type` field for Jinja.
 /// Mirrors Python's _RenderableText behavior.
@@ -97,6 +98,17 @@ fn determine_model_type(config: &serde_json::Value) -> &str {
     }
 }
 
+fn tojson_filter(
+    value: &Value,
+    indent: Option<Value>,
+    kwargs: Kwargs,
+) -> std::result::Result<Value, minijinja::Error> {
+    if kwargs.has("ensure_ascii") {
+        let _: Option<bool> = kwargs.get("ensure_ascii")?;
+    }
+    minijinja::filters::tojson(value, indent, kwargs)
+}
+
 /// Chat formatter using Jinja2-compatible templates.
 ///
 /// Handles the application of chat templates to conversation histories.
@@ -110,6 +122,12 @@ pub struct ChatFormatter {
     pub control_tokens: ControlTokens,
     /// Compiled template
     template_source: String,
+    /// Parsed capabilities.yaml content.
+    capabilities: serde_json::Value,
+    /// Placeholder tokens from capabilities manifest.
+    capability_placeholders: Vec<String>,
+    /// Cached tool-calling delimiters from capabilities manifest.
+    tool_calling_tokens: ToolCallingTokens,
 }
 
 impl ChatFormatter {
@@ -133,12 +151,18 @@ impl ChatFormatter {
         let template_source = std::fs::read_to_string(&template_path).map_err(|_| {
             Error::Template(format!("Failed to load template from {:?}", template_path))
         })?;
+        let capabilities = Self::load_capabilities(&profile_dir)?;
+        let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
+        let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
 
         Ok(Self {
             model_path: model_path.to_string_lossy().to_string(),
             model_type,
             control_tokens,
             template_source,
+            capabilities,
+            capability_placeholders,
+            tool_calling_tokens,
         })
     }
 
@@ -170,6 +194,36 @@ impl ChatFormatter {
             .unwrap_or(self.default_image_placeholder())
     }
 
+    /// Placeholder token used for inline capability markers in templates.
+    ///
+    /// This excludes image placeholders, which are handled separately.
+    pub fn capability_placeholder_token(&self) -> Option<&str> {
+        let image_token = self.image_placeholder_token();
+        self.capability_placeholders
+            .iter()
+            .map(String::as_str)
+            .find(|token| *token != image_token && *token != self.default_image_placeholder())
+    }
+
+    /// Strip placeholders that should not be sent to PIE as text bytes.
+    pub fn strip_template_placeholders(&self, prompt: &str) -> String {
+        let mut stripped = prompt.to_string();
+
+        if self.should_clip_image_placeholder() {
+            stripped = stripped.replace(self.default_image_placeholder(), "");
+        }
+
+        let image_token = self.image_placeholder_token();
+        for placeholder in &self.capability_placeholders {
+            if placeholder == image_token || placeholder == self.default_image_placeholder() {
+                continue;
+            }
+            stripped = stripped.replace(placeholder, "");
+        }
+
+        stripped
+    }
+
     /// Apply the chat template to a conversation.
     ///
     /// # Arguments
@@ -184,8 +238,37 @@ impl ChatFormatter {
         reasoning: bool,
         task: Option<&str>,
     ) -> Result<String> {
+        self.apply_template_with_tools(conversation, add_generation_prompt, reasoning, task, None)
+    }
+
+    /// Apply the chat template with tool schemas and capabilities context.
+    pub fn apply_template_with_tools(
+        &self,
+        conversation: &[HashMap<String, serde_json::Value>],
+        add_generation_prompt: bool,
+        reasoning: bool,
+        task: Option<&str>,
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<String> {
+        self.render_template(conversation, add_generation_prompt, reasoning, task, tools)
+    }
+
+    /// Tool-calling delimiters from capabilities.yaml.
+    pub fn get_tool_calling_tokens(&self) -> &ToolCallingTokens {
+        &self.tool_calling_tokens
+    }
+
+    fn render_template(
+        &self,
+        conversation: &[HashMap<String, serde_json::Value>],
+        add_generation_prompt: bool,
+        reasoning: bool,
+        task: Option<&str>,
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<String> {
         let mut env = Environment::new();
         env.set_unknown_method_callback(unknown_method_callback);
+        env.add_filter("tojson", tojson_filter);
         // Match Python's Jinja2 Environment config
         env.set_trim_blocks(true);
         env.set_lstrip_blocks(true);
@@ -217,6 +300,10 @@ impl ChatFormatter {
             .collect();
 
         let roles = self.control_tokens.roles.to_value();
+        let tools_value = tools
+            .map(|items| Self::json_to_minijinja(&serde_json::Value::Array(items.to_vec())))
+            .unwrap_or(Value::UNDEFINED);
+        let capabilities_value = Self::json_to_minijinja(&self.capabilities);
 
         let ctx = context! {
             interactions => interactions,
@@ -231,11 +318,88 @@ impl ChatFormatter {
             reasoning => reasoning,
             task => task,
             roles => roles,
+            tools => tools_value,
+            capabilities => capabilities_value,
         };
 
         template
             .render(ctx)
             .map_err(|e| Error::Template(e.to_string()))
+    }
+
+    fn load_capabilities(profile_dir: &Path) -> Result<serde_json::Value> {
+        let capabilities_path = profile_dir.join("capabilities.yaml");
+        if !capabilities_path.exists() {
+            return Ok(serde_json::json!({}));
+        }
+
+        let content = std::fs::read_to_string(&capabilities_path)?;
+        let parsed_yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+            Error::Template(format!(
+                "Failed to parse capabilities from {:?}: {}",
+                capabilities_path, e
+            ))
+        })?;
+
+        serde_json::to_value(parsed_yaml).map_err(|e| {
+            Error::Template(format!(
+                "Failed to convert capabilities from {:?}: {}",
+                capabilities_path, e
+            ))
+        })
+    }
+
+    fn extract_capability_placeholders(capabilities: &serde_json::Value) -> Vec<String> {
+        let mut placeholders = Vec::new();
+
+        if let Some(capability_map) = capabilities.as_object() {
+            for capability in capability_map.values() {
+                let Some(placeholder_map) = capability
+                    .get("placeholders")
+                    .and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+
+                for placeholder in placeholder_map
+                    .values()
+                    .filter_map(serde_json::Value::as_str)
+                {
+                    if placeholder.is_empty() || placeholders.iter().any(|p| p == placeholder) {
+                        continue;
+                    }
+                    placeholders.push(placeholder.to_string());
+                }
+            }
+        }
+
+        placeholders
+    }
+
+    fn extract_tool_calling_tokens(capabilities: &serde_json::Value) -> ToolCallingTokens {
+        let token_map = capabilities
+            .get("tool_calling")
+            .and_then(|cap| cap.get("formats"))
+            .and_then(serde_json::Value::as_array)
+            .and_then(|formats| formats.first())
+            .and_then(|format| format.get("tokens"))
+            .and_then(serde_json::Value::as_object);
+
+        let token = |key: &str| {
+            token_map
+                .and_then(|tokens| tokens.get(key))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        ToolCallingTokens {
+            call_start: token("start"),
+            call_end: token("end"),
+            section_start: token("section_start"),
+            section_end: token("section_end"),
+            name_separator: token("name_separator"),
+        }
     }
 
     fn find_profile_dir(model_type: &str) -> Result<std::path::PathBuf> {

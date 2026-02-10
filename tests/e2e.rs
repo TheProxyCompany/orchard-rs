@@ -25,6 +25,12 @@ mod e2e_multi_candidate;
 mod e2e_multi_token;
 #[path = "e2e/e2e_multimodal.rs"]
 mod e2e_multimodal;
+#[path = "e2e/e2e_responses_basic.rs"]
+mod e2e_responses_basic;
+#[path = "e2e/e2e_responses_structured.rs"]
+mod e2e_responses_structured;
+#[path = "e2e/e2e_responses_tools.rs"]
+mod e2e_responses_tools;
 #[path = "e2e/e2e_stop_sequences.rs"]
 mod e2e_stop_sequences;
 #[path = "e2e/e2e_structured_generation.rs"]
