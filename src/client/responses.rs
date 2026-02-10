@@ -287,17 +287,13 @@ impl ResponsesRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OutputStatus {
+    #[default]
     Completed,
     Incomplete,
     InProgress,
     Failed,
-}
-
-impl Default for OutputStatus {
-    fn default() -> Self {
-        Self::Completed
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -696,7 +692,7 @@ impl ResponseEvent {
 }
 
 pub enum ResponsesResult {
-    Complete(ResponseObject),
+    Complete(Box<ResponseObject>),
     Stream(mpsc::Receiver<ResponseEvent>),
 }
 
@@ -1586,7 +1582,7 @@ impl Client {
             Ok(ResponsesResult::Stream(event_rx))
         } else {
             let response = gather_non_streaming_response(stream, model_id, &request).await?;
-            Ok(ResponsesResult::Complete(response))
+            Ok(ResponsesResult::Complete(Box::new(response)))
         }
     }
 }

@@ -54,7 +54,7 @@ async fn test_responses_non_streaming_string_input() {
     );
 
     let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => response,
+        ResponsesResult::Complete(response) => *response,
         ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
     };
 
@@ -114,7 +114,7 @@ async fn test_responses_non_streaming_message_items() {
     );
 
     let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => response,
+        ResponsesResult::Complete(response) => *response,
         ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
     };
 
@@ -152,7 +152,7 @@ async fn test_responses_echo_fields() {
     );
 
     let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => response,
+        ResponsesResult::Complete(response) => *response,
         ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
     };
 
@@ -349,7 +349,7 @@ async fn test_responses_incomplete_non_streaming() {
     );
 
     let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => response,
+        ResponsesResult::Complete(response) => *response,
         ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
     };
 
@@ -436,7 +436,7 @@ async fn test_responses_instructions() {
     );
 
     let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => response,
+        ResponsesResult::Complete(response) => *response,
         ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
     };
 
