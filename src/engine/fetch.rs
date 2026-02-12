@@ -54,7 +54,7 @@ impl EngineFetcher {
                 .join("bin")
                 .join("proxy_inference_engine");
             if local_path.exists() {
-                log::debug!("Using local PIE build: {:?}", local_path);
+                tracing::debug!("Using local PIE build: {:?}", local_path);
                 return Ok(local_path);
             }
         }
@@ -117,12 +117,12 @@ impl EngineFetcher {
 
         let expected_sha256 = info.get("sha256").and_then(|v| v.as_str());
 
-        log::info!("Downloading PIE version {}", version);
+        tracing::info!("Downloading PIE version {}", version);
         let content = self.download_with_retry(url, expected_sha256).await?;
 
         self.extract_and_install(&content, &version)?;
 
-        log::info!("Installed PIE version {}", version);
+        tracing::info!("Installed PIE version {}", version);
         Ok(())
     }
 
@@ -204,7 +204,7 @@ impl EngineFetcher {
                     if attempt == MAX_RETRIES - 1 {
                         return Err(e);
                     }
-                    log::warn!(
+                    tracing::warn!(
                         "Download attempt {} failed: {}, retrying...",
                         attempt + 1,
                         e

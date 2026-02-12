@@ -391,7 +391,7 @@ fn normalize_role(raw_role: &str, available_roles: &std::collections::HashSet<St
     };
 
     if !available_roles.contains(normalized) {
-        log::debug!(
+        tracing::debug!(
             "Role '{}' not found in formatter profile; using as-is",
             normalized
         );

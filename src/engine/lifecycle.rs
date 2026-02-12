@@ -22,7 +22,7 @@ const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
 fn remove_if_exists(path: &std::path::Path) {
     if let Err(e) = std::fs::remove_file(path) {
         if e.kind() != std::io::ErrorKind::NotFound {
-            log::warn!("Failed to remove {}: {}", path.display(), e);
+            tracing::warn!("Failed to remove {}: {}", path.display(), e);
         }
     }
 }
@@ -199,26 +199,26 @@ impl InferenceEngine {
         let pid = match read_pid_file(&paths.pid_file) {
             Some(p) if pid_is_alive(p) => p,
             _ => {
-                log::info!("Engine is not running. Cleaning up stale files.");
+                tracing::info!("Engine is not running. Cleaning up stale files.");
                 cleanup_all(&paths);
                 return Ok(());
             }
         };
 
         if !pid_is_engine(pid) {
-            log::warn!(
+            tracing::warn!(
                 "PID {} does not belong to proxy_inference_engine; cleaning stale files.",
                 pid
             );
             cleanup_all(&paths);
             return Ok(());
         }
-        log::info!("Sending shutdown signal to engine process {}", pid);
+        tracing::info!("Sending shutdown signal to engine process {}", pid);
 
         if stop_engine_process(pid, timeout) {
             cleanup_all(&paths);
             reap_engine_process(pid);
-            log::info!("Engine process {} terminated gracefully", pid);
+            tracing::info!("Engine process {} terminated gracefully", pid);
             Ok(())
         } else {
             Err(Error::ShutdownFailed(format!(
@@ -251,7 +251,7 @@ impl InferenceEngine {
 
         // Launch engine if needed
         if !engine_running {
-            log::debug!("Inference engine not running. Launching new instance.");
+            tracing::debug!("Inference engine not running. Launching new instance.");
 
             // Clean up stale state files
             remove_if_exists(&self.paths.pid_file);
@@ -290,7 +290,7 @@ impl InferenceEngine {
     async fn launch_engine(&mut self) -> Result<()> {
         let engine_path = self.fetcher.get_engine_path().await?;
 
-        log::info!("Launching PIE from {:?}", engine_path);
+        tracing::info!("Launching PIE from {:?}", engine_path);
 
         // Open log file for engine output
         let log_file = std::fs::File::create(&self.paths.engine_log_file)?;
@@ -306,7 +306,7 @@ impl InferenceEngine {
     }
 
     async fn wait_for_engine_ready(&self) -> Result<()> {
-        log::info!("Waiting for telemetry heartbeat from engine...");
+        tracing::info!("Waiting for telemetry heartbeat from engine...");
 
         // Subscribe to telemetry topic via NNG
         let telemetry_topic = [EVENT_TOPIC_PREFIX, b"telemetry"].concat();
@@ -346,7 +346,7 @@ impl InferenceEngine {
                 Ok(msg) => msg,
                 Err(nng::Error::TimedOut) => continue,
                 Err(e) => {
-                    log::debug!("Error receiving telemetry: {}", e);
+                    tracing::debug!("Error receiving telemetry: {}", e);
                     continue;
                 }
             };
@@ -355,13 +355,13 @@ impl InferenceEngine {
             let bytes = msg.as_slice();
             let parts: Vec<&[u8]> = bytes.splitn(2, |&b| b == 0).collect();
             if parts.len() < 2 {
-                log::warn!("Discarding malformed event message while waiting for telemetry");
+                tracing::warn!("Discarding malformed event message while waiting for telemetry");
                 continue;
             }
 
             let (topic_part, json_body) = (parts[0], parts[1]);
             if topic_part != telemetry_topic.as_slice() {
-                log::debug!(
+                tracing::debug!(
                     "Ignoring unexpected startup topic '{}'",
                     String::from_utf8_lossy(topic_part)
                 );
@@ -372,7 +372,7 @@ impl InferenceEngine {
             let payload: serde_json::Value = match serde_json::from_slice(json_body) {
                 Ok(v) => v,
                 Err(e) => {
-                    log::warn!("Discarding malformed telemetry payload: {}", e);
+                    tracing::warn!("Discarding malformed telemetry payload: {}", e);
                     continue;
                 }
             };
@@ -387,13 +387,15 @@ impl InferenceEngine {
             match engine_pid {
                 Some(pid) if pid > 0 => {
                     if let Err(e) = write_pid_file(&self.paths.pid_file, pid) {
-                        log::warn!("Failed to write PID file: {}", e);
+                        tracing::warn!("Failed to write PID file: {}", e);
                     }
-                    log::info!("Received telemetry heartbeat. Engine PID {} recorded.", pid);
+                    tracing::info!("Received telemetry heartbeat. Engine PID {} recorded.", pid);
                     return Ok(());
                 }
                 _ => {
-                    log::warn!("Telemetry payload missing valid PID; waiting for next heartbeat");
+                    tracing::warn!(
+                        "Telemetry payload missing valid PID; waiting for next heartbeat"
+                    );
                     continue;
                 }
             }
@@ -418,13 +420,13 @@ impl InferenceEngine {
         };
 
         if !pid_is_alive(pid) {
-            log::debug!("Engine PID {} already exited", pid);
+            tracing::debug!("Engine PID {} already exited", pid);
             cleanup_files();
             return Ok(());
         }
 
         if !pid_is_engine(pid) {
-            log::warn!(
+            tracing::warn!(
                 "PID {} does not belong to proxy_inference_engine; cleaning stale files.",
                 pid
             );
@@ -442,7 +444,7 @@ impl InferenceEngine {
         reap_engine_process(pid);
         cleanup_files();
 
-        log::info!("Engine PID {} stopped", pid);
+        tracing::info!("Engine PID {} stopped", pid);
         Ok(())
     }
 
@@ -469,7 +471,7 @@ impl Drop for InferenceEngine {
     fn drop(&mut self) {
         if !self.closed {
             if let Err(e) = self.close() {
-                log::error!("Failed to close InferenceEngine: {}", e);
+                tracing::error!("Failed to close InferenceEngine: {}", e);
             }
         }
     }

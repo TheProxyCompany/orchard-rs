@@ -267,6 +267,12 @@ impl IPCClient {
         prompts: &[PromptPayload],
     ) -> Result<(usize, mpsc::UnboundedReceiver<ResponseDelta>)> {
         let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            prompt_count = prompts.len(),
+            "Serializing and sending IPC batch request"
+        );
 
         let payload = build_batch_request_payload(
             request_id,
@@ -276,6 +282,12 @@ impl IPCClient {
             self.response_channel_id,
             prompts,
         )?;
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            payload_bytes = payload.len(),
+            "Built IPC batch payload"
+        );
 
         let (tx, rx) = mpsc::unbounded_channel();
         let remaining_finals = prompts
@@ -302,6 +314,12 @@ impl IPCClient {
 
         let msg = nng::Message::from(payload.as_slice());
         socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            expected_final_count = remaining_finals,
+            "IPC batch request sent"
+        );
 
         Ok((prompts.len(), rx))
     }
@@ -387,7 +405,7 @@ impl IPCClient {
 
         match handle {
             Ok(h) => self.listener_handle = Some(h),
-            Err(e) => log::error!("Failed to spawn IPC listener thread: {}", e),
+            Err(e) => tracing::error!("Failed to spawn IPC listener thread: {}", e),
         }
     }
 }
@@ -428,6 +446,73 @@ fn run_response_listener(
                     let json_data = &data[response_topic_bytes.len()..];
 
                     if let Ok(delta) = serde_json::from_slice::<ResponseDelta>(json_data) {
+                        let has_content = delta
+                            .content
+                            .as_ref()
+                            .map(|content| !content.is_empty())
+                            .unwrap_or(false);
+                        let event_type = if delta.error.is_some() {
+                            "error"
+                        } else if delta.is_final_delta {
+                            "final_delta"
+                        } else if !delta.state_events.is_empty() {
+                            "state_event_delta"
+                        } else if has_content || !delta.tokens.is_empty() {
+                            "content_delta"
+                        } else {
+                            "delta"
+                        };
+                        let content_chars = delta
+                            .content
+                            .as_ref()
+                            .map(|content| content.chars().count())
+                            .unwrap_or(0);
+
+                        tracing::debug!(
+                            request_id = delta.request_id,
+                            sequence_id = ?delta.sequence_id,
+                            prompt_index = ?delta.prompt_index,
+                            candidate_index = ?delta.candidate_index,
+                            event_type,
+                            is_final = delta.is_final_delta,
+                            finish_reason = ?delta.finish_reason.as_deref(),
+                            has_error = delta.error.is_some(),
+                            content_chars,
+                            token_count = delta.tokens.len(),
+                            state_event_count = delta.state_events.len(),
+                            "Received IPC response event"
+                        );
+                        tracing::trace!(
+                            request_id = delta.request_id,
+                            sequence_id = ?delta.sequence_id,
+                            event_type,
+                            "Received IPC response event payload:\n{:#?}",
+                            delta
+                        );
+
+                        for event in &delta.state_events {
+                            tracing::debug!(
+                                request_id = delta.request_id,
+                                sequence_id = ?delta.sequence_id,
+                                prompt_index = ?delta.prompt_index,
+                                candidate_index = ?delta.candidate_index,
+                                event_type = %event.event_type,
+                                item_type = %event.item_type,
+                                output_index = event.output_index,
+                                identifier = %event.identifier,
+                                delta_chars = event.delta.chars().count(),
+                                has_value = event.value.is_some(),
+                                "Received IPC response state event"
+                            );
+                            tracing::trace!(
+                                request_id = delta.request_id,
+                                sequence_id = ?delta.sequence_id,
+                                event_type = %event.event_type,
+                                "Received IPC response state event payload:\n{:#?}",
+                                event
+                            );
+                        }
+
                         let request_id = delta.request_id;
                         let is_final = delta.is_final_delta;
 
@@ -477,11 +562,11 @@ fn run_response_listener(
     }
 
     // Graceful shutdown: notify any remaining pending requests
-    log::info!("IPC listener shutting down");
+    tracing::info!("IPC listener shutting down");
     let requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
 
     if !requests.is_empty() {
-        log::warn!(
+        tracing::warn!(
             "IPC listener exiting with {} active requests; failing them.",
             requests.len()
         );
@@ -505,7 +590,7 @@ fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
     // Event format: __PIE_EVENT__:<event_name>\x00<json_body>
     let parts: Vec<&[u8]> = data.splitn(2, |&b| b == 0).collect();
     if parts.len() != 2 {
-        log::warn!("Received malformed event message");
+        tracing::warn!("Received malformed event message");
         return;
     }
 
@@ -515,7 +600,7 @@ fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
     let event_name = if topic_part.len() > EVENT_TOPIC_PREFIX.len() {
         String::from_utf8_lossy(&topic_part[EVENT_TOPIC_PREFIX.len()..]).to_string()
     } else {
-        log::warn!("Event message has empty event name");
+        tracing::warn!("Event message has empty event name");
         return;
     };
 
@@ -523,12 +608,14 @@ fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
     let payload: Value = match serde_json::from_slice(json_body) {
         Ok(v) => v,
         Err(e) => {
-            log::error!("Failed to parse engine event payload: {}", e);
+            tracing::error!("Failed to parse engine event payload: {}", e);
             return;
         }
     };
 
-    log::debug!("Received engine event: {}", event_name);
+    if event_name != "telemetry" {
+        tracing::debug!("Received engine event: {}", event_name);
+    }
 
     // Dispatch to callback if registered
     if let Some(callback) = event_callback {

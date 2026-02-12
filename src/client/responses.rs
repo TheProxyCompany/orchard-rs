@@ -1476,7 +1476,19 @@ impl Client {
     ) -> Result<ResponsesResult> {
         let info = self.registry.ensure_loaded(model_id).await?;
         let request_id = self.ipc.next_request_id();
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream = request.stream,
+            "Building responses request"
+        );
         let messages = request.to_messages();
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            messages = ?messages,
+            "Responses messages before multimodal expansion"
+        );
         let reasoning_flag = request.reasoning_effort.is_some();
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
@@ -1488,6 +1500,12 @@ impl Client {
                 "Response request must include at least one content segment.".into(),
             ));
         }
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            messages_for_template = ?messages_for_template,
+            "Responses messages after multimodal expansion"
+        );
 
         let tool_schemas = request
             .tools
@@ -1526,6 +1544,21 @@ impl Client {
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            prompt_chars = final_prompt.chars().count(),
+            image_count = image_buffers.len(),
+            capability_count = capabilities.len(),
+            layout_segment_count = layout_segments.len(),
+            "Prepared responses prompt payload"
+        );
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            prompt = %format!("\n{}", final_prompt),
+            "Responses prompt sent to PIE"
+        );
 
         let response_format_json = request
             .text
@@ -1564,6 +1597,12 @@ impl Client {
             task_name: None,
             reasoning_effort: request.reasoning_effort.clone(),
         };
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream = request.stream,
+            "Dispatching responses request to PIE"
+        );
         let (_batch_size, stream) = self.ipc.send_batch_request(
             request_id,
             model_id,

@@ -167,7 +167,7 @@ pub fn stop_engine_process(pid: u32, timeout: Duration) -> bool {
         return true;
     }
 
-    log::warn!("Engine did not respond to SIGINT, sending SIGTERM");
+    tracing::warn!("Engine did not respond to SIGINT, sending SIGTERM");
 
     // Try SIGTERM
     if unsafe { libc::kill(pid, SIGTERM) } != 0 {
@@ -181,7 +181,7 @@ pub fn stop_engine_process(pid: u32, timeout: Duration) -> bool {
         return true;
     }
 
-    log::error!("Engine did not respond to SIGTERM, sending SIGKILL");
+    tracing::error!("Engine did not respond to SIGTERM, sending SIGKILL");
 
     // Last resort: SIGKILL
     unsafe { libc::kill(pid, SIGKILL) };

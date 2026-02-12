@@ -255,7 +255,7 @@ impl ModelRegistry {
             }
             "accepted" => {
                 // Async activation - wait for model_loaded event
-                log::debug!(
+                tracing::debug!(
                     "Model '{}' activation accepted, waiting for model_loaded event",
                     canonical_id
                 );
@@ -478,7 +478,7 @@ impl ModelRegistry {
 
     /// Download a model from HuggingFace Hub.
     async fn download_model(repo_id: &str) -> Result<std::path::PathBuf, String> {
-        log::info!("Downloading model from HuggingFace: {}", repo_id);
+        tracing::info!("Downloading model from HuggingFace: {}", repo_id);
 
         let api = ApiBuilder::new()
             .build()
@@ -513,11 +513,11 @@ impl ModelRegistry {
 
         for file in &files_to_download {
             if let Err(e) = repo.get(file).await {
-                log::debug!("Optional file {} not found: {}", file, e);
+                tracing::debug!("Optional file {} not found: {}", file, e);
             }
         }
 
-        log::info!("Model downloaded to {:?}", model_dir);
+        tracing::info!("Model downloaded to {:?}", model_dir);
         Ok(model_dir)
     }
 
@@ -613,7 +613,7 @@ impl ModelRegistry {
         let canonical_id = match self.canonicalize(model_id).await {
             Ok(id) => id,
             Err(_) => {
-                log::warn!("Received capabilities for unknown model '{}'", model_id);
+                tracing::warn!("Received capabilities for unknown model '{}'", model_id);
                 return;
             }
         };
@@ -670,7 +670,7 @@ impl ModelRegistry {
         let model_id = match payload.get("model_id").and_then(|v| v.as_str()) {
             Some(id) => id,
             None => {
-                log::warn!("Received model_loaded event without model_id");
+                tracing::warn!("Received model_loaded event without model_id");
                 return;
             }
         };
@@ -703,7 +703,7 @@ impl ModelRegistry {
             Ok(id) => id,
             Err(_) => {
                 // Try the raw model_id as fallback
-                log::debug!("Model '{}' not found in alias cache, using as-is", model_id);
+                tracing::debug!("Model '{}' not found in alias cache, using as-is", model_id);
                 model_id.to_string()
             }
         };

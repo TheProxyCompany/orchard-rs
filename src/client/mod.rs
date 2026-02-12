@@ -274,6 +274,19 @@ impl Client {
         let info = self.registry.ensure_loaded(model_id).await?;
 
         let request_id = self.ipc.next_request_id();
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream,
+            message_count = messages.len(),
+            "Building chat request"
+        );
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            messages = ?messages,
+            "Chat messages before template application"
+        );
 
         // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
         let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
@@ -288,6 +301,12 @@ impl Client {
                 "Chat request must include at least one message".into(),
             ));
         }
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            messages_for_template = ?messages_for_template,
+            "Chat messages after multimodal expansion"
+        );
 
         // Apply template with reasoning flag
         let prompt_text = info
@@ -315,6 +334,21 @@ impl Client {
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            prompt_chars = final_prompt.chars().count(),
+            image_count = image_buffers.len(),
+            capability_count = capabilities.len(),
+            layout_segment_count = layout_segments.len(),
+            "Prepared chat prompt payload"
+        );
+        tracing::trace!(
+            request_id,
+            model_id = %model_id,
+            prompt = %final_prompt,
+            "Chat prompt sent to PIE"
+        );
 
         // Serialize tools and response_format to JSON strings (matching Python)
         let tool_schemas_json = if params.tools.is_empty() {
@@ -370,6 +404,12 @@ impl Client {
         };
 
         // Use unified batch request path (even for single prompts)
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream,
+            "Dispatching chat request to PIE"
+        );
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             model_id,
@@ -488,6 +528,13 @@ impl Client {
 
         let request_id = self.ipc.next_request_id();
         let num_prompts = conversations.len();
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream,
+            prompt_count = num_prompts,
+            "Building batched chat request"
+        );
 
         // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
         let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
@@ -510,7 +557,7 @@ impl Client {
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
-        for messages in &conversations {
+        for (prompt_index, messages) in conversations.iter().enumerate() {
             // Build multimodal content (pass instructions if provided)
             let (messages_for_template, image_buffers, capabilities, content_order) =
                 build_multimodal_messages(
@@ -525,6 +572,14 @@ impl Client {
                     "Chat request must include at least one message".into(),
                 ));
             }
+            tracing::trace!(
+                request_id,
+                model_id = %model_id,
+                prompt_index,
+                messages = ?messages,
+                messages_for_template = ?messages_for_template,
+                "Prepared batch messages for prompt"
+            );
 
             // Apply template with reasoning flag
             let prompt_text = info
@@ -552,6 +607,23 @@ impl Client {
             .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
             let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+            tracing::debug!(
+                request_id,
+                model_id = %model_id,
+                prompt_index,
+                prompt_chars = final_prompt.chars().count(),
+                image_count = image_buffers.len(),
+                capability_count = capabilities.len(),
+                layout_segment_count = layout_segments.len(),
+                "Prepared batched prompt payload"
+            );
+            tracing::trace!(
+                request_id,
+                model_id = %model_id,
+                prompt_index,
+                prompt = %final_prompt,
+                "Batch prompt sent to PIE"
+            );
 
             // Generate unique RNG seed for EACH prompt in batch
             let rng_seed = if params.rng_seed == 0 {
@@ -592,6 +664,13 @@ impl Client {
         }
 
         // Send ONE batch request with all prompts
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            stream,
+            prompt_count = prompt_payloads.len(),
+            "Dispatching batched chat request to PIE"
+        );
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             model_id,
