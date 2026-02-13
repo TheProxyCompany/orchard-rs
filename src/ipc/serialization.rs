@@ -66,17 +66,21 @@ pub struct PromptPayload {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ToolCallingTokens {
+pub struct ToolCallFormat {
     #[serde(default)]
     pub call_start: String,
     #[serde(default)]
     pub call_end: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolCallingTokens {
+    #[serde(default)]
+    pub formats: Vec<ToolCallFormat>,
     #[serde(default)]
     pub section_start: String,
     #[serde(default)]
     pub section_end: String,
-    #[serde(default)]
-    pub name_separator: String,
 }
 
 fn default_tool_choice() -> String {
@@ -300,11 +304,9 @@ pub fn build_batch_request_payload(
             "stop_sequences": prompt.stop_sequences,
             "tool_schemas_json": prompt.tool_schemas_json,
             "tool_calling_tokens": {
-                "call_start": prompt.tool_calling_tokens.call_start,
-                "call_end": prompt.tool_calling_tokens.call_end,
+                "formats": &prompt.tool_calling_tokens.formats,
                 "section_start": prompt.tool_calling_tokens.section_start,
                 "section_end": prompt.tool_calling_tokens.section_end,
-                "name_separator": prompt.tool_calling_tokens.name_separator,
             },
             "tool_choice": prompt.tool_choice,
             "max_tool_calls": prompt.max_tool_calls,

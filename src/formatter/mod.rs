@@ -17,7 +17,7 @@ pub use multimodal::{
 };
 
 use crate::error::{Error, Result};
-use crate::ipc::serialization::ToolCallingTokens;
+use crate::ipc::serialization::{ToolCallFormat, ToolCallingTokens};
 
 /// Wrapper that renders as text but exposes an indexable `type` field for Jinja.
 /// Mirrors Python's _RenderableText behavior.
@@ -377,28 +377,41 @@ impl ChatFormatter {
     }
 
     fn extract_tool_calling_tokens(capabilities: &serde_json::Value) -> ToolCallingTokens {
-        let token_map = capabilities
+        let format_entries = capabilities
             .get("tool_calling")
             .and_then(|cap| cap.get("formats"))
-            .and_then(serde_json::Value::as_array)
-            .and_then(|formats| formats.first())
-            .and_then(|format| format.get("tokens"))
-            .and_then(serde_json::Value::as_object);
+            .and_then(serde_json::Value::as_array);
 
-        let token = |key: &str| {
-            token_map
-                .and_then(|tokens| tokens.get(key))
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string()
-        };
+        let mut formats = Vec::new();
+        let mut section_start = String::new();
+        let mut section_end = String::new();
+
+        if let Some(entries) = format_entries {
+            for (index, format) in entries.iter().enumerate() {
+                let token_map = format.get("tokens").and_then(serde_json::Value::as_object);
+                let token = |key: &str| {
+                    token_map
+                        .and_then(|tokens| tokens.get(key))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_string()
+                };
+
+                formats.push(ToolCallFormat {
+                    call_start: token("start"),
+                    call_end: token("end"),
+                });
+                if index == 0 {
+                    section_start = token("section_start");
+                    section_end = token("section_end");
+                }
+            }
+        }
 
         ToolCallingTokens {
-            call_start: token("start"),
-            call_end: token("end"),
-            section_start: token("section_start"),
-            section_end: token("section_end"),
-            name_separator: token("name_separator"),
+            formats,
+            section_start,
+            section_end,
         }
     }
 
