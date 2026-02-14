@@ -1,6 +1,6 @@
 [package]
 name = "orchard-rs"
-version = "2026.2.3"
+version = "2026.2.4"
 edition = "2021"
 description = "Rust client for Orchard - high-performance LLM inference on Apple Silicon"
 license = "Apache-2.0"
