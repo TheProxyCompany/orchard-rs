@@ -17,12 +17,37 @@ use crate::error::{Error, Result};
 use crate::ipc::endpoints::{response_url, EVENT_TOPIC_PREFIX};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
+const LOCK_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
+const LOCK_BACKOFF_INITIAL: Duration = Duration::from_millis(10);
+const LOCK_BACKOFF_MAX: Duration = Duration::from_millis(250);
 
 /// Remove a file, logging non-NotFound errors.
 fn remove_if_exists(path: &std::path::Path) {
     if let Err(e) = std::fs::remove_file(path) {
         if e.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!("Failed to remove {}: {}", path.display(), e);
+        }
+    }
+}
+
+fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
+    let deadline = Instant::now() + LOCK_ACQUIRE_TIMEOUT;
+    let mut sleep = LOCK_BACKOFF_INITIAL;
+
+    loop {
+        match lock_file.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(Error::LockFailed(format!(
+                        "Timed out acquiring engine lock after {:?}",
+                        LOCK_ACQUIRE_TIMEOUT
+                    )));
+                }
+                std::thread::sleep(sleep);
+                sleep = std::cmp::min(sleep * 2, LOCK_BACKOFF_MAX);
+            }
+            Err(e) => return Err(Error::LockFailed(e.to_string())),
         }
     }
 }
@@ -137,9 +162,7 @@ impl InferenceEngine {
 
         // Acquire lock for cleanup
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
-        lock_file
-            .lock_exclusive()
-            .map_err(|e| Error::LockFailed(e.to_string()))?;
+        lock_exclusive_with_timeout(&lock_file)?;
 
         // Read current refs
         let refs = read_ref_pids(&self.paths.refs_file);
@@ -179,9 +202,7 @@ impl InferenceEngine {
         let paths = EnginePaths::new()?;
 
         let lock_file = std::fs::File::create(&paths.lock_file)?;
-        lock_file
-            .lock_exclusive()
-            .map_err(|e| Error::LockFailed(e.to_string()))?;
+        lock_exclusive_with_timeout(&lock_file)?;
 
         // Helper to clean up all state and socket files
         let cleanup_all = |paths: &EnginePaths| {
@@ -238,16 +259,16 @@ impl InferenceEngine {
 
         // Acquire file lock
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
-        lock_file
-            .lock_exclusive()
-            .map_err(|e| Error::LockFailed(e.to_string()))?;
+        lock_exclusive_with_timeout(&lock_file)?;
 
         // Read current state
         let refs = read_ref_pids(&self.paths.refs_file);
         let alive_refs = filter_alive_pids(&refs);
 
         let engine_pid = read_pid_file(&self.paths.pid_file);
-        let engine_running = engine_pid.map(pid_is_alive).unwrap_or(false);
+        let engine_running = engine_pid
+            .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
+            .unwrap_or(false);
 
         // Launch engine if needed
         if !engine_running {
