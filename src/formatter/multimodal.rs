@@ -103,11 +103,15 @@ pub fn build_multimodal_messages(
             .get("content")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
+        let tool_calls = message.get("tool_calls").cloned();
 
         if let Some(text) = content.as_str() {
             let mut msg = HashMap::new();
             msg.insert("role".to_string(), serde_json::json!(role));
             msg.insert("content".to_string(), serde_json::json!(text));
+            if let Some(tool_calls) = &tool_calls {
+                msg.insert("tool_calls".to_string(), tool_calls.clone());
+            }
             messages.push(msg);
             continue;
         }
@@ -189,7 +193,18 @@ pub fn build_multimodal_messages(
             let mut msg = HashMap::new();
             msg.insert("role".to_string(), serde_json::json!(role));
             msg.insert("content".to_string(), serde_json::json!(rendered_parts));
+            if let Some(tool_calls) = &tool_calls {
+                msg.insert("tool_calls".to_string(), tool_calls.clone());
+            }
             messages.push(msg);
+        } else if content.is_null() {
+            if let Some(tool_calls) = &tool_calls {
+                let mut msg = HashMap::new();
+                msg.insert("role".to_string(), serde_json::json!(role));
+                msg.insert("content".to_string(), serde_json::json!(""));
+                msg.insert("tool_calls".to_string(), tool_calls.clone());
+                messages.push(msg);
+            }
         } else if !content.is_null() {
             return Err(Error::InvalidContent);
         }

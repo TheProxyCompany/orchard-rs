@@ -279,25 +279,28 @@ impl ChatFormatter {
             .get_template("chat")
             .map_err(|e| Error::Template(e.to_string()))?;
 
-        let interactions: Vec<Value> = conversation
-            .iter()
-            .map(|msg| {
-                let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
-                let content = msg
-                    .get("content")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null);
-                let content_value = Self::json_to_minijinja(&content);
+        let mut interactions: Vec<Value> = Vec::with_capacity(conversation.len());
+        for msg in conversation {
+            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+            let content = msg
+                .get("content")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
 
-                let map: std::collections::BTreeMap<String, Value> = [
-                    ("role".to_string(), Value::from(role)),
-                    ("content".to_string(), content_value),
-                ]
-                .into_iter()
-                .collect();
-                Value::from_object(map)
-            })
-            .collect();
+            let mut map = std::collections::BTreeMap::new();
+            map.insert("role".to_string(), Value::from(role));
+            map.insert("content".to_string(), Self::json_to_minijinja(&content));
+
+            if let Some(tool_calls) = msg.get("tool_calls") {
+                let normalized_tool_calls = Self::normalize_tool_calls(tool_calls)?;
+                map.insert(
+                    "tool_calls".to_string(),
+                    Self::json_to_minijinja(&normalized_tool_calls),
+                );
+            }
+
+            interactions.push(Value::from_object(map));
+        }
 
         let roles = self.control_tokens.roles.to_value();
         let tools_value = tools
@@ -472,14 +475,49 @@ impl ChatFormatter {
                         _ => {}
                     }
                 }
-                // Default: convert to a regular map
-                let map: std::collections::BTreeMap<String, Value> = obj
-                    .iter()
-                    .map(|(k, v)| (k.clone(), Self::json_to_minijinja(v)))
-                    .collect();
-                Value::from_object(map)
+                // Preserve object key order using minijinja's serde conversion path.
+                Value::from_serialize(obj)
             }
         }
+    }
+
+    fn normalize_tool_calls(tool_calls: &serde_json::Value) -> Result<serde_json::Value> {
+        let Some(calls) = tool_calls.as_array() else {
+            return Ok(tool_calls.clone());
+        };
+
+        let mut normalized_calls = Vec::with_capacity(calls.len());
+        for (call_idx, call) in calls.iter().enumerate() {
+            let Some(call_obj) = call.as_object() else {
+                normalized_calls.push(call.clone());
+                continue;
+            };
+
+            let mut call_obj = call_obj.clone();
+            if let Some(function_obj) = call_obj
+                .get_mut("function")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                if let Some(arguments) = function_obj
+                    .get("arguments")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                {
+                    let parsed = serde_json::from_str(&arguments).map_err(|error| {
+                        Error::Other(format!(
+                            "Failed to parse tool call arguments at index {}: {}",
+                            call_idx, error
+                        ))
+                    })?;
+                    function_obj.insert("arguments".to_string(), parsed);
+                }
+            }
+
+            normalized_calls.push(serde_json::Value::Object(call_obj));
+        }
+
+        Ok(serde_json::Value::Array(normalized_calls))
     }
 }
 
@@ -494,7 +532,10 @@ impl std::fmt::Debug for ChatFormatter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_determine_model_type() {
@@ -506,5 +547,97 @@ mod tests {
 
         let config = serde_json::json!({});
         assert_eq!(determine_model_type(&config), "llama3");
+    }
+
+    #[test]
+    fn test_llama3_renders_tool_call_delimiters_with_normalized_arguments() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let call_id = "call_weather_1";
+        let items = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("assistant")),
+                ("content".to_string(), serde_json::Value::Null),
+                (
+                    "tool_calls".to_string(),
+                    serde_json::json!([{
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_weather",
+                            "arguments": "{\"city\":\"San Francisco\"}",
+                        }
+                    }]),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("{\"status\":\"ok\"}"),
+                ),
+            ]),
+        ];
+
+        let (messages, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
+        assert!(messages[0].contains_key("tool_calls"));
+
+        let rendered = formatter
+            .apply_template_with_tools(
+                &messages,
+                false,
+                false,
+                None,
+                Some(&[serde_json::json!({
+                    "name": "share_to_party",
+                    "type": "object",
+                    "description": "Post a message to the party.",
+                    "properties": {
+                        "name": { "const": "share_to_party" },
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "content": { "type": "string" }
+                            },
+                            "required": ["content"]
+                        }
+                    },
+                    "strict": true,
+                    "required": ["name", "arguments"]
+                })]),
+            )
+            .unwrap();
+        let format = formatter
+            .get_tool_calling_tokens()
+            .formats
+            .first()
+            .expect("llama3 profile should define tool-calling format tokens");
+
+        assert!(rendered.contains(&format.call_start));
+        assert!(rendered.contains(&format.call_end));
+        assert!(rendered.contains("\"name\":\"lookup_weather\""));
+        assert!(rendered.contains("\"arguments\":{\"city\":\"San Francisco\"}"));
+        assert!(!rendered.contains("\"arguments\":\"{\\\"city\\\":\\\"San Francisco\\\"}\""));
+
+        let properties_start = rendered
+            .find("\"properties\": {")
+            .expect("expected tool schema properties block in rendered prompt");
+        let properties_block = &rendered[properties_start..];
+        let name_idx = properties_block
+            .find("\"name\": {")
+            .expect("expected name key in tool schema properties");
+        let arguments_idx = properties_block
+            .find("\"arguments\": {")
+            .expect("expected arguments key in tool schema properties");
+        assert!(
+            name_idx < arguments_idx,
+            "expected name to appear before arguments in tool schema properties block"
+        );
     }
 }
