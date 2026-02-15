@@ -550,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn test_llama3_renders_tool_call_delimiters_with_normalized_arguments() {
+    fn test_renders_tool_call_delimiters_with_normalized_arguments() {
         let model_dir = tempdir().unwrap();
         std::fs::write(
             model_dir.path().join("config.json"),
