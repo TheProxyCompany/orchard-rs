@@ -359,6 +359,8 @@ pub struct OutputFunctionCall {
     pub call_id: String,
     pub name: String,
     pub arguments: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
     pub status: OutputStatus,
 }
 
@@ -737,6 +739,7 @@ impl StreamingOutputItem {
                 call_id: self.call_id.clone().unwrap_or_else(generate_tool_call_id),
                 name: self.function_name.clone().unwrap_or_default(),
                 arguments: String::new(),
+                metadata: None,
                 status: OutputStatus::InProgress,
             }),
             "reasoning" => ResponseOutputItem::Reasoning(OutputReasoning {
@@ -765,6 +768,7 @@ impl StreamingOutputItem {
                 call_id: self.call_id.clone().unwrap_or_else(generate_tool_call_id),
                 name: self.function_name.clone().unwrap_or_default(),
                 arguments: self.accumulated_arguments.clone(),
+                metadata: None,
                 status: OutputStatus::Completed,
             }),
             "reasoning" => ResponseOutputItem::Reasoning(OutputReasoning {
@@ -938,6 +942,7 @@ fn build_output_items(
                     call_id: generate_tool_call_id(),
                     name,
                     arguments: item.arguments.clone(),
+                    metadata: None,
                     status: OutputStatus::Completed,
                 }));
             }
