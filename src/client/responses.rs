@@ -367,8 +367,11 @@ pub struct OutputReasoning {
     #[serde(rename = "type")]
     pub output_type: String,
     pub id: String,
+    #[serde(default)]
     pub status: OutputStatus,
+    #[serde(default)]
     pub summary: Vec<ReasoningSummaryTextContent>,
+    #[serde(default)]
     pub content: Vec<ReasoningContent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encrypted_content: Option<String>,
