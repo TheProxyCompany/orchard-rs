@@ -10,7 +10,7 @@ use tar::Archive;
 
 use crate::error::{Error, Result};
 
-const MANIFEST_URL: &str = "https://prod.proxy.ing/functions/v1/get-release-manifest";
+const MANIFEST_URL: &str = "https://orchard.theproxycompany.com/manifest";
 const DEFAULT_CHANNEL: &str = "stable";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const DOWNLOAD_TIMEOUT_SECS: u64 = 600;
