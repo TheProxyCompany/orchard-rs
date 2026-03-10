@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use fs4::fs_std::FileExt;
@@ -86,12 +87,29 @@ impl EnginePaths {
 struct GlobalContext {
     ref_count: AtomicU32,
     initialized: AtomicBool,
+    pid_file: Mutex<Option<PathBuf>>,
 }
 
 static GLOBAL_CONTEXT: GlobalContext = GlobalContext {
     ref_count: AtomicU32::new(0),
     initialized: AtomicBool::new(false),
+    pid_file: Mutex::new(None),
 };
+
+pub(crate) fn current_engine_pid_file() -> Option<PathBuf> {
+    GLOBAL_CONTEXT
+        .pid_file
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn set_current_engine_pid_file(pid_file: Option<PathBuf>) {
+    *GLOBAL_CONTEXT
+        .pid_file
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = pid_file;
+}
 
 /// Manages the PIE (Proxy Inference Engine) process lifecycle.
 ///
@@ -193,6 +211,8 @@ impl InferenceEngine {
 
         self.lease_active = false;
         self.closed = true;
+        GLOBAL_CONTEXT.initialized.store(false, Ordering::SeqCst);
+        set_current_engine_pid_file(None);
 
         Ok(())
     }
@@ -222,6 +242,8 @@ impl InferenceEngine {
             _ => {
                 tracing::info!("Engine is not running. Cleaning up stale files.");
                 cleanup_all(&paths);
+                GLOBAL_CONTEXT.initialized.store(false, Ordering::SeqCst);
+                set_current_engine_pid_file(None);
                 return Ok(());
             }
         };
@@ -232,6 +254,8 @@ impl InferenceEngine {
                 pid
             );
             cleanup_all(&paths);
+            GLOBAL_CONTEXT.initialized.store(false, Ordering::SeqCst);
+            set_current_engine_pid_file(None);
             return Ok(());
         }
         tracing::info!("Sending shutdown signal to engine process {}", pid);
@@ -239,6 +263,8 @@ impl InferenceEngine {
         if stop_engine_process(pid, timeout) {
             cleanup_all(&paths);
             reap_engine_process(pid);
+            GLOBAL_CONTEXT.initialized.store(false, Ordering::SeqCst);
+            set_current_engine_pid_file(None);
             tracing::info!("Engine process {} terminated gracefully", pid);
             Ok(())
         } else {
@@ -301,6 +327,7 @@ impl InferenceEngine {
         // Update global context
         GLOBAL_CONTEXT.ref_count.fetch_add(1, Ordering::SeqCst);
         GLOBAL_CONTEXT.initialized.store(true, Ordering::SeqCst);
+        set_current_engine_pid_file(Some(self.paths.pid_file.clone()));
 
         drop(lock_file);
 

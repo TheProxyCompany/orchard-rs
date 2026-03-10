@@ -2,6 +2,8 @@
 //!
 //! Uses NNG sockets with a dedicated listener thread for response handling.
 
+use crate::engine::lifecycle::{current_engine_pid_file, EnginePaths};
+use crate::engine::multiprocess::{pid_is_alive, read_pid_file};
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
 use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
@@ -11,14 +13,18 @@ use nng::{Protocol, Socket};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 /// Callback type for engine events (telemetry, model_loaded, etc.)
 pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
+
+const ENGINE_LIVENESS_POLL_INTERVAL: Duration = Duration::from_secs(10);
+const RESPONSE_RECV_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// A single token's log probability info from PIE.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -165,6 +171,10 @@ impl IPCClient {
 
     /// Connect to PIE IPC endpoints.
     pub fn connect(&mut self) -> Result<()> {
+        let engine_pid_file = current_engine_pid_file()
+            .or_else(|| EnginePaths::new().ok().map(|paths| paths.pid_file))
+            .ok_or_else(|| Error::Internal("Cannot determine engine PID file path".into()))?;
+
         // Create and connect request socket (PUSH)
         let request_socket = Socket::new(Protocol::Push0)?;
         request_socket.dial(&request_url())?;
@@ -199,7 +209,7 @@ impl IPCClient {
 
         // Start listener thread
         self.should_stop.store(false, Ordering::SeqCst);
-        self.start_listener();
+        self.start_listener(engine_pid_file);
 
         Ok(())
     }
@@ -382,7 +392,7 @@ impl IPCClient {
     }
 
     /// Start the response listener thread.
-    fn start_listener(&mut self) {
+    fn start_listener(&mut self, engine_pid_file: PathBuf) {
         let response_socket = self.response_socket.take();
         let active_requests = Arc::clone(&self.active_requests);
         let should_stop = Arc::clone(&self.should_stop);
@@ -398,6 +408,7 @@ impl IPCClient {
                         active_requests,
                         should_stop,
                         response_channel_id,
+                        engine_pid_file,
                         event_callback,
                     );
                 }
@@ -422,19 +433,27 @@ impl Drop for IPCClient {
     }
 }
 
+fn engine_process_is_alive(engine_pid_file: &Path) -> bool {
+    read_pid_file(engine_pid_file)
+        .map(pid_is_alive)
+        .unwrap_or(false)
+}
+
 /// Response listener - runs on dedicated thread for minimal latency.
 fn run_response_listener(
     socket: Socket,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     should_stop: Arc<AtomicBool>,
     response_channel_id: u64,
+    engine_pid_file: PathBuf,
     event_callback: Option<EventCallback>,
 ) {
     let response_topic = format!("resp:{:x}:", response_channel_id);
     let response_topic_bytes = response_topic.as_bytes();
 
     // Set receive timeout for responsive polling (10ms for better latency)
-    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(10)));
+    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(RESPONSE_RECV_TIMEOUT));
+    let mut last_engine_check = Instant::now();
 
     while !should_stop.load(Ordering::SeqCst) {
         match socket.recv() {
@@ -549,12 +568,30 @@ fn run_response_listener(
                 }
             }
             Err(nng::Error::TimedOut) => {
-                // Normal timeout, continue polling
+                if last_engine_check.elapsed() >= ENGINE_LIVENESS_POLL_INTERVAL {
+                    last_engine_check = Instant::now();
+                    if !engine_process_is_alive(&engine_pid_file) {
+                        tracing::error!(
+                            pid_file = %engine_pid_file.display(),
+                            "PIE is no longer alive; shutting down IPC listener"
+                        );
+                        should_stop.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                }
                 continue;
             }
-            Err(_) => {
-                // Other error, check if we should stop
+            Err(error) => {
                 if should_stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                if !engine_process_is_alive(&engine_pid_file) {
+                    tracing::error!(
+                        pid_file = %engine_pid_file.display(),
+                        error = %error,
+                        "PIE is no longer alive; shutting down IPC listener"
+                    );
+                    should_stop.store(true, Ordering::SeqCst);
                     break;
                 }
             }
@@ -642,6 +679,7 @@ fn rand_u64() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_client_creation() {
@@ -712,6 +750,24 @@ mod tests {
         assert!(delta.tokens.is_empty());
         assert!(delta.content.is_none());
         assert!(delta.state_events.is_empty());
+    }
+
+    #[test]
+    fn test_engine_process_is_alive_reads_pid_file() {
+        let dir = tempdir().expect("tempdir should be available");
+        let pid_file = dir.path().join("engine.pid");
+        std::fs::write(&pid_file, format!("{}\n", std::process::id()))
+            .expect("pid file should be written");
+
+        assert!(engine_process_is_alive(&pid_file));
+    }
+
+    #[test]
+    fn test_engine_process_is_alive_handles_missing_pid_file() {
+        let dir = tempdir().expect("tempdir should be available");
+        let pid_file = dir.path().join("missing.pid");
+
+        assert!(!engine_process_is_alive(&pid_file));
     }
 
     #[test]
