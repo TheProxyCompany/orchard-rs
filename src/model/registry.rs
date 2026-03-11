@@ -712,6 +712,40 @@ impl ModelRegistry {
         self.complete_activation(&canonical_id, None).await;
     }
 
+    /// Handle model_load_failed event from PIE.
+    ///
+    /// Called by the event callback when a model_load_failed event is received.
+    pub async fn handle_model_load_failed(&self, payload: &Value) {
+        let model_id = match payload.get("model_id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                tracing::warn!("Received model_load_failed event without model_id");
+                return;
+            }
+        };
+
+        let error = match payload.get("error").and_then(|v| v.as_str()) {
+            Some(message) => message,
+            None => {
+                tracing::warn!(
+                    "Received model_load_failed event without error for '{}'",
+                    model_id
+                );
+                "unknown error"
+            }
+        };
+
+        let canonical_id = match self.canonicalize(model_id).await {
+            Ok(id) => id,
+            Err(_) => {
+                tracing::debug!("Model '{}' not found in alias cache, using as-is", model_id);
+                model_id.to_string()
+            }
+        };
+
+        self.fail_activation(&canonical_id, error).await;
+    }
+
     /// List all registered models.
     pub async fn list_models(&self) -> Vec<HashMap<String, String>> {
         let entries = self.entries.read().await;
@@ -762,12 +796,50 @@ impl ModelRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use tokio::sync::oneshot;
 
     #[tokio::test]
     async fn test_registry_creation() {
         let registry = ModelRegistry::new().unwrap();
         let models = registry.list_models().await;
         assert!(models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_model_load_failed_fails_activation_waiters() {
+        let registry = ModelRegistry::new().unwrap();
+        let canonical_id = "moondream/moondream3-preview".to_string();
+        let requested_id = "moondream3".to_string();
+        let error = "Weight shard file not found".to_string();
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut alias_cache = registry.alias_cache.write().await;
+            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
+        }
+
+        {
+            let mut entries = registry.entries.write().await;
+            let entry = entries.entry(canonical_id.clone()).or_default();
+            entry.state = ModelLoadState::Activating;
+            entry.activation_waiters.push(tx);
+        }
+
+        registry
+            .handle_model_load_failed(&json!({
+                "model_id": requested_id,
+                "error": error,
+            }))
+            .await;
+
+        assert_eq!(rx.await.unwrap(), Err(error.clone()));
+
+        let entries = registry.entries.read().await;
+        let entry = entries.get(&canonical_id).unwrap();
+        assert_eq!(entry.state, ModelLoadState::Failed);
+        assert_eq!(entry.error.as_deref(), Some(error.as_str()));
+        assert!(entry.activation_waiters.is_empty());
     }
 
     #[test]

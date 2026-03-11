@@ -213,23 +213,32 @@ impl Client {
     /// Create a client and connect to the engine (async).
     ///
     /// This sets up:
-    /// - Event callback for handling model_loaded events
+    /// - Event callback for handling model lifecycle events
     /// - IPC client shared with registry for management commands
     pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
-        // Create event callback that routes model_loaded events to registry
+        // Create event callback that routes model lifecycle events to registry
         let registry_for_events = Arc::clone(&registry);
         let runtime_handle = tokio::runtime::Handle::current();
-        let event_callback: EventCallback = Arc::new(move |event_name: &str, payload: &Value| {
-            if event_name == "model_loaded" {
-                let registry = Arc::clone(&registry_for_events);
-                let payload = payload.clone();
-                // Spawn a task to handle the event (handle_model_loaded is async)
-                let handle = runtime_handle.clone();
-                handle.spawn(async move {
-                    registry.handle_model_loaded(&payload).await;
-                });
-            }
-        });
+        let event_callback: EventCallback =
+            Arc::new(move |event_name: &str, payload: &Value| match event_name {
+                "model_loaded" => {
+                    let registry = Arc::clone(&registry_for_events);
+                    let payload = payload.clone();
+                    let handle = runtime_handle.clone();
+                    handle.spawn(async move {
+                        registry.handle_model_loaded(&payload).await;
+                    });
+                }
+                "model_load_failed" => {
+                    let registry = Arc::clone(&registry_for_events);
+                    let payload = payload.clone();
+                    let handle = runtime_handle.clone();
+                    handle.spawn(async move {
+                        registry.handle_model_load_failed(&payload).await;
+                    });
+                }
+                _ => {}
+            });
 
         let mut ipc = IPCClient::with_event_callback(event_callback);
         ipc.connect()?;
