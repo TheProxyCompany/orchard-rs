@@ -168,30 +168,43 @@ impl ChatFormatter {
 
     /// Whether to clip the image placeholder from prompt text.
     ///
-    /// If the model doesn't have a start image token, we need to clip
-    /// the placeholder from the rendered text.
+    /// If the placeholder is a real token (vision.tokens.start or start_image_token),
+    /// it stays in the text for tokenization. If it's a synthetic placeholder
+    /// (like <|image|>), it gets clipped.
     pub fn should_clip_image_placeholder(&self) -> bool {
-        self.control_tokens.start_image_token.is_none()
-            || self
-                .control_tokens
-                .start_image_token
-                .as_ref()
-                .map(|s| s.is_empty())
-                .unwrap_or(true)
+        let has_vision_tokens = self.capabilities["vision"]["tokens"]["start"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty());
+        let has_start_token = self
+            .control_tokens
+            .start_image_token
+            .as_ref()
+            .is_some_and(|s| !s.is_empty());
+        !(has_vision_tokens || has_start_token)
     }
 
-    /// The default image placeholder token.
-    pub fn default_image_placeholder(&self) -> &str {
-        "<|image|>"
-    }
-
-    /// Image placeholder token to use for layout detection.
+    /// Resolve the image placeholder token from capabilities or control tokens.
     pub fn image_placeholder_token(&self) -> &str {
+        // Explicit placeholder (e.g. moondream: vision.placeholders.image)
+        if let Some(p) = self.capabilities["vision"]["placeholders"]["image"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            return p;
+        }
+        // Vision start token (e.g. gemma: vision.tokens.start)
+        if let Some(t) = self.capabilities["vision"]["tokens"]["start"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            return t;
+        }
+        // Legacy fallback to control_tokens
         self.control_tokens
             .start_image_token
             .as_deref()
-            .filter(|token| !token.is_empty())
-            .unwrap_or(self.default_image_placeholder())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("<|image|>")
     }
 
     /// Placeholder token used for inline capability markers in templates.
@@ -202,7 +215,7 @@ impl ChatFormatter {
         self.capability_placeholders
             .iter()
             .map(String::as_str)
-            .find(|token| *token != image_token && *token != self.default_image_placeholder())
+            .find(|token| *token != image_token)
     }
 
     /// Strip placeholders that should not be sent to PIE as text bytes.
@@ -210,12 +223,12 @@ impl ChatFormatter {
         let mut stripped = prompt.to_string();
 
         if self.should_clip_image_placeholder() {
-            stripped = stripped.replace(self.default_image_placeholder(), "");
+            stripped = stripped.replace(self.image_placeholder_token(), "");
         }
 
         let image_token = self.image_placeholder_token();
         for placeholder in &self.capability_placeholders {
-            if placeholder == image_token || placeholder == self.default_image_placeholder() {
+            if placeholder == image_token {
                 continue;
             }
             stripped = stripped.replace(placeholder, "");
