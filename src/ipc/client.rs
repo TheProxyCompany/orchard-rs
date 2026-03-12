@@ -8,8 +8,10 @@ use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
 use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use nng::options::Options;
 use nng::{Protocol, Socket};
+use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -56,6 +58,28 @@ pub struct ResponseStateEvent {
     pub value: Option<Value>,
 }
 
+fn deserialize_optional_bytes<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<u8>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum BytePayload {
+        Bytes(Vec<u8>),
+        Base64(String),
+    }
+
+    match Option::<BytePayload>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(BytePayload::Bytes(bytes)) => Ok(Some(bytes)),
+        Some(BytePayload::Base64(encoded)) => {
+            BASE64.decode(encoded).map(Some).map_err(D::Error::custom)
+        }
+    }
+}
+
 /// Response delta from PIE.
 ///
 /// Uses serde for deserialization with sensible defaults for missing fields.
@@ -81,6 +105,7 @@ pub struct ResponseDelta {
     /// Finish reason (e.g., "stop", "length")
     pub finish_reason: Option<String>,
     /// Error message if request failed
+    #[serde(alias = "error_message")]
     pub error: Option<String>,
     /// Prompt token count
     pub prompt_token_count: Option<u32>,
@@ -98,6 +123,9 @@ pub struct ResponseDelta {
     pub modal_decoder_id: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
+    /// Raw embedding bytes from PIE, when request_type is embedding.
+    #[serde(default, deserialize_with = "deserialize_optional_bytes")]
+    pub embedding_bytes: Option<Vec<u8>>,
     /// Structured state transition events used by Responses API.
     pub state_events: Vec<ResponseStateEvent>,
     /// Cached token count (input token cache hits).
@@ -276,10 +304,28 @@ impl IPCClient {
         model_path: &str,
         prompts: &[PromptPayload],
     ) -> Result<(usize, mpsc::UnboundedReceiver<ResponseDelta>)> {
+        self.send_batch_request_with_type(
+            request_id,
+            model_id,
+            model_path,
+            RequestType::Generation,
+            prompts,
+        )
+    }
+
+    pub(crate) fn send_batch_request_with_type(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        request_type: RequestType,
+        prompts: &[PromptPayload],
+    ) -> Result<(usize, mpsc::UnboundedReceiver<ResponseDelta>)> {
         let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
+            ?request_type,
             prompt_count = prompts.len(),
             "Serializing and sending IPC batch request"
         );
@@ -288,13 +334,14 @@ impl IPCClient {
             request_id,
             model_id,
             model_path,
-            RequestType::Generation,
+            request_type,
             self.response_channel_id,
             prompts,
         )?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
+            ?request_type,
             payload_bytes = payload.len(),
             "Built IPC batch payload"
         );
@@ -327,6 +374,7 @@ impl IPCClient {
         tracing::debug!(
             request_id,
             model_id = %model_id,
+            ?request_type,
             expected_final_count = remaining_finals,
             "IPC batch request sent"
         );
@@ -703,6 +751,7 @@ mod tests {
         assert!(!delta.is_final_delta);
         assert!(delta.tokens.is_empty());
         assert!(delta.top_logprobs.is_empty());
+        assert!(delta.embedding_bytes.is_none());
         assert!(delta.state_events.is_empty());
     }
 
@@ -722,7 +771,8 @@ mod tests {
             "top_logprobs": [{"token": "hello", "logprob": -0.5}, {"token": "world", "logprob": -1.0}],
             "cumulative_logprob": -1.5,
             "modal_decoder_id": "moondream3.coord",
-            "modal_bytes_b64": "AAAA"
+            "modal_bytes_b64": "AAAA",
+            "embedding_bytes": [0, 0, 128, 63]
         });
         let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
         assert_eq!(delta.request_id, 123);
@@ -734,6 +784,7 @@ mod tests {
         assert_eq!(delta.top_logprobs.len(), 2);
         assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
+        assert_eq!(delta.embedding_bytes, Some(vec![0, 0, 128, 63]));
         assert!(delta.state_events.is_empty());
     }
 
@@ -750,6 +801,30 @@ mod tests {
         assert!(delta.tokens.is_empty());
         assert!(delta.content.is_none());
         assert!(delta.state_events.is_empty());
+    }
+
+    #[test]
+    fn test_response_delta_deserialize_embedding_bytes_from_base64() {
+        let json = serde_json::json!({
+            "request_id": 42,
+            "is_final_delta": true,
+            "embedding_bytes": "AAAAAA==",
+        });
+
+        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
+        assert_eq!(delta.embedding_bytes, Some(vec![0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn test_response_delta_deserialize_error_message_alias() {
+        let json = serde_json::json!({
+            "request_id": 42,
+            "is_final_delta": true,
+            "error_message": "boom",
+        });
+
+        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
+        assert_eq!(delta.error.as_deref(), Some("boom"));
     }
 
     #[test]

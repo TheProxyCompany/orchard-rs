@@ -32,7 +32,7 @@ use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
 use crate::ipc::client::{EventCallback, IPCClient, ResponseDelta};
-use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload};
+use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload, RequestType};
 use crate::model::registry::ModelRegistry;
 
 pub use moondream::{
@@ -734,6 +734,68 @@ impl Client {
 
         Ok(BatchChatResult::Complete(responses))
     }
+
+    /// Generate an embedding for a single text input.
+    pub async fn aembed(&self, model_id: &str, text: &str) -> Result<Vec<f32>> {
+        let mut embeddings = self.aembed_batch(model_id, vec![text.to_string()]).await?;
+        embeddings.pop().ok_or_else(|| {
+            ClientError::RequestFailed("Embedding response missing result".to_string())
+        })
+    }
+
+    /// Generate embeddings for multiple text inputs in a single IPC request.
+    pub async fn aembed_batch(&self, model_id: &str, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let info = self.registry.ensure_loaded(model_id).await?;
+
+        let request_id = self.ipc.next_request_id();
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            prompt_count = texts.len(),
+            "Building batched embedding request"
+        );
+
+        let mut prompt_payloads = Vec::with_capacity(texts.len());
+        for (prompt_index, text) in texts.into_iter().enumerate() {
+            let prompt_chars = text.chars().count();
+            tracing::debug!(
+                request_id,
+                model_id = %model_id,
+                prompt_index,
+                prompt_chars,
+                "Prepared embedding prompt payload"
+            );
+            tracing::trace!(
+                request_id,
+                model_id = %model_id,
+                prompt_index,
+                prompt = %text,
+                "Embedding prompt sent to PIE"
+            );
+
+            prompt_payloads.push(build_embedding_prompt_payload(text));
+        }
+
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            prompt_count = prompt_payloads.len(),
+            "Dispatching batched embedding request to PIE"
+        );
+        let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            model_id,
+            &info.model_path,
+            RequestType::Embedding,
+            &prompt_payloads,
+        )?;
+
+        collect_embeddings(rx, prompt_payloads.len()).await
+    }
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -758,6 +820,110 @@ fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
             length: seg.length,
         })
         .collect()
+}
+
+fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
+    let prompt_len = prompt.as_bytes().len();
+
+    PromptPayload {
+        prompt,
+        image_buffers: Vec::new(),
+        capabilities: Vec::new(),
+        layout: vec![LayoutEntry {
+            segment_type: "text".to_string(),
+            length: prompt_len,
+        }],
+        max_generated_tokens: 0,
+        temperature: defaults::TEMPERATURE,
+        top_p: defaults::TOP_P,
+        top_k: defaults::TOP_K,
+        min_p: 0.0,
+        rng_seed: rand::thread_rng().gen::<u64>(),
+        stop_sequences: Vec::new(),
+        num_candidates: 1,
+        best_of: Some(1),
+        final_candidates: Some(1),
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0,
+        repetition_penalty: defaults::REPETITION_PENALTY,
+        repetition_context_size: 0,
+        top_logprobs: 0,
+        logit_bias: HashMap::new(),
+        tool_schemas_json: String::new(),
+        tool_calling_tokens: Default::default(),
+        tool_choice: "auto".to_string(),
+        max_tool_calls: 0,
+        response_format_json: String::new(),
+        task_name: None,
+        reasoning_effort: None,
+    }
+}
+
+async fn collect_embeddings(
+    mut rx: mpsc::UnboundedReceiver<ResponseDelta>,
+    prompt_count: usize,
+) -> Result<Vec<Vec<f32>>> {
+    let mut embeddings_by_prompt: Vec<Option<Vec<f32>>> = vec![None; prompt_count];
+    let mut completed_prompts = vec![false; prompt_count];
+    let mut finals_received = 0usize;
+
+    while finals_received < prompt_count {
+        match rx.recv().await {
+            Some(delta) => {
+                if let Some(error) = delta.error {
+                    return Err(ClientError::RequestFailed(error));
+                }
+
+                let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
+                if prompt_index >= prompt_count {
+                    continue;
+                }
+
+                if let Some(bytes) = delta.embedding_bytes.as_deref() {
+                    embeddings_by_prompt[prompt_index] = Some(decode_embedding_bytes(bytes)?);
+                }
+
+                if delta.is_final_delta && !completed_prompts[prompt_index] {
+                    completed_prompts[prompt_index] = true;
+                    finals_received += 1;
+                }
+            }
+            None => {
+                return Err(ClientError::RequestFailed(
+                    "Embedding response channel closed before completion".to_string(),
+                ));
+            }
+        }
+    }
+
+    embeddings_by_prompt
+        .into_iter()
+        .enumerate()
+        .map(|(prompt_index, embedding)| {
+            embedding.ok_or_else(|| {
+                ClientError::RequestFailed(format!(
+                    "Embedding response missing bytes for prompt_index={}",
+                    prompt_index
+                ))
+            })
+        })
+        .collect()
+}
+
+fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
+    let mut chunks = bytes.chunks_exact(std::mem::size_of::<f32>());
+    if !chunks.remainder().is_empty() {
+        return Err(ClientError::RequestFailed(format!(
+            "Embedding payload length {} is not divisible by {}",
+            bytes.len(),
+            std::mem::size_of::<f32>()
+        )));
+    }
+
+    Ok(chunks
+        .by_ref()
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("f32 chunk size")))
+        .collect())
 }
 
 /// Result of a chat operation.
@@ -931,5 +1097,38 @@ mod tests {
         let response = aggregate_response(deltas);
         assert_eq!(response.text, "Hello World");
         assert_eq!(response.finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_build_embedding_prompt_payload() {
+        let payload = build_embedding_prompt_payload("hello".to_string());
+
+        assert_eq!(payload.prompt, "hello");
+        assert_eq!(payload.max_generated_tokens, 0);
+        assert_eq!(payload.layout.len(), 1);
+        assert_eq!(payload.layout[0].segment_type, "text");
+        assert_eq!(payload.layout[0].length, 5);
+        assert_eq!(payload.num_candidates, 1);
+        assert_eq!(payload.best_of, Some(1));
+        assert_eq!(payload.final_candidates, Some(1));
+    }
+
+    #[test]
+    fn test_decode_embedding_bytes() {
+        let bytes = [
+            0.0f32.to_le_bytes(),
+            1.5f32.to_le_bytes(),
+            (-2.25f32).to_le_bytes(),
+        ]
+        .concat();
+
+        let embedding = decode_embedding_bytes(&bytes).expect("embedding should decode");
+        assert_eq!(embedding, vec![0.0, 1.5, -2.25]);
+    }
+
+    #[test]
+    fn test_decode_embedding_bytes_rejects_partial_float() {
+        let error = decode_embedding_bytes(&[0, 0, 128]).expect_err("decode should fail");
+        assert!(matches!(error, ClientError::RequestFailed(_)));
     }
 }

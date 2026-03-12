@@ -112,6 +112,7 @@ mod tests {
             cumulative_logprob: Some(-1.5),
             modal_decoder_id: Some("moondream3.coord".to_string()),
             modal_bytes_b64: Some("AAAA".to_string()),
+            embedding_bytes: None,
             state_events: vec![],
             cached_token_count: Some(0),
             reasoning_tokens: Some(0),
