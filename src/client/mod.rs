@@ -823,7 +823,7 @@ fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
 }
 
 fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
-    let prompt_len = prompt.as_bytes().len();
+    let prompt_len = prompt.len();
 
     PromptPayload {
         prompt,
