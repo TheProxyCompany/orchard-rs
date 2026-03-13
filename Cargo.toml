@@ -35,7 +35,7 @@ flate2 = "1"
 tar = "0.4"
 
 # HuggingFace Hub integration
-hf-hub = { version = "0.3", features = ["tokio"] }
+hf-hub = { version = "0.5", features = ["tokio"] }
 
 # Templating engine (Jinja2-compatible)
 minijinja = { version = "2", features = ["json", "preserve_order"] }

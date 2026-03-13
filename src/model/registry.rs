@@ -81,6 +81,18 @@ impl Default for ModelEntry {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct RemoteRepoFile {
+    rfilename: String,
+    #[serde(default)]
+    size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteRepoInfo {
+    siblings: Vec<RemoteRepoFile>,
+}
+
 /// Registry of loaded models.
 pub struct ModelRegistry {
     entries: Arc<RwLock<HashMap<String, ModelEntry>>>,
@@ -176,6 +188,14 @@ impl ModelRegistry {
                 canonical_id
             ))),
         }
+    }
+
+    /// Resolve a model identifier and schedule any required local download work.
+    pub async fn resolve_or_download(
+        &self,
+        requested_model_id: &str,
+    ) -> Result<(ModelLoadState, String), String> {
+        self.schedule_model(requested_model_id, false).await
     }
 
     /// Send the load_model command to PIE.
@@ -434,7 +454,12 @@ impl ModelRegistry {
         let entries_ref = self.entries.clone();
 
         tokio::spawn(async move {
-            let result = Self::download_model(&hf_repo).await;
+            let result = Self::download_model(
+                Arc::clone(&entries_ref),
+                canonical_id_for_task.as_str(),
+                hf_repo.as_str(),
+            )
+            .await;
 
             let mut entries: tokio::sync::RwLockWriteGuard<'_, HashMap<String, ModelEntry>> =
                 entries_ref.write().await;
@@ -477,48 +502,129 @@ impl ModelRegistry {
     }
 
     /// Download a model from HuggingFace Hub.
-    async fn download_model(repo_id: &str) -> Result<std::path::PathBuf, String> {
+    async fn download_model(
+        entries_ref: Arc<RwLock<HashMap<String, ModelEntry>>>,
+        canonical_id: &str,
+        repo_id: &str,
+    ) -> Result<std::path::PathBuf, String> {
         tracing::info!("Downloading model from HuggingFace: {}", repo_id);
 
-        let api = ApiBuilder::new()
+        let api = ApiBuilder::from_env()
+            .with_progress(false)
             .build()
             .map_err(|e| format!("Failed to create HF API: {}", e))?;
-
         let repo = api.model(repo_id.to_string());
 
-        // Download config.json first to verify it's a valid model
-        repo.get("config.json")
+        let mut repo_info: RemoteRepoInfo = repo
+            .info_request()
+            .query(&[("blobs", "true")])
+            .send()
             .await
-            .map_err(|e| format!("Failed to download config.json: {}", e))?;
-
-        // Get the cache directory where files are stored
-        let cache_dir = repo
-            .get(".")
+            .map_err(|e| format!("Failed to query repo info: {}", e))?
+            .json()
             .await
-            .map_err(|e| format!("Failed to access repo: {}", e))?;
+            .map_err(|e| format!("Failed to decode repo info: {}", e))?;
 
-        // The parent directory is the model directory
-        let model_dir = cache_dir
-            .parent()
-            .ok_or_else(|| "Invalid cache path".to_string())?
-            .to_path_buf();
+        if repo_info.siblings.is_empty() {
+            return Err("Repository has no downloadable files".to_string());
+        }
 
-        // Download common model files (if they exist)
-        let files_to_download = [
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "special_tokens_map.json",
-            "generation_config.json",
-        ];
+        if !repo_info
+            .siblings
+            .iter()
+            .any(|file| file.rfilename == "config.json")
+        {
+            return Err("Repository is missing config.json".to_string());
+        }
 
-        for file in &files_to_download {
-            if let Err(e) = repo.get(file).await {
-                tracing::debug!("Optional file {} not found: {}", file, e);
+        repo_info.siblings.sort_by(|left, right| {
+            let left_priority = u8::from(left.rfilename != "config.json");
+            let right_priority = u8::from(right.rfilename != "config.json");
+            left_priority
+                .cmp(&right_priority)
+                .then_with(|| left.rfilename.cmp(&right.rfilename))
+        });
+
+        let total_bytes = repo_info
+            .siblings
+            .iter()
+            .filter_map(|file| file.size)
+            .sum::<u64>();
+        let mut downloaded_bytes = 0u64;
+
+        {
+            let mut entries = entries_ref.write().await;
+            if let Some(entry) = entries.get_mut(canonical_id) {
+                entry.bytes_downloaded = Some(0);
+                entry.bytes_total = Some(total_bytes);
             }
         }
 
+        let mut model_dir: Option<std::path::PathBuf> = None;
+
+        for file in repo_info.siblings {
+            if Self::download_cancelled(&entries_ref, canonical_id).await {
+                return Err("Cancelled".to_string());
+            }
+
+            let path = repo
+                .get(file.rfilename.as_str())
+                .await
+                .map_err(|e| format!("Failed to download {}: {}", file.rfilename, e))?;
+
+            if file.rfilename == "config.json" {
+                model_dir = path.parent().map(|parent| parent.to_path_buf());
+            }
+
+            let file_size = tokio::fs::metadata(&path)
+                .await
+                .map(|metadata| metadata.len())
+                .unwrap_or_else(|_| file.size.unwrap_or(0));
+            downloaded_bytes = downloaded_bytes.saturating_add(file_size);
+
+            let completed_bytes = if total_bytes == 0 {
+                downloaded_bytes
+            } else {
+                downloaded_bytes.min(total_bytes)
+            };
+
+            let mut entries = entries_ref.write().await;
+            if let Some(entry) = entries.get_mut(canonical_id) {
+                entry.bytes_downloaded = Some(completed_bytes);
+                entry.bytes_total = Some(total_bytes.max(completed_bytes));
+            }
+        }
+
+        if Self::download_cancelled(&entries_ref, canonical_id).await {
+            return Err("Cancelled".to_string());
+        }
+
+        let model_dir =
+            model_dir.ok_or_else(|| "Downloaded repo is missing config.json".to_string())?;
+
         tracing::info!("Model downloaded to {:?}", model_dir);
         Ok(model_dir)
+    }
+
+    /// Cancel an in-progress download.
+    pub async fn cancel_download(&self, model_id: &str) -> Result<(), String> {
+        let canonical_id = self.canonicalize(model_id).await?;
+        let mut entries = self.entries.write().await;
+        let entry = entries
+            .get_mut(&canonical_id)
+            .ok_or_else(|| format!("Model '{}' has not been scheduled", canonical_id))?;
+
+        if entry.state != ModelLoadState::Downloading {
+            return Err(format!(
+                "Model '{}' is not downloading (current state: {})",
+                canonical_id, entry.state
+            ));
+        }
+
+        entry.state = ModelLoadState::Failed;
+        entry.error = Some("Cancelled".to_string());
+        entry.notify.notify_waiters();
+        Ok(())
     }
 
     /// Wait for a model to finish loading.
@@ -790,6 +896,19 @@ impl ModelRegistry {
         }
 
         Err(format!("Model '{}' not found in registry", model_id))
+    }
+
+    async fn download_cancelled(
+        entries_ref: &Arc<RwLock<HashMap<String, ModelEntry>>>,
+        canonical_id: &str,
+    ) -> bool {
+        let entries = entries_ref.read().await;
+        matches!(
+            entries.get(canonical_id),
+            Some(entry)
+                if entry.state == ModelLoadState::Failed
+                    && entry.error.as_deref() == Some("Cancelled")
+        )
     }
 }
 

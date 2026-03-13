@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use hf_hub::api::tokio::Api;
+use hf_hub::api::tokio::{Api, ApiBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -31,7 +31,9 @@ impl ModelResolver {
     pub fn new() -> Result<Self> {
         Ok(Self {
             resolved_cache: HashMap::new(),
-            hf_api: Api::new().map_err(|e| Error::HfApiInit(e.to_string()))?,
+            hf_api: ApiBuilder::from_env()
+                .build()
+                .map_err(|e| Error::HfApiInit(e.to_string()))?,
         })
     }
 
