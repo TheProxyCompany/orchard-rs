@@ -92,7 +92,7 @@ fn determine_model_type(config: &serde_json::Value) -> &str {
     match model_type {
         "llama" | "llama3" => "llama3",
         "moondream3" | "moondream" => "moondream3",
-        "gemma3" | "gemma" => "gemma3",
+        "gemma3" | "gemma3_text" | "gemma" => "gemma3",
         "qwen2" | "qwen" => "qwen2",
         other => other,
     }
