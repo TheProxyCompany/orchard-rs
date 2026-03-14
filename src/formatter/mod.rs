@@ -5,7 +5,7 @@ pub mod multimodal;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use minijinja::value::{Kwargs, Object};
 use minijinja::{context, Environment, Value};
@@ -122,6 +122,8 @@ pub struct ChatFormatter {
     pub control_tokens: ControlTokens,
     /// Compiled template
     template_source: String,
+    /// Shared tool macro template source.
+    shared_tool_macros_source: Option<String>,
     /// Parsed capabilities.yaml content.
     capabilities: serde_json::Value,
     /// Placeholder tokens from capabilities manifest.
@@ -151,6 +153,8 @@ impl ChatFormatter {
         let template_source = std::fs::read_to_string(&template_path).map_err(|_| {
             Error::Template(format!("Failed to load template from {:?}", template_path))
         })?;
+        let shared_tool_macros_source =
+            Self::load_shared_template(&profile_dir, "tool_macros.jinja")?;
         let capabilities = Self::load_capabilities(&profile_dir)?;
         let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
         let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
@@ -160,6 +164,7 @@ impl ChatFormatter {
             model_type,
             control_tokens,
             template_source,
+            shared_tool_macros_source,
             capabilities,
             capability_placeholders,
             tool_calling_tokens,
@@ -285,6 +290,10 @@ impl ChatFormatter {
         // Match Python's Jinja2 Environment config
         env.set_trim_blocks(true);
         env.set_lstrip_blocks(true);
+        if let Some(source) = &self.shared_tool_macros_source {
+            env.add_template("tool_macros.jinja", source)
+                .map_err(|e| Error::Template(e.to_string()))?;
+        }
         env.add_template("chat", &self.template_source)
             .map_err(|e| Error::Template(e.to_string()))?;
 
@@ -414,6 +423,11 @@ impl ChatFormatter {
                 };
 
                 formats.push(ToolCallFormat {
+                    name: format
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
                     call_start: token("start"),
                     call_end: token("end"),
                 });
@@ -450,6 +464,34 @@ impl ChatFormatter {
         }
 
         Err(Error::FormatterProfileNotFound(model_type.to_string()))
+    }
+
+    fn load_shared_template(profile_dir: &Path, template_name: &str) -> Result<Option<String>> {
+        let Some(path) = Self::find_shared_template_path(profile_dir, template_name) else {
+            return Ok(None);
+        };
+
+        std::fs::read_to_string(&path)
+            .map(Some)
+            .map_err(|_| Error::Template(format!("Failed to load template from {:?}", path)))
+    }
+
+    fn find_shared_template_path(profile_dir: &Path, template_name: &str) -> Option<PathBuf> {
+        if let Some(root) = profile_dir.parent() {
+            let direct_path = root.join(template_name);
+            if direct_path.is_file() {
+                return Some(direct_path);
+            }
+        }
+
+        for ancestor in profile_dir.ancestors() {
+            let candidate = ancestor.join("Pantheon").join(template_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        None
     }
 
     fn json_to_minijinja(value: &serde_json::Value) -> Value {

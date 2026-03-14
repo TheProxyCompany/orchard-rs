@@ -68,6 +68,8 @@ pub struct PromptPayload {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolCallFormat {
     #[serde(default)]
+    pub name: String,
+    #[serde(default)]
     pub call_start: String,
     #[serde(default)]
     pub call_end: String,
