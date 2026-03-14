@@ -674,10 +674,25 @@ mod tests {
             .first()
             .expect("llama3 profile should define tool-calling format tokens");
 
-        assert!(rendered.contains(&format.call_start), "rendered should contain call_start delimiter");
-        assert!(rendered.contains(&format.call_end), "rendered should contain call_end delimiter");
-        assert!(rendered.contains("lookup_weather("), "rendered should contain pythonic tool call");
-        assert!(rendered.contains("city="), "rendered should contain keyword argument");
-        assert!(rendered.contains("def share_to_party("), "rendered should contain Python signature for tool definition");
+        assert!(
+            rendered.contains(&format.call_start),
+            "rendered should contain call_start delimiter"
+        );
+        assert!(
+            rendered.contains(&format.call_end),
+            "rendered should contain call_end delimiter"
+        );
+        assert!(
+            rendered.contains("lookup_weather("),
+            "rendered should contain pythonic tool call"
+        );
+        assert!(
+            rendered.contains("city="),
+            "rendered should contain keyword argument"
+        );
+        assert!(
+            rendered.contains("def share_to_party("),
+            "rendered should contain Python signature for tool definition"
+        );
     }
 }
