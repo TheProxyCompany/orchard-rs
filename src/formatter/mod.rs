@@ -674,25 +674,10 @@ mod tests {
             .first()
             .expect("llama3 profile should define tool-calling format tokens");
 
-        assert!(rendered.contains(&format.call_start));
-        assert!(rendered.contains(&format.call_end));
-        assert!(rendered.contains("\"name\":\"lookup_weather\""));
-        assert!(rendered.contains("\"arguments\":{\"city\":\"San Francisco\"}"));
-        assert!(!rendered.contains("\"arguments\":\"{\\\"city\\\":\\\"San Francisco\\\"}\""));
-
-        let properties_start = rendered
-            .find("\"properties\": {")
-            .expect("expected tool schema properties block in rendered prompt");
-        let properties_block = &rendered[properties_start..];
-        let name_idx = properties_block
-            .find("\"name\": {")
-            .expect("expected name key in tool schema properties");
-        let arguments_idx = properties_block
-            .find("\"arguments\": {")
-            .expect("expected arguments key in tool schema properties");
-        assert!(
-            name_idx < arguments_idx,
-            "expected name to appear before arguments in tool schema properties block"
-        );
+        assert!(rendered.contains(&format.call_start), "rendered should contain call_start delimiter");
+        assert!(rendered.contains(&format.call_end), "rendered should contain call_end delimiter");
+        assert!(rendered.contains("lookup_weather("), "rendered should contain pythonic tool call");
+        assert!(rendered.contains("city="), "rendered should contain keyword argument");
+        assert!(rendered.contains("def share_to_party("), "rendered should contain Python signature for tool definition");
     }
 }
