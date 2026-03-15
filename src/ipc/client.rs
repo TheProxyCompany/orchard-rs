@@ -27,6 +27,7 @@ pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 
 const ENGINE_LIVENESS_POLL_INTERVAL: Duration = Duration::from_secs(10);
 const RESPONSE_RECV_TIMEOUT: Duration = Duration::from_millis(10);
+const RESPONSE_SOCKET_BUFFER_MESSAGES: i32 = 1024;
 
 /// A single token's log probability info from PIE.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -210,6 +211,7 @@ impl IPCClient {
 
         // Create response socket (SUB) - subscribe BEFORE dial
         let response_socket = Socket::new(Protocol::Sub0)?;
+        response_socket.set_opt::<nng::options::RecvBufferSize>(RESPONSE_SOCKET_BUFFER_MESSAGES)?;
 
         // Subscribe to our response topic
         let response_topic = format!("resp:{:x}:", self.response_channel_id);
@@ -513,73 +515,6 @@ fn run_response_listener(
                     let json_data = &data[response_topic_bytes.len()..];
 
                     if let Ok(delta) = serde_json::from_slice::<ResponseDelta>(json_data) {
-                        let has_content = delta
-                            .content
-                            .as_ref()
-                            .map(|content| !content.is_empty())
-                            .unwrap_or(false);
-                        let event_type = if delta.error.is_some() {
-                            "error"
-                        } else if delta.is_final_delta {
-                            "final_delta"
-                        } else if !delta.state_events.is_empty() {
-                            "state_event_delta"
-                        } else if has_content || !delta.tokens.is_empty() {
-                            "content_delta"
-                        } else {
-                            "delta"
-                        };
-                        let content_chars = delta
-                            .content
-                            .as_ref()
-                            .map(|content| content.chars().count())
-                            .unwrap_or(0);
-
-                        tracing::debug!(
-                            request_id = delta.request_id,
-                            sequence_id = ?delta.sequence_id,
-                            prompt_index = ?delta.prompt_index,
-                            candidate_index = ?delta.candidate_index,
-                            event_type,
-                            is_final = delta.is_final_delta,
-                            finish_reason = ?delta.finish_reason.as_deref(),
-                            has_error = delta.error.is_some(),
-                            content_chars,
-                            token_count = delta.tokens.len(),
-                            state_event_count = delta.state_events.len(),
-                            "Received IPC response event"
-                        );
-                        tracing::trace!(
-                            request_id = delta.request_id,
-                            sequence_id = ?delta.sequence_id,
-                            event_type,
-                            "Received IPC response event payload:\n{:#?}",
-                            delta
-                        );
-
-                        for event in &delta.state_events {
-                            tracing::debug!(
-                                request_id = delta.request_id,
-                                sequence_id = ?delta.sequence_id,
-                                prompt_index = ?delta.prompt_index,
-                                candidate_index = ?delta.candidate_index,
-                                event_type = %event.event_type,
-                                item_type = %event.item_type,
-                                output_index = event.output_index,
-                                identifier = %event.identifier,
-                                delta_chars = event.delta.chars().count(),
-                                has_value = event.value.is_some(),
-                                "Received IPC response state event"
-                            );
-                            tracing::trace!(
-                                request_id = delta.request_id,
-                                sequence_id = ?delta.sequence_id,
-                                event_type = %event.event_type,
-                                "Received IPC response state event payload:\n{:#?}",
-                                event
-                            );
-                        }
-
                         let request_id = delta.request_id;
                         let is_final = delta.is_final_delta;
 
@@ -608,6 +543,12 @@ fn run_response_listener(
                         if let Some(tx) = sender {
                             let _ = tx.send(delta);
                         }
+                    } else {
+                        tracing::warn!(
+                            response_channel_id,
+                            payload_bytes = json_data.len(),
+                            "Failed to deserialize IPC response payload"
+                        );
                     }
                 }
                 // Check if it's an engine event
