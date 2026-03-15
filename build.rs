@@ -112,7 +112,7 @@ fn discover_profiles(profiles_dir: &Path) -> Result<Vec<String>, Box<dyn std::er
         let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if file_name == "_example" {
+        if file_name == "_example" || file_name.starts_with('.') {
             continue;
         }
 
