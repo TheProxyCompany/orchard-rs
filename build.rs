@@ -18,26 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let generated_path = out_dir.join("embedded_profiles.rs");
 
-    init_submodules_if_needed(&manifest_dir, &profiles_dir);
-
     let generated = build_embedded_profiles_source(&profiles_dir)?;
     fs::write(generated_path, generated)?;
 
     Ok(())
-}
-
-fn init_submodules_if_needed(manifest_dir: &Path, profiles_dir: &Path) {
-    if profiles_dir.is_dir() && fs::read_dir(profiles_dir).map(|mut d| d.next().is_some()).unwrap_or(false) {
-        return;
-    }
-    let gitmodules = manifest_dir.join(".gitmodules");
-    if !gitmodules.exists() {
-        return;
-    }
-    let _ = std::process::Command::new("git")
-        .args(["submodule", "update", "--init", "--recursive"])
-        .current_dir(manifest_dir)
-        .status();
 }
 
 fn build_embedded_profiles_source(
