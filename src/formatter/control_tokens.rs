@@ -123,6 +123,15 @@ pub struct ControlTokens {
 }
 
 impl ControlTokens {
+    pub fn from_json_str(content: &str, source: &str) -> Result<Self> {
+        serde_json::from_str(content).map_err(|error| {
+            Error::Template(format!(
+                "Failed to parse control tokens from {}: {}",
+                source, error
+            ))
+        })
+    }
+
     /// Load control tokens from a profile directory.
     pub fn load(profile_dir: &Path) -> Result<Self> {
         let tokens_path = profile_dir.join("control_tokens.json");
@@ -134,7 +143,7 @@ impl ControlTokens {
         }
 
         let content = std::fs::read_to_string(&tokens_path)?;
-        Ok(serde_json::from_str(&content)?)
+        Self::from_json_str(&content, &tokens_path.display().to_string())
     }
 }
 

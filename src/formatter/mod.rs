@@ -1,11 +1,14 @@
 //! Chat formatting for LLM prompts.
 
 pub mod control_tokens;
+mod embedded_profiles {
+    include!(concat!(env!("OUT_DIR"), "/embedded_profiles.rs"));
+}
 pub mod multimodal;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use minijinja::value::{Kwargs, Object};
 use minijinja::{context, Environment, Value};
@@ -146,16 +149,11 @@ impl ChatFormatter {
             serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
         let model_type = determine_model_type(&config).to_string();
-        let profile_dir = Self::find_profile_dir(&model_type)?;
-        let control_tokens = ControlTokens::load(&profile_dir)?;
-
-        let template_path = profile_dir.join("chat_template.jinja");
-        let template_source = std::fs::read_to_string(&template_path).map_err(|_| {
-            Error::Template(format!("Failed to load template from {:?}", template_path))
-        })?;
-        let shared_tool_macros_source =
-            Self::load_shared_template(&profile_dir, "tool_macros.jinja")?;
-        let capabilities = Self::load_capabilities(&profile_dir)?;
+        let profile = Self::find_profile(&model_type)?;
+        let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &model_type)?;
+        let template_source = profile.chat_template.to_string();
+        let shared_tool_macros_source = Self::load_shared_template("tool_macros.jinja")?;
+        let capabilities = Self::load_capabilities(&profile)?;
         let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
         let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
 
@@ -352,24 +350,21 @@ impl ChatFormatter {
             .map_err(|e| Error::Template(e.to_string()))
     }
 
-    fn load_capabilities(profile_dir: &Path) -> Result<serde_json::Value> {
-        let capabilities_path = profile_dir.join("capabilities.yaml");
-        if !capabilities_path.exists() {
-            return Ok(serde_json::json!({}));
-        }
-
-        let content = std::fs::read_to_string(&capabilities_path)?;
-        let parsed_yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
-            Error::Template(format!(
-                "Failed to parse capabilities from {:?}: {}",
-                capabilities_path, e
-            ))
-        })?;
+    fn load_capabilities(
+        profile: &embedded_profiles::EmbeddedProfile,
+    ) -> Result<serde_json::Value> {
+        let parsed_yaml: serde_yaml::Value =
+            serde_yaml::from_str(profile.capabilities).map_err(|e| {
+                Error::Template(format!(
+                    "Failed to parse embedded capabilities for {}: {}",
+                    profile.model_type, e
+                ))
+            })?;
 
         serde_json::to_value(parsed_yaml).map_err(|e| {
             Error::Template(format!(
-                "Failed to convert capabilities from {:?}: {}",
-                capabilities_path, e
+                "Failed to convert embedded capabilities for {}: {}",
+                profile.model_type, e
             ))
         })
     }
@@ -445,53 +440,13 @@ impl ChatFormatter {
         }
     }
 
-    fn find_profile_dir(model_type: &str) -> Result<std::path::PathBuf> {
-        let candidates = [
-            Some(
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("profiles")
-                    .join(model_type),
-            ),
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.join("profiles").join(model_type)),
-        ];
-
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.is_dir() {
-                return Ok(candidate);
-            }
-        }
-
-        Err(Error::FormatterProfileNotFound(model_type.to_string()))
+    fn find_profile(model_type: &str) -> Result<embedded_profiles::EmbeddedProfile> {
+        embedded_profiles::find_embedded_profile(model_type)
+            .ok_or_else(|| Error::FormatterProfileNotFound(model_type.to_string()))
     }
 
-    fn load_shared_template(profile_dir: &Path, template_name: &str) -> Result<Option<String>> {
-        let Some(path) = Self::find_shared_template_path(profile_dir, template_name) else {
-            return Ok(None);
-        };
-
-        std::fs::read_to_string(&path)
-            .map(Some)
-            .map_err(|_| Error::Template(format!("Failed to load template from {:?}", path)))
-    }
-
-    fn find_shared_template_path(profile_dir: &Path, template_name: &str) -> Option<PathBuf> {
-        if let Some(root) = profile_dir.parent() {
-            let direct_path = root.join(template_name);
-            if direct_path.is_file() {
-                return Some(direct_path);
-            }
-        }
-
-        for ancestor in profile_dir.ancestors() {
-            let candidate = ancestor.join("Pantheon").join(template_name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-
-        None
+    fn load_shared_template(template_name: &str) -> Result<Option<String>> {
+        Ok(embedded_profiles::load_shared_template(template_name).map(str::to_owned))
     }
 
     fn json_to_minijinja(value: &serde_json::Value) -> Value {
@@ -600,8 +555,27 @@ mod tests {
         let config = serde_json::json!({"model_type": "moondream3"});
         assert_eq!(determine_model_type(&config), "moondream3");
 
+        let config = serde_json::json!({"model_type": "gemma3_text"});
+        assert_eq!(determine_model_type(&config), "gemma3");
+
         let config = serde_json::json!({});
         assert_eq!(determine_model_type(&config), "llama3");
+    }
+
+    #[test]
+    fn test_chat_formatter_loads_embedded_gemma_profile() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma3_text"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+
+        assert_eq!(formatter.model_type, "gemma3");
+        assert!(!formatter.template_source.is_empty());
+        assert!(formatter.shared_tool_macros_source.is_some());
     }
 
     #[test]
