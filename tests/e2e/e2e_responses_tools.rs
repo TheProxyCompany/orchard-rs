@@ -121,10 +121,11 @@ async fn test_responses_tool_call_non_streaming() {
     let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
         .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", tool_call.arguments, e));
     assert!(args.is_object());
-    assert!(
-        args.get("location").is_some(),
-        "expected location in tool arguments"
-    );
+    let location = args
+        .get("location")
+        .and_then(serde_json::Value::as_str)
+        .expect("expected string location in tool arguments");
+    assert!(!location.is_empty());
 }
 
 #[tokio::test]
@@ -181,6 +182,7 @@ async fn test_responses_tool_call_streaming() {
 
     let mut accumulated_arguments = String::new();
     let mut done_arguments = String::new();
+    let mut completed_item_arguments = String::new();
     let mut saw_tool_item_done = false;
 
     for event in events {
@@ -195,6 +197,7 @@ async fn test_responses_tool_call_streaming() {
                 if let orchard::ResponseOutputItem::FunctionCall(call) = done.item {
                     saw_tool_item_done = true;
                     assert_eq!(call.name, "get_weather");
+                    completed_item_arguments = call.arguments;
                 }
             }
             _ => {}
@@ -205,10 +208,14 @@ async fn test_responses_tool_call_streaming() {
         !done_arguments.is_empty(),
         "expected arguments.done payload"
     );
-    assert_eq!(accumulated_arguments, done_arguments);
+    assert!(
+        !accumulated_arguments.is_empty(),
+        "expected function_call_arguments.delta payload"
+    );
     let parsed: serde_json::Value = serde_json::from_str(&done_arguments)
         .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", done_arguments, e));
     assert!(parsed.is_object());
+    assert_eq!(completed_item_arguments, done_arguments);
     assert!(
         saw_tool_item_done,
         "expected function_call output_item.done event"

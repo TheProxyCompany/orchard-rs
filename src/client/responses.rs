@@ -77,6 +77,28 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct CompletedToolCallValue {
+    name: String,
+    #[serde(default = "default_tool_call_arguments")]
+    arguments: Value,
+}
+
+fn default_tool_call_arguments() -> Value {
+    Value::Object(Default::default())
+}
+
+fn parse_tool_call_completion_value(value: &Value) -> Option<(String, String)> {
+    let structured_value = match value {
+        Value::String(text) => serde_json::from_str::<Value>(text).ok()?,
+        Value::Object(_) => value.clone(),
+        _ => return None,
+    };
+
+    let tool_call: CompletedToolCallValue = serde_json::from_value(structured_value).ok()?;
+    Some((tool_call.name, tool_call.arguments.to_string()))
+}
+
 fn normalize_response_tool_schema(tool: &Value) -> Value {
     let Some(obj) = tool.as_object() else {
         return tool.clone();
@@ -884,6 +906,7 @@ struct AggregatedOutputItem {
     content: String,
     arguments: String,
     identifier: String,
+    function_name: String,
 }
 
 fn process_state_event_for_output(
@@ -904,6 +927,14 @@ fn process_state_event_for_output(
             content: String::new(),
             arguments: String::new(),
             identifier: event.identifier.clone(),
+            function_name: if item_type == "tool_call" {
+                event
+                    .identifier
+                    .trim_start_matches("tool_call:")
+                    .to_string()
+            } else {
+                String::new()
+            },
         });
 
     if item.item_type == "tool_call" && event.identifier == "arguments" {
@@ -922,6 +953,18 @@ fn process_state_event_for_output(
     } else if event.event_type == "item_completed" {
         if item.item_type == "tool_call" {
             item.identifier = event.identifier.clone();
+            if let Some(value) = &event.value {
+                if let Some((function_name, arguments)) = parse_tool_call_completion_value(value) {
+                    item.function_name = function_name;
+                    item.arguments = arguments;
+                }
+            }
+            if item.function_name.is_empty() {
+                item.function_name = event
+                    .identifier
+                    .trim_start_matches("tool_call:")
+                    .to_string();
+            }
         } else if let Some(value) = &event.value {
             item.content = value_to_string(value);
         }
@@ -935,12 +978,11 @@ fn build_output_items(
     for item in output_items.values() {
         match item.item_type.as_str() {
             "tool_call" => {
-                let name = item.identifier.trim_start_matches("tool_call:").to_string();
                 output.push(ResponseOutputItem::FunctionCall(OutputFunctionCall {
                     output_type: "function_call".to_string(),
                     id: generate_function_call_id(),
                     call_id: generate_tool_call_id(),
-                    name,
+                    name: item.function_name.clone(),
                     arguments: item.arguments.clone(),
                     metadata: None,
                     status: OutputStatus::Completed,
@@ -1036,22 +1078,10 @@ fn process_state_event_for_streaming(
                 },
             ));
         } else if event.event_type == "item_completed" {
-            let (item_id, arguments) = {
+            if let Some(value) = &event.value {
                 let item = stream_state.get_or_create_item(output_index, item_type, &identifier);
-                if let Some(value) = &event.value {
-                    item.accumulated_arguments = value_to_string(value);
-                }
-                (item.item_id.clone(), item.accumulated_arguments.clone())
-            };
-            let sequence_number = stream_state.next_sequence_number();
-            events.push(ResponseEvent::FunctionCallArgumentsDone(
-                FunctionCallArgumentsDoneEvent {
-                    sequence_number,
-                    item_id,
-                    output_index,
-                    arguments,
-                },
-            ));
+                item.accumulated_arguments = value_to_string(value);
+            }
         }
         return;
     }
@@ -1123,12 +1153,19 @@ fn process_state_event_for_streaming(
         let (item_id, accumulated_content, completed_item) = {
             let item = stream_state.get_or_create_item(output_index, item_type, &identifier);
             if let Some(value) = &event.value {
-                if item_type != "tool_call" {
+                if item_type == "tool_call" {
+                    if let Some((function_name, arguments)) =
+                        parse_tool_call_completion_value(value)
+                    {
+                        item.function_name = Some(function_name);
+                        item.accumulated_arguments = arguments;
+                    }
+                } else {
                     item.accumulated_content = value_to_string(value);
                 }
             }
             item.status = OutputStatus::Completed;
-            if item_type == "tool_call" {
+            if item_type == "tool_call" && item.function_name.is_none() {
                 item.function_name = Some(identifier.trim_start_matches("tool_call:").to_string());
             }
             (
@@ -1166,6 +1203,20 @@ fn process_state_event_for_streaming(
                 content_index: 0,
                 text: accumulated_content,
             }));
+        } else if item_type == "tool_call" {
+            let arguments = {
+                let item = stream_state.get_or_create_item(output_index, item_type, &identifier);
+                item.accumulated_arguments.clone()
+            };
+            let sequence_number = stream_state.next_sequence_number();
+            events.push(ResponseEvent::FunctionCallArgumentsDone(
+                FunctionCallArgumentsDoneEvent {
+                    sequence_number,
+                    item_id: item_id.clone(),
+                    output_index,
+                    arguments,
+                },
+            ));
         }
 
         let sequence_number = stream_state.next_sequence_number();
@@ -1751,5 +1802,162 @@ mod tests {
         let parsed: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
         assert_eq!(parsed.state_events.len(), 1);
         assert_eq!(parsed.state_events[0].event_type, "item_started");
+    }
+
+    #[test]
+    fn test_build_output_items_uses_structured_tool_call_completion_value() {
+        let mut output_items = BTreeMap::new();
+
+        process_state_event_for_output(
+            &ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "arguments".to_string(),
+                delta: r#"location="Tokyo", verbose=True"#.to_string(),
+                value: None,
+            },
+            &mut output_items,
+        );
+        process_state_event_for_output(
+            &ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:get_weather".to_string(),
+                delta: String::new(),
+                value: Some(Value::String(
+                    serde_json::json!({
+                        "name": "get_weather",
+                        "arguments": {
+                            "location": "Tokyo",
+                            "verbose": true,
+                            "limit": null,
+                        },
+                    })
+                    .to_string(),
+                )),
+            },
+            &mut output_items,
+        );
+
+        let output = build_output_items(&output_items);
+        let ResponseOutputItem::FunctionCall(call) = &output[0] else {
+            panic!("expected function call output");
+        };
+
+        assert_eq!(call.name, "get_weather");
+        assert_eq!(
+            serde_json::from_str::<Value>(&call.arguments).expect("valid JSON arguments"),
+            serde_json::json!({
+                "location": "Tokyo",
+                "verbose": true,
+                "limit": null,
+            })
+        );
+    }
+
+    #[test]
+    fn test_streaming_tool_call_done_uses_structured_completion_value() {
+        let mut stream_state = ResponseStreamState::new("resp_1".to_string(), "model".to_string());
+        let mut events = Vec::new();
+
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_started".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:get_weather".to_string(),
+                delta: String::new(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "arguments".to_string(),
+                delta: r#"location="Tokyo", verbose=True"#.to_string(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "arguments".to_string(),
+                delta: String::new(),
+                value: Some(Value::String(
+                    r#"location="Tokyo", verbose=True"#.to_string(),
+                )),
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:get_weather".to_string(),
+                delta: String::new(),
+                value: Some(Value::String(
+                    serde_json::json!({
+                        "name": "get_weather",
+                        "arguments": {
+                            "location": "Tokyo",
+                            "verbose": true,
+                        },
+                    })
+                    .to_string(),
+                )),
+            },
+            &mut stream_state,
+            &mut events,
+        );
+
+        let argument_done_events = events
+            .iter()
+            .filter_map(|event| match event {
+                ResponseEvent::FunctionCallArgumentsDone(done) => Some(done),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(argument_done_events.len(), 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(&argument_done_events[0].arguments)
+                .expect("valid JSON arguments"),
+            serde_json::json!({
+                "location": "Tokyo",
+                "verbose": true,
+            })
+        );
+
+        let completed_calls = events
+            .iter()
+            .filter_map(|event| match event {
+                ResponseEvent::OutputItemDone(done) => match &done.item {
+                    ResponseOutputItem::FunctionCall(call) => Some(call),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(completed_calls.len(), 1);
+        assert_eq!(completed_calls[0].name, "get_weather");
+        assert_eq!(
+            serde_json::from_str::<Value>(&completed_calls[0].arguments)
+                .expect("valid JSON arguments"),
+            serde_json::json!({
+                "location": "Tokyo",
+                "verbose": true,
+            })
+        );
     }
 }
