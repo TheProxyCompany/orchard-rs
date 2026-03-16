@@ -51,6 +51,7 @@ pub struct ModelInfo {
     pub model_path: String,
     pub formatter: Arc<ChatFormatter>,
     pub capabilities: Option<HashMap<String, Vec<i32>>>,
+    pub minimum_memory_bytes: Option<u64>,
 }
 
 /// Entry in the model registry tracking a model's state.
@@ -271,7 +272,9 @@ impl ModelRegistry {
             "ok" => {
                 // Immediate success - extract capabilities and mark ready
                 let capabilities = self.parse_capabilities(&response);
-                self.complete_activation(canonical_id, capabilities).await;
+                let minimum_memory_bytes = self.parse_minimum_memory_bytes(&response);
+                self.complete_activation(canonical_id, capabilities, minimum_memory_bytes)
+                    .await;
             }
             "accepted" => {
                 // Async activation - wait for model_loaded event
@@ -325,16 +328,30 @@ impl ModelRegistry {
             })
     }
 
+    fn parse_minimum_memory_bytes(&self, response: &Value) -> Option<u64> {
+        response
+            .get("data")
+            .and_then(|d| d.get("load_model"))
+            .and_then(|lm| lm.get("minimum_memory_bytes"))
+            .and_then(|value| value.as_u64())
+    }
+
     /// Complete activation successfully.
     async fn complete_activation(
         &self,
         model_id: &str,
         capabilities: Option<HashMap<String, Vec<i32>>>,
+        minimum_memory_bytes: Option<u64>,
     ) {
         let mut entries = self.entries.write().await;
         if let Some(entry) = entries.get_mut(model_id) {
             if let Some(ref mut info) = entry.info {
-                info.capabilities = capabilities;
+                if let Some(capabilities) = capabilities {
+                    info.capabilities = Some(capabilities);
+                }
+                if minimum_memory_bytes.is_some() {
+                    info.minimum_memory_bytes = minimum_memory_bytes;
+                }
             }
             entry.state = ModelLoadState::Ready;
             entry.notify.notify_waiters();
@@ -424,6 +441,7 @@ impl ModelRegistry {
                         model_path: resolved.model_path.to_string_lossy().to_string(),
                         formatter: Arc::new(formatter),
                         capabilities: None,
+                        minimum_memory_bytes: None,
                     });
                     entry.state = ModelLoadState::Loading;
                     entry.notify.notify_waiters();
@@ -480,6 +498,7 @@ impl ModelRegistry {
                                     model_path: download_path.to_string_lossy().to_string(),
                                     formatter: Arc::new(formatter),
                                     capabilities: None,
+                                    minimum_memory_bytes: None,
                                 });
                                 entry.state = ModelLoadState::Loading;
                             }
@@ -815,7 +834,11 @@ impl ModelRegistry {
         };
 
         // Complete the activation
-        self.complete_activation(&canonical_id, None).await;
+        let minimum_memory_bytes = payload
+            .get("minimum_memory_bytes")
+            .and_then(|value| value.as_u64());
+        self.complete_activation(&canonical_id, None, minimum_memory_bytes)
+            .await;
     }
 
     /// Handle model_load_failed event from PIE.
