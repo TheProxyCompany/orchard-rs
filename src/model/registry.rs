@@ -49,9 +49,19 @@ impl std::fmt::Display for ModelLoadState {
 pub struct ModelInfo {
     pub model_id: String,
     pub model_path: String,
-    pub formatter: Arc<ChatFormatter>,
+    pub formatter: Option<Arc<ChatFormatter>>,
     pub capabilities: Option<HashMap<String, Vec<i32>>>,
     pub minimum_memory_bytes: Option<u64>,
+}
+
+impl ModelInfo {
+    pub fn require_formatter(&self) -> std::result::Result<&ChatFormatter, crate::error::Error> {
+        self.formatter
+            .as_deref()
+            .ok_or_else(|| crate::error::Error::ModelNotReady(
+                format!("Model '{}' does not have a chat formatter", self.model_id)
+            ))
+    }
 }
 
 /// Entry in the model registry tracking a model's state.
@@ -434,26 +444,17 @@ impl ModelRegistry {
         entry.activation_waiters.clear();
 
         if resolved.source == "local" || resolved.source == "hf_cache" {
-            match ChatFormatter::new(&resolved.model_path) {
-                Ok(formatter) => {
-                    entry.info = Some(ModelInfo {
-                        model_id: canonical_id.clone(),
-                        model_path: resolved.model_path.to_string_lossy().to_string(),
-                        formatter: Arc::new(formatter),
-                        capabilities: None,
-                        minimum_memory_bytes: None,
-                    });
-                    entry.state = ModelLoadState::Loading;
-                    entry.notify.notify_waiters();
-                    return Ok((ModelLoadState::Loading, canonical_id));
-                }
-                Err(e) => {
-                    entry.error = Some(e.to_string());
-                    entry.state = ModelLoadState::Failed;
-                    entry.notify.notify_waiters();
-                    return Ok((ModelLoadState::Failed, canonical_id));
-                }
-            }
+            let formatter = ChatFormatter::new(&resolved.model_path).ok().map(Arc::new);
+            entry.info = Some(ModelInfo {
+                model_id: canonical_id.clone(),
+                model_path: resolved.model_path.to_string_lossy().to_string(),
+                formatter,
+                capabilities: None,
+                minimum_memory_bytes: None,
+            });
+            entry.state = ModelLoadState::Loading;
+            entry.notify.notify_waiters();
+            return Ok((ModelLoadState::Loading, canonical_id));
         }
 
         // Model needs to be downloaded from HuggingFace
@@ -490,23 +491,15 @@ impl ModelRegistry {
                             resolved.source = "hf_cache".to_string();
                         }
 
-                        // Create formatter
-                        match ChatFormatter::new(&download_path) {
-                            Ok(formatter) => {
-                                entry.info = Some(ModelInfo {
-                                    model_id: canonical_id_for_task.clone(),
-                                    model_path: download_path.to_string_lossy().to_string(),
-                                    formatter: Arc::new(formatter),
-                                    capabilities: None,
-                                    minimum_memory_bytes: None,
-                                });
-                                entry.state = ModelLoadState::Loading;
-                            }
-                            Err(e) => {
-                                entry.error = Some(format!("Failed to create formatter: {}", e));
-                                entry.state = ModelLoadState::Failed;
-                            }
-                        }
+                        let formatter = ChatFormatter::new(&download_path).ok().map(Arc::new);
+                        entry.info = Some(ModelInfo {
+                            model_id: canonical_id_for_task.clone(),
+                            model_path: download_path.to_string_lossy().to_string(),
+                            formatter,
+                            capabilities: None,
+                            minimum_memory_bytes: None,
+                        });
+                        entry.state = ModelLoadState::Loading;
                     }
                     Err(e) => {
                         entry.error = Some(format!("Download failed: {}", e));

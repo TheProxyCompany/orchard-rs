@@ -1534,6 +1534,7 @@ impl Client {
         request: ResponsesRequest,
     ) -> Result<ResponsesResult> {
         let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
             request_id,
@@ -1551,7 +1552,7 @@ impl Client {
         let reasoning_flag = request.reasoning_effort.is_some();
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
-            build_multimodal_messages(&info.formatter, &messages, request.instructions.as_deref())
+            build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
                 .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         if messages_for_template.is_empty() {
@@ -1578,8 +1579,7 @@ impl Client {
         };
         let template_tools = (!tool_schemas.is_empty()).then_some(tool_schemas.as_slice());
 
-        let prompt_text = info
-            .formatter
+        let prompt_text = formatter
             .apply_template_with_tools(
                 &messages_for_template,
                 true,
@@ -1589,20 +1589,20 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        let capability_placeholder = info.formatter.capability_placeholder_token();
+        let capability_placeholder = formatter.capability_placeholder_token();
 
         let layout_segments = build_multimodal_layout(
             &prompt_text,
             &image_buffers,
             &capabilities,
             &content_order,
-            info.formatter.image_placeholder_token(),
-            info.formatter.should_clip_image_placeholder(),
+            formatter.image_placeholder_token(),
+            formatter.should_clip_image_placeholder(),
             capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
-        let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -1649,7 +1649,7 @@ impl Client {
             top_logprobs: request.top_logprobs.unwrap_or(0),
             logit_bias: HashMap::new(),
             tool_schemas_json,
-            tool_calling_tokens: info.formatter.get_tool_calling_tokens().clone(),
+            tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
             response_format_json,

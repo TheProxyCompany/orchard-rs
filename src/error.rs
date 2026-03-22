@@ -29,7 +29,7 @@ pub enum Error {
     // === Model Errors ===
     #[error("Model not found: {0}")]
     ModelNotFound(String),
-    #[error("Model not ready: {0}")]
+    #[error("{0}")]
     ModelNotReady(String),
     #[error("Model identifier cannot be empty")]
     EmptyModelId,

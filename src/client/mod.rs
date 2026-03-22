@@ -60,19 +60,19 @@ pub enum ClientError {
     #[error("Model not found: {0}")]
     ModelNotFound(String),
 
-    #[error("Model not ready: {0}")]
+    #[error("{0}")]
     ModelNotReady(String),
 
-    #[error("IPC error: {0}")]
+    #[error("{0}")]
     Ipc(String),
 
-    #[error("Formatter error: {0}")]
+    #[error("{0}")]
     Formatter(String),
 
-    #[error("Multimodal error: {0}")]
+    #[error("{0}")]
     Multimodal(String),
 
-    #[error("Request failed: {0}")]
+    #[error("{0}")]
     RequestFailed(String),
 }
 
@@ -281,6 +281,7 @@ impl Client {
         stream: bool,
     ) -> Result<ChatResult> {
         let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -302,7 +303,7 @@ impl Client {
 
         // Build multimodal content (pass instructions if provided)
         let (messages_for_template, image_buffers, capabilities, content_order) =
-            build_multimodal_messages(&info.formatter, &messages, params.instructions.as_deref())
+            build_multimodal_messages(formatter, &messages, params.instructions.as_deref())
                 .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
         if messages_for_template.is_empty() {
@@ -318,8 +319,7 @@ impl Client {
         );
 
         // Apply template with reasoning flag
-        let prompt_text = info
-            .formatter
+        let prompt_text = formatter
             .apply_template(
                 &messages_for_template,
                 true,
@@ -328,7 +328,7 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        let capability_placeholder = info.formatter.capability_placeholder_token();
+        let capability_placeholder = formatter.capability_placeholder_token();
 
         // Build layout for multimodal content
         let layout_segments = build_multimodal_layout(
@@ -336,13 +336,13 @@ impl Client {
             &image_buffers,
             &capabilities,
             &content_order,
-            info.formatter.image_placeholder_token(),
-            info.formatter.should_clip_image_placeholder(),
+            formatter.image_placeholder_token(),
+            formatter.should_clip_image_placeholder(),
             capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
-        let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -370,7 +370,7 @@ impl Client {
             .as_ref()
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
-        let tool_calling_tokens = info.formatter.get_tool_calling_tokens().clone();
+        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
@@ -534,6 +534,7 @@ impl Client {
         }
 
         let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
 
         let request_id = self.ipc.next_request_id();
         let num_prompts = conversations.len();
@@ -559,7 +560,7 @@ impl Client {
             .as_ref()
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
-        let tool_calling_tokens = info.formatter.get_tool_calling_tokens().clone();
+        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
@@ -570,7 +571,7 @@ impl Client {
             // Build multimodal content (pass instructions if provided)
             let (messages_for_template, image_buffers, capabilities, content_order) =
                 build_multimodal_messages(
-                    &info.formatter,
+                    formatter,
                     messages,
                     params.instructions.as_deref(),
                 )
@@ -591,8 +592,7 @@ impl Client {
             );
 
             // Apply template with reasoning flag
-            let prompt_text = info
-                .formatter
+            let prompt_text = formatter
                 .apply_template(
                     &messages_for_template,
                     true,
@@ -601,7 +601,7 @@ impl Client {
                 )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-            let capability_placeholder = info.formatter.capability_placeholder_token();
+            let capability_placeholder = formatter.capability_placeholder_token();
 
             // Build layout for multimodal content
             let layout_segments = build_multimodal_layout(
@@ -609,13 +609,13 @@ impl Client {
                 &image_buffers,
                 &capabilities,
                 &content_order,
-                info.formatter.image_placeholder_token(),
-                info.formatter.should_clip_image_placeholder(),
+                formatter.image_placeholder_token(),
+                formatter.should_clip_image_placeholder(),
                 capability_placeholder,
             )
             .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
-            let final_prompt = info.formatter.strip_template_placeholders(&prompt_text);
+            let final_prompt = formatter.strip_template_placeholders(&prompt_text);
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
@@ -796,6 +796,53 @@ impl Client {
 
         collect_embeddings(rx, prompt_payloads.len()).await
     }
+
+    /// Transcribe float32 PCM audio with a local speech-to-text model.
+    pub async fn atranscribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
+        if pcm.is_empty() {
+            return Ok(String::new());
+        }
+
+        let info = self.registry.ensure_loaded(model_id).await?;
+
+        let request_id = self.ipc.next_request_id();
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            sample_count = pcm.len(),
+            "Building speech-to-text request"
+        );
+
+        let prompt_payload = build_stt_prompt_payload(pcm);
+
+        tracing::debug!(
+            request_id,
+            model_id = %model_id,
+            payload_bytes = prompt_payload.capabilities[0].payload.len(),
+            "Dispatching speech-to-text request to PIE"
+        );
+        let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            model_id,
+            &info.model_path,
+            RequestType::Omni,
+            &[prompt_payload],
+        )?;
+
+        collect_transcription(rx).await
+    }
+
+    /// Synchronous speech-to-text wrapper.
+    pub fn transcribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
+        let model_id = model_id.to_string();
+        let pcm = pcm.to_vec();
+        let future = async move { self.atranscribe_audio(&model_id, &pcm).await };
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            Err(_) => get_sync_runtime().block_on(future),
+        }
+    }
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -857,6 +904,62 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         task_name: None,
         reasoning_effort: None,
     }
+}
+
+fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
+    let audio_payload = encode_float32_pcm_bytes(pcm);
+    let audio_payload_size = audio_payload.len();
+
+    PromptPayload {
+        prompt: String::new(),
+        image_buffers: Vec::new(),
+        capabilities: vec![CapabilityEntry {
+            name: "audio".to_string(),
+            position: 0,
+            payload: audio_payload,
+        }],
+        layout: vec![
+            LayoutEntry {
+                segment_type: "text".to_string(),
+                length: 0,
+            },
+            LayoutEntry {
+                segment_type: "capability".to_string(),
+                length: audio_payload_size,
+            },
+        ],
+        max_generated_tokens: 0,
+        temperature: defaults::TEMPERATURE,
+        top_p: defaults::TOP_P,
+        top_k: defaults::TOP_K,
+        min_p: 0.0,
+        rng_seed: rand::thread_rng().gen::<u64>(),
+        stop_sequences: Vec::new(),
+        num_candidates: 1,
+        best_of: Some(1),
+        final_candidates: Some(1),
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0,
+        repetition_penalty: defaults::REPETITION_PENALTY,
+        repetition_context_size: 0,
+        top_logprobs: 0,
+        logit_bias: HashMap::new(),
+        tool_schemas_json: String::new(),
+        tool_calling_tokens: Default::default(),
+        tool_choice: "auto".to_string(),
+        max_tool_calls: 0,
+        response_format_json: String::new(),
+        task_name: None,
+        reasoning_effort: None,
+    }
+}
+
+fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(pcm.len() * std::mem::size_of::<f32>());
+    for sample in pcm {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
 }
 
 async fn collect_embeddings(
@@ -924,6 +1027,33 @@ fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
         .by_ref()
         .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("f32 chunk size")))
         .collect())
+}
+
+async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -> Result<String> {
+    let mut transcription = String::new();
+
+    loop {
+        match rx.recv().await {
+            Some(delta) => {
+                if let Some(error) = delta.error {
+                    return Err(ClientError::RequestFailed(error));
+                }
+
+                if let Some(content) = delta.content {
+                    transcription.push_str(&content);
+                }
+
+                if delta.is_final_delta {
+                    return Ok(transcription);
+                }
+            }
+            None => {
+                return Err(ClientError::RequestFailed(
+                    "Speech-to-text response channel closed before completion".to_string(),
+                ));
+            }
+        }
+    }
 }
 
 /// Result of a chat operation.
@@ -1130,5 +1260,27 @@ mod tests {
     fn test_decode_embedding_bytes_rejects_partial_float() {
         let error = decode_embedding_bytes(&[0, 0, 128]).expect_err("decode should fail");
         assert!(matches!(error, ClientError::RequestFailed(_)));
+    }
+
+    #[test]
+    fn test_build_stt_prompt_payload() {
+        let payload = build_stt_prompt_payload(&[0.25, -0.5]);
+
+        assert!(payload.prompt.is_empty());
+        assert_eq!(payload.capabilities.len(), 1);
+        assert_eq!(payload.capabilities[0].name, "audio");
+        assert_eq!(payload.capabilities[0].payload.len(), 8);
+        assert_eq!(payload.layout.len(), 2);
+        assert_eq!(payload.layout[0].segment_type, "text");
+        assert_eq!(payload.layout[0].length, 0);
+        assert_eq!(payload.layout[1].segment_type, "capability");
+        assert_eq!(payload.layout[1].length, 8);
+    }
+
+    #[test]
+    fn test_encode_float32_pcm_bytes() {
+        let bytes = encode_float32_pcm_bytes(&[0.0, 1.5, -2.25]);
+        let decoded = decode_embedding_bytes(&bytes).expect("audio bytes should decode");
+        assert_eq!(decoded, vec![0.0, 1.5, -2.25]);
     }
 }
