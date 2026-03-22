@@ -56,11 +56,12 @@ pub struct ModelInfo {
 
 impl ModelInfo {
     pub fn require_formatter(&self) -> std::result::Result<&ChatFormatter, crate::error::Error> {
-        self.formatter
-            .as_deref()
-            .ok_or_else(|| crate::error::Error::ModelNotReady(
-                format!("Model '{}' does not have a chat formatter", self.model_id)
+        self.formatter.as_deref().ok_or_else(|| {
+            crate::error::Error::ModelNotReady(format!(
+                "Model '{}' does not have a chat formatter",
+                self.model_id
             ))
+        })
     }
 }
 

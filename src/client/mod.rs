@@ -570,12 +570,8 @@ impl Client {
         for (prompt_index, messages) in conversations.iter().enumerate() {
             // Build multimodal content (pass instructions if provided)
             let (messages_for_template, image_buffers, capabilities, content_order) =
-                build_multimodal_messages(
-                    formatter,
-                    messages,
-                    params.instructions.as_deref(),
-                )
-                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+                build_multimodal_messages(formatter, messages, params.instructions.as_deref())
+                    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
             if messages_for_template.is_empty() {
                 return Err(ClientError::RequestFailed(
