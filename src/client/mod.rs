@@ -951,7 +951,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
 }
 
 fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(pcm.len() * std::mem::size_of::<f32>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(pcm));
     for sample in pcm {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }
