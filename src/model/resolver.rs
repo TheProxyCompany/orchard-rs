@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-const ALIASES: &[(&str, &str)] = &[("moondream3", "moondream/moondream3-preview")];
-
 /// Result of resolving a model identifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedModel {
@@ -42,8 +40,7 @@ impl ModelResolver {
     /// # Arguments
     /// * `requested_id` - Model identifier, which can be:
     ///   - Local path: `/path/to/model` or `./relative/path`
-    ///   - HF repo ID: `meta-llama/Llama-3.1-8B-Instruct` (primary interface)
-    ///   - Alias: `moondream3` (only for unambiguous models)
+    ///   - HF repo ID: `meta-llama/Llama-3.1-8B-Instruct`
     pub async fn resolve(&mut self, requested_id: &str) -> Result<ResolvedModel> {
         let identifier = requested_id.trim();
         if identifier.is_empty() {
@@ -62,23 +59,9 @@ impl ModelResolver {
             return Ok(resolved);
         }
 
-        // 2. Check for known alias
-        let hf_repo = ALIASES
-            .iter()
-            .find(|(alias, _)| alias.eq_ignore_ascii_case(identifier))
-            .map(|(_, repo)| *repo)
-            .unwrap_or(identifier);
-
-        // 3. Resolve via HuggingFace
+        // 2. Resolve via HuggingFace
         let resolved = self
-            .resolve_huggingface(
-                hf_repo,
-                if hf_repo != identifier {
-                    Some(identifier)
-                } else {
-                    None
-                },
-            )
+            .resolve_huggingface(identifier)
             .await?;
 
         self.resolved_cache.insert(cache_key, resolved.clone());
@@ -112,11 +95,7 @@ impl ModelResolver {
         Ok(None)
     }
 
-    async fn resolve_huggingface(
-        &self,
-        repo_id: &str,
-        requested_alias: Option<&str>,
-    ) -> Result<ResolvedModel> {
+    async fn resolve_huggingface(&self, repo_id: &str) -> Result<ResolvedModel> {
         let repo = self.hf_api.model(repo_id.to_string());
 
         // Try to get from cache first, then download if needed
@@ -136,8 +115,7 @@ impl ModelResolver {
             "hf_hub"
         };
 
-        let canonical_id = requested_alias.unwrap_or(repo_id);
-        self.build_resolved_model(path, source, Some(canonical_id), Some(repo_id))
+        self.build_resolved_model(path, source, Some(repo_id), Some(repo_id))
             .await
     }
 

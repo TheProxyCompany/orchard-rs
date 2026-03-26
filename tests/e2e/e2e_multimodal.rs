@@ -10,9 +10,7 @@ use std::path::PathBuf;
 use base64::Engine;
 use orchard::SamplingParams;
 
-use crate::fixture::get_fixture;
-
-const MODEL_ID: &str = "moondream3";
+use crate::fixture::{get_fixture, VISION_MODELS};
 
 fn get_test_assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -57,40 +55,43 @@ fn make_image_message(
 async fn test_multimodal_apple_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
+    for &model_id in VISION_MODELS {
+        let params = SamplingParams {
+            max_tokens: 50,
+            temperature: 0.0,
+            ..Default::default()
+        };
 
-    let params = SamplingParams {
-        max_tokens: 50,
-        temperature: 0.0,
-        ..Default::default()
-    };
+        let image_base64 = load_image_base64("apple.jpg");
+        let messages = vec![make_image_message(
+            "user",
+            "What is in this image: ",
+            &image_base64,
+        )];
 
-    let image_base64 = load_image_base64("apple.jpg");
-    let messages = vec![make_image_message(
-        "user",
-        "What is in this image: ",
-        &image_base64,
-    )];
+        let result = client.achat(model_id, messages, params, false).await;
+        assert!(
+            result.is_ok(),
+            "Multimodal request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(
-        result.is_ok(),
-        "Multimodal request failed: {:?}",
-        result.err()
-    );
-
-    match result.unwrap() {
-        orchard::ChatResult::Complete(response) => {
-            let output_text = response.text.to_lowercase();
-            let output_lines = [format!("Output text: {}", output_text)];
-            println!("{}", output_lines.join("\n"));
-            assert!(
-                output_text.contains("apple"),
-                "Expected 'apple' in response but got: '{}'",
-                response.text
-            );
-        }
-        orchard::ChatResult::Stream(_) => {
-            panic!("Expected complete response, got stream");
+        match result.unwrap() {
+            orchard::ChatResult::Complete(response) => {
+                let output_text = response.text.to_lowercase();
+                let output_lines = [format!("{} output text: {}", model_id, output_text)];
+                println!("{}", output_lines.join("\n"));
+                assert!(
+                    output_text.contains("apple"),
+                    "Expected 'apple' in response for {} but got: '{}'",
+                    model_id,
+                    response.text
+                );
+            }
+            orchard::ChatResult::Stream(_) => {
+                panic!("Expected complete response, got stream for {}", model_id);
+            }
         }
     }
 }
@@ -102,40 +103,43 @@ async fn test_multimodal_apple_image() {
 async fn test_multimodal_moondream_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
+    for &model_id in VISION_MODELS {
+        let params = SamplingParams {
+            max_tokens: 50,
+            temperature: 0.0,
+            ..Default::default()
+        };
 
-    let params = SamplingParams {
-        max_tokens: 50,
-        temperature: 0.0,
-        ..Default::default()
-    };
+        let image_base64 = load_image_base64("moondream.jpg");
+        let messages = vec![make_image_message(
+            "user",
+            "What is the girl doing?",
+            &image_base64,
+        )];
 
-    let image_base64 = load_image_base64("moondream.jpg");
-    let messages = vec![make_image_message(
-        "user",
-        "What is the girl doing?",
-        &image_base64,
-    )];
+        let result = client.achat(model_id, messages, params, false).await;
+        assert!(
+            result.is_ok(),
+            "Multimodal request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(
-        result.is_ok(),
-        "Multimodal request failed: {:?}",
-        result.err()
-    );
-
-    match result.unwrap() {
-        orchard::ChatResult::Complete(response) => {
-            let output_text = response.text.to_lowercase();
-            let output_lines = [format!("Output text: {}", output_text)];
-            println!("{}", output_lines.join("\n"));
-            assert!(
-                output_text.contains("burger"),
-                "Expected 'burger' in response but got: '{}'",
-                response.text
-            );
-        }
-        orchard::ChatResult::Stream(_) => {
-            panic!("Expected complete response, got stream");
+        match result.unwrap() {
+            orchard::ChatResult::Complete(response) => {
+                let output_text = response.text.to_lowercase();
+                let output_lines = [format!("{} output text: {}", model_id, output_text)];
+                println!("{}", output_lines.join("\n"));
+                assert!(
+                    output_text.contains("burger"),
+                    "Expected 'burger' in response for {} but got: '{}'",
+                    model_id,
+                    response.text
+                );
+            }
+            orchard::ChatResult::Stream(_) => {
+                panic!("Expected complete response, got stream for {}", model_id);
+            }
         }
     }
 }

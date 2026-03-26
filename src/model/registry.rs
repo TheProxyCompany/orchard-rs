@@ -946,7 +946,7 @@ mod tests {
     async fn test_handle_model_load_failed_fails_activation_waiters() {
         let registry = ModelRegistry::new().unwrap();
         let canonical_id = "moondream/moondream3-preview".to_string();
-        let requested_id = "moondream3".to_string();
+        let requested_id = canonical_id.clone();
         let error = "Weight shard file not found".to_string();
         let (tx, rx) = oneshot::channel();
 

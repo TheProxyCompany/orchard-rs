@@ -8,9 +8,7 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::get_fixture;
-
-const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
+use crate::fixture::{get_fixture, TEXT_MODELS};
 
 fn weather_tool() -> serde_json::Value {
     serde_json::json!({
@@ -69,63 +67,68 @@ async fn test_responses_tool_call_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    let request = ResponsesRequest {
-        input: ResponsesInput::Items(base_input_items()),
-        stream: false,
-        instructions: None,
-        temperature: Some(0.0),
-        top_p: None,
-        top_k: None,
-        min_p: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        max_output_tokens: Some(128),
-        top_logprobs: None,
-        tools: vec![weather_tool()],
-        tool_choice: Some(serde_json::json!("required")),
-        max_tool_calls: None,
-        text: None,
-        reasoning_effort: None,
-        metadata: None,
-        parallel_tool_calls: false,
-    };
+    for &model_id in TEXT_MODELS {
+        let request = ResponsesRequest {
+            input: ResponsesInput::Items(base_input_items()),
+            stream: false,
+            instructions: None,
+            temperature: Some(0.0),
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_output_tokens: Some(128),
+            top_logprobs: None,
+            tools: vec![weather_tool()],
+            tool_choice: Some(serde_json::json!("required")),
+            max_tool_calls: None,
+            text: None,
+            reasoning_effort: None,
+            metadata: None,
+            parallel_tool_calls: false,
+        };
 
-    let result = client.aresponses(MODEL_ID, request).await;
-    assert!(
-        result.is_ok(),
-        "responses request failed: {:?}",
-        result.err()
-    );
+        let result = client.aresponses(model_id, request).await;
+        assert!(
+            result.is_ok(),
+            "responses request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => *response,
-        ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
-    };
-
-    let tool_call = response
-        .output
-        .iter()
-        .find_map(|item| {
-            if let ResponseOutputItem::FunctionCall(call) = item {
-                Some(call)
-            } else {
-                None
+        let response = match result.unwrap() {
+            ResponsesResult::Complete(response) => *response,
+            ResponsesResult::Stream(_) => {
+                panic!("expected complete response, got stream for {}", model_id)
             }
-        })
-        .expect("expected a function_call output item");
+        };
 
-    assert_eq!(tool_call.name, "get_weather");
-    assert!(!tool_call.call_id.is_empty());
-    assert_eq!(tool_call.status, orchard::OutputStatus::Completed);
+        let tool_call = response
+            .output
+            .iter()
+            .find_map(|item| {
+                if let ResponseOutputItem::FunctionCall(call) = item {
+                    Some(call)
+                } else {
+                    None
+                }
+            })
+            .expect("expected a function_call output item");
 
-    let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
-        .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", tool_call.arguments, e));
-    assert!(args.is_object());
-    let location = args
-        .get("location")
-        .and_then(serde_json::Value::as_str)
-        .expect("expected string location in tool arguments");
-    assert!(!location.is_empty());
+        assert_eq!(tool_call.name, "get_weather");
+        assert!(!tool_call.call_id.is_empty());
+        assert_eq!(tool_call.status, orchard::OutputStatus::Completed);
+
+        let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+            .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", tool_call.arguments, e));
+        assert!(args.is_object());
+        let location = args
+            .get("location")
+            .and_then(serde_json::Value::as_str)
+            .expect("expected string location in tool arguments");
+        assert!(!location.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -134,92 +137,101 @@ async fn test_responses_tool_call_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    let request = ResponsesRequest {
-        input: ResponsesInput::Items(base_input_items()),
-        stream: true,
-        instructions: None,
-        temperature: Some(0.0),
-        top_p: None,
-        top_k: None,
-        min_p: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        max_output_tokens: Some(128),
-        top_logprobs: None,
-        tools: vec![weather_tool()],
-        tool_choice: Some(serde_json::json!("required")),
-        max_tool_calls: None,
-        text: None,
-        reasoning_effort: None,
-        metadata: None,
-        parallel_tool_calls: false,
-    };
+    for &model_id in TEXT_MODELS {
+        let request = ResponsesRequest {
+            input: ResponsesInput::Items(base_input_items()),
+            stream: true,
+            instructions: None,
+            temperature: Some(0.0),
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_output_tokens: Some(128),
+            top_logprobs: None,
+            tools: vec![weather_tool()],
+            tool_choice: Some(serde_json::json!("required")),
+            max_tool_calls: None,
+            text: None,
+            reasoning_effort: None,
+            metadata: None,
+            parallel_tool_calls: false,
+        };
 
-    let result = client.aresponses(MODEL_ID, request).await;
-    assert!(
-        result.is_ok(),
-        "responses request failed: {:?}",
-        result.err()
-    );
+        let result = client.aresponses(model_id, request).await;
+        assert!(
+            result.is_ok(),
+            "responses request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let stream = match result.unwrap() {
-        ResponsesResult::Stream(stream) => stream,
-        ResponsesResult::Complete(_) => panic!("expected stream, got complete response"),
-    };
-
-    let events = collect_stream_events(stream).await;
-    let event_types = events
-        .iter()
-        .map(ResponseEvent::event_type)
-        .collect::<Vec<_>>();
-
-    assert!(
-        event_types.contains(&"response.function_call_arguments.delta"),
-        "missing function_call_arguments.delta in {:?}",
-        event_types
-    );
-    assert!(event_types.contains(&"response.function_call_arguments.done"));
-
-    let mut accumulated_arguments = String::new();
-    let mut done_arguments = String::new();
-    let mut completed_item_arguments = String::new();
-    let mut saw_tool_item_done = false;
-
-    for event in events {
-        match event {
-            ResponseEvent::FunctionCallArgumentsDelta(delta) => {
-                accumulated_arguments.push_str(&delta.delta);
+        let stream = match result.unwrap() {
+            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Complete(_) => {
+                panic!("expected stream, got complete response for {}", model_id)
             }
-            ResponseEvent::FunctionCallArgumentsDone(done) => {
-                done_arguments = done.arguments;
-            }
-            ResponseEvent::OutputItemDone(done) => {
-                if let orchard::ResponseOutputItem::FunctionCall(call) = done.item {
-                    saw_tool_item_done = true;
-                    assert_eq!(call.name, "get_weather");
-                    completed_item_arguments = call.arguments;
+        };
+
+        let events = collect_stream_events(stream).await;
+        let event_types = events
+            .iter()
+            .map(ResponseEvent::event_type)
+            .collect::<Vec<_>>();
+
+        assert!(
+            event_types.contains(&"response.function_call_arguments.delta"),
+            "missing function_call_arguments.delta in {:?} for {}",
+            event_types,
+            model_id
+        );
+        assert!(event_types.contains(&"response.function_call_arguments.done"));
+
+        let mut accumulated_arguments = String::new();
+        let mut done_arguments = String::new();
+        let mut completed_item_arguments = String::new();
+        let mut saw_tool_item_done = false;
+
+        for event in events {
+            match event {
+                ResponseEvent::FunctionCallArgumentsDelta(delta) => {
+                    accumulated_arguments.push_str(&delta.delta);
                 }
+                ResponseEvent::FunctionCallArgumentsDone(done) => {
+                    done_arguments = done.arguments;
+                }
+                ResponseEvent::OutputItemDone(done) => {
+                    if let orchard::ResponseOutputItem::FunctionCall(call) = done.item {
+                        saw_tool_item_done = true;
+                        assert_eq!(call.name, "get_weather");
+                        completed_item_arguments = call.arguments;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
-    }
 
-    assert!(
-        !done_arguments.is_empty(),
-        "expected arguments.done payload"
-    );
-    assert!(
-        !accumulated_arguments.is_empty(),
-        "expected function_call_arguments.delta payload"
-    );
-    let parsed: serde_json::Value = serde_json::from_str(&done_arguments)
-        .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", done_arguments, e));
-    assert!(parsed.is_object());
-    assert_eq!(completed_item_arguments, done_arguments);
-    assert!(
-        saw_tool_item_done,
-        "expected function_call output_item.done event"
-    );
+        assert!(
+            !done_arguments.is_empty(),
+            "expected arguments.done payload for {}",
+            model_id
+        );
+        assert!(
+            !accumulated_arguments.is_empty(),
+            "expected function_call_arguments.delta payload for {}",
+            model_id
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&done_arguments)
+            .unwrap_or_else(|e| panic!("invalid JSON arguments '{}': {}", done_arguments, e));
+        assert!(parsed.is_object());
+        assert_eq!(completed_item_arguments, done_arguments);
+        assert!(
+            saw_tool_item_done,
+            "expected function_call output_item.done event for {}",
+            model_id
+        );
+    }
 }
 
 #[tokio::test]
@@ -228,119 +240,126 @@ async fn test_responses_tool_result_continuation() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    // Turn 1: trigger a tool call
-    let first_request = ResponsesRequest {
-        input: ResponsesInput::Items(base_input_items()),
-        stream: false,
-        instructions: None,
-        temperature: Some(0.0),
-        top_p: None,
-        top_k: None,
-        min_p: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        max_output_tokens: Some(128),
-        top_logprobs: None,
-        tools: vec![weather_tool()],
-        tool_choice: Some(serde_json::json!("required")),
-        max_tool_calls: None,
-        text: None,
-        reasoning_effort: None,
-        metadata: None,
-        parallel_tool_calls: false,
-    };
+    for &model_id in TEXT_MODELS {
+        let first_request = ResponsesRequest {
+            input: ResponsesInput::Items(base_input_items()),
+            stream: false,
+            instructions: None,
+            temperature: Some(0.0),
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_output_tokens: Some(128),
+            top_logprobs: None,
+            tools: vec![weather_tool()],
+            tool_choice: Some(serde_json::json!("required")),
+            max_tool_calls: None,
+            text: None,
+            reasoning_effort: None,
+            metadata: None,
+            parallel_tool_calls: false,
+        };
 
-    let first_result = client.aresponses(MODEL_ID, first_request).await;
-    assert!(
-        first_result.is_ok(),
-        "first responses request failed: {:?}",
-        first_result.err()
-    );
+        let first_result = client.aresponses(model_id, first_request).await;
+        assert!(
+            first_result.is_ok(),
+            "first responses request failed for {}: {:?}",
+            model_id,
+            first_result.err()
+        );
 
-    let first_response = match first_result.unwrap() {
-        ResponsesResult::Complete(response) => *response,
-        ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
-    };
-
-    let tool_call = first_response
-        .output
-        .iter()
-        .find_map(|item| {
-            if let ResponseOutputItem::FunctionCall(call) = item {
-                Some(call.clone())
-            } else {
-                None
+        let first_response = match first_result.unwrap() {
+            ResponsesResult::Complete(response) => *response,
+            ResponsesResult::Stream(_) => {
+                panic!("expected complete response, got stream for {}", model_id)
             }
-        })
-        .expect("expected tool call in first response");
+        };
 
-    // Turn 2: feed the function call and output back in.
-    let mut items = base_input_items();
-    items.push(ResponseInputItem::FunctionCall {
-        call_id: tool_call.call_id.clone(),
-        name: tool_call.name.clone(),
-        arguments: tool_call.arguments.clone(),
-    });
-    items.push(ResponseInputItem::FunctionCallOutput {
-        call_id: tool_call.call_id.clone(),
-        output: serde_json::json!({
-            "temperature": 65,
-            "unit": "fahrenheit",
-            "condition": "foggy"
-        })
-        .to_string(),
-    });
-
-    let second_request = ResponsesRequest {
-        input: ResponsesInput::Items(items),
-        stream: false,
-        instructions: None,
-        temperature: Some(0.0),
-        top_p: None,
-        top_k: None,
-        min_p: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        max_output_tokens: Some(128),
-        top_logprobs: None,
-        tools: vec![weather_tool()],
-        tool_choice: None,
-        max_tool_calls: None,
-        text: None,
-        reasoning_effort: None,
-        metadata: None,
-        parallel_tool_calls: false,
-    };
-
-    let second_result = client.aresponses(MODEL_ID, second_request).await;
-    assert!(
-        second_result.is_ok(),
-        "second responses request failed: {:?}",
-        second_result.err()
-    );
-
-    let second_response = match second_result.unwrap() {
-        ResponsesResult::Complete(response) => *response,
-        ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
-    };
-
-    let message_text = second_response
-        .output
-        .iter()
-        .find_map(|item| {
-            if let ResponseOutputItem::Message(message) = item {
-                message.content.first().map(|c| c.text.to_lowercase())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-
-    assert!(
-        ["65", "fog", "san francisco"]
+        let tool_call = first_response
+            .output
             .iter()
-            .any(|needle| message_text.contains(needle)),
-        "model did not incorporate tool result: {}",
-        message_text
-    );
+            .find_map(|item| {
+                if let ResponseOutputItem::FunctionCall(call) = item {
+                    Some(call.clone())
+                } else {
+                    None
+                }
+            })
+            .expect("expected tool call in first response");
+
+        let mut items = base_input_items();
+        items.push(ResponseInputItem::FunctionCall {
+            call_id: tool_call.call_id.clone(),
+            name: tool_call.name.clone(),
+            arguments: tool_call.arguments.clone(),
+        });
+        items.push(ResponseInputItem::FunctionCallOutput {
+            call_id: tool_call.call_id.clone(),
+            output: serde_json::json!({
+                "temperature": 65,
+                "unit": "fahrenheit",
+                "condition": "foggy"
+            })
+            .to_string(),
+        });
+
+        let second_request = ResponsesRequest {
+            input: ResponsesInput::Items(items),
+            stream: false,
+            instructions: None,
+            temperature: Some(0.0),
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_output_tokens: Some(128),
+            top_logprobs: None,
+            tools: vec![weather_tool()],
+            tool_choice: None,
+            max_tool_calls: None,
+            text: None,
+            reasoning_effort: None,
+            metadata: None,
+            parallel_tool_calls: false,
+        };
+
+        let second_result = client.aresponses(model_id, second_request).await;
+        assert!(
+            second_result.is_ok(),
+            "second responses request failed for {}: {:?}",
+            model_id,
+            second_result.err()
+        );
+
+        let second_response = match second_result.unwrap() {
+            ResponsesResult::Complete(response) => *response,
+            ResponsesResult::Stream(_) => {
+                panic!("expected complete response, got stream for {}", model_id)
+            }
+        };
+
+        let message_text = second_response
+            .output
+            .iter()
+            .find_map(|item| {
+                if let ResponseOutputItem::Message(message) = item {
+                    message.content.first().map(|c| c.text.to_lowercase())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        assert!(
+            ["65", "fog", "san francisco"]
+                .iter()
+                .any(|needle| message_text.contains(needle)),
+            "model {} did not incorporate tool result: {}",
+            model_id,
+            message_text
+        );
+    }
 }

@@ -8,9 +8,7 @@
 
 use orchard::{BatchChatResult, SamplingParams};
 
-use crate::fixture::{get_fixture, make_message};
-
-const MODEL_ID: &str = "moondream3";
+use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test homogeneous batched chat completion with identical parameters.
 /// Mirrors: test_e2e_batching.py::test_chat_completion_batched_homogeneous
@@ -19,41 +17,47 @@ const MODEL_ID: &str = "moondream3";
 async fn test_chat_completion_batched_homogeneous() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
+    for &model_id in TEXT_MODELS {
+        let params = SamplingParams {
+            max_tokens: 10, // max_completion_tokens in Python
+            temperature: 0.0,
+            ..Default::default()
+        };
 
-    let params = SamplingParams {
-        max_tokens: 10, // max_completion_tokens in Python
-        temperature: 0.0,
-        ..Default::default()
-    };
+        let conversations = vec![
+            vec![make_message("user", "Say hello politely.")],
+            vec![make_message("user", "Give me a fun fact about space.")],
+        ];
 
-    let conversations = vec![
-        vec![make_message("user", "Say hello politely.")],
-        vec![make_message("user", "Give me a fun fact about space.")],
-    ];
-
-    let result = client
-        .achat_batch(MODEL_ID, conversations, params, false)
-        .await;
-    assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
-
-    let responses = match result.unwrap() {
-        BatchChatResult::Complete(responses) => responses,
-        BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
-    };
-    assert_eq!(responses.len(), 2);
-
-    for (index, response) in responses.iter().enumerate() {
-        println!("{}", response.text);
+        let result = client.achat_batch(model_id, conversations, params, false).await;
         assert!(
-            !response.text.is_empty(),
-            "Response {} should have content",
-            index
+            result.is_ok(),
+            "Batched request failed for {}: {:?}",
+            model_id,
+            result.err()
         );
-        assert!(
-            response.finish_reason.is_some(),
-            "Response {} should have finish_reason",
-            index
-        );
+
+        let responses = match result.unwrap() {
+            BatchChatResult::Complete(responses) => responses,
+            BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
+        };
+        assert_eq!(responses.len(), 2);
+
+        for (index, response) in responses.iter().enumerate() {
+            println!("{}: {}", model_id, response.text);
+            assert!(
+                !response.text.is_empty(),
+                "Response {} should have content for {}",
+                index,
+                model_id
+            );
+            assert!(
+                response.finish_reason.is_some(),
+                "Response {} should have finish_reason for {}",
+                index,
+                model_id
+            );
+        }
     }
 }
 
@@ -67,34 +71,38 @@ async fn test_chat_completion_batched_homogeneous() {
 async fn test_chat_completion_batched_heterogeneous() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
+    for &model_id in TEXT_MODELS {
+        let params = SamplingParams {
+            max_tokens: 4,
+            temperature: 0.0,
+            ..Default::default()
+        };
 
-    let params = SamplingParams {
-        max_tokens: 4,
-        temperature: 0.0,
-        ..Default::default()
-    };
+        let conversations = vec![
+            vec![make_message("user", "Respond with a single word greeting.")],
+            vec![make_message(
+                "user",
+                "List three colors separated by commas.",
+            )],
+        ];
 
-    let conversations = vec![
-        vec![make_message("user", "Respond with a single word greeting.")],
-        vec![make_message(
-            "user",
-            "List three colors separated by commas.",
-        )],
-    ];
+        let result = client.achat_batch(model_id, conversations, params, false).await;
+        assert!(
+            result.is_ok(),
+            "Batched request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let result = client
-        .achat_batch(MODEL_ID, conversations, params, false)
-        .await;
-    assert!(result.is_ok(), "Batched request failed: {:?}", result.err());
+        let responses = match result.unwrap() {
+            BatchChatResult::Complete(responses) => responses,
+            BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
+        };
+        assert_eq!(responses.len(), 2);
 
-    let responses = match result.unwrap() {
-        BatchChatResult::Complete(responses) => responses,
-        BatchChatResult::Stream(_) => panic!("Expected complete result, got stream"),
-    };
-    assert_eq!(responses.len(), 2);
-
-    assert!(responses[0].finish_reason.is_some());
-    assert!(responses[1].finish_reason.is_some());
+        assert!(responses[0].finish_reason.is_some());
+        assert!(responses[1].finish_reason.is_some());
+    }
 }
 
 // test_chat_completion_batch_length_mismatch_returns_422 is HTTP-specific (validates

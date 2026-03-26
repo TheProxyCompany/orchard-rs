@@ -10,7 +10,26 @@ fn cleanup_engine() {
     let _ = InferenceEngine::shutdown(Duration::from_secs(30));
 }
 
-const PRELOAD_MODELS: [&str; 2] = ["meta-llama/Llama-3.1-8B-Instruct", "moondream3"];
+pub(crate) const LLAMA_MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
+pub(crate) const GEMMA_MODEL_ID: &str = "google/gemma-3-4b-it";
+pub(crate) const QWEN_MODEL_ID: &str = "Qwen/Qwen3.5-4B";
+pub(crate) const MOONDREAM_MODEL_ID: &str = "moondream/moondream3-preview";
+
+pub(crate) const TEXT_MODELS: &[&str] = &[LLAMA_MODEL_ID, GEMMA_MODEL_ID, QWEN_MODEL_ID];
+pub(crate) const VISION_MODELS: &[&str] = &[MOONDREAM_MODEL_ID];
+pub(crate) const ALL_MODELS: &[&str] = &[
+    LLAMA_MODEL_ID,
+    GEMMA_MODEL_ID,
+    QWEN_MODEL_ID,
+    MOONDREAM_MODEL_ID,
+];
+
+pub(crate) fn first_visible_token_budget(model_id: &str) -> i32 {
+    match model_id {
+        QWEN_MODEL_ID => 32,
+        _ => 1,
+    }
+}
 
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
@@ -44,7 +63,7 @@ fn init_fixture() -> TestFixture {
             .await
             .expect("Failed to connect");
 
-        for model_id in PRELOAD_MODELS {
+        for &model_id in ALL_MODELS {
             registry
                 .ensure_loaded(model_id)
                 .await

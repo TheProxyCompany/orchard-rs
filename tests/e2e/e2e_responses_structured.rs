@@ -5,9 +5,7 @@
 
 use orchard::{OutputStatus, ResponseOutputItem, ResponsesRequest, ResponsesResult};
 
-use crate::fixture::get_fixture;
-
-const MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
+use crate::fixture::{get_fixture, TEXT_MODELS};
 
 #[tokio::test]
 #[ignore]
@@ -38,68 +36,72 @@ async fn test_responses_structured_json_schema() {
         }
     }));
 
-    let result = client.aresponses(MODEL_ID, request).await;
-    assert!(
-        result.is_ok(),
-        "responses request failed: {:?}",
-        result.err()
-    );
+    for &model_id in TEXT_MODELS {
+        let result = client.aresponses(model_id, request.clone()).await;
+        assert!(
+            result.is_ok(),
+            "responses request failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    let response = match result.unwrap() {
-        ResponsesResult::Complete(response) => *response,
-        ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
-    };
+        let response = match result.unwrap() {
+            ResponsesResult::Complete(response) => *response,
+            ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
+        };
 
-    assert_eq!(response.status, OutputStatus::Completed);
+        assert_eq!(response.status, OutputStatus::Completed);
 
-    let raw_text = response
-        .output
-        .iter()
-        .find_map(|item| {
-            if let ResponseOutputItem::Message(message) = item {
-                message.content.first().map(|content| content.text.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
+        let raw_text = response
+            .output
+            .iter()
+            .find_map(|item| {
+                if let ResponseOutputItem::Message(message) = item {
+                    message.content.first().map(|content| content.text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
 
-    let start = raw_text.find('{');
-    let end = raw_text.rfind('}');
-    assert!(
-        start.is_some() && end.is_some(),
-        "no JSON object found in output: {}",
-        raw_text
-    );
+        let start = raw_text.find('{');
+        let end = raw_text.rfind('}');
+        assert!(
+            start.is_some() && end.is_some(),
+            "no JSON object found in output for {}: {}",
+            model_id,
+            raw_text
+        );
 
-    let start = start.unwrap();
-    let end = end.unwrap();
-    let json_payload = &raw_text[start..=end];
+        let start = start.unwrap();
+        let end = end.unwrap();
+        let json_payload = &raw_text[start..=end];
 
-    let parsed: serde_json::Value = serde_json::from_str(json_payload)
-        .unwrap_or_else(|e| panic!("failed to parse JSON '{}': {}", json_payload, e));
+        let parsed: serde_json::Value = serde_json::from_str(json_payload)
+            .unwrap_or_else(|e| panic!("failed to parse JSON '{}': {}", json_payload, e));
 
-    assert!(parsed.is_object());
-    let obj = parsed.as_object().expect("parsed JSON should be object");
-    assert!(obj.contains_key("capital"));
-    assert!(obj.contains_key("population"));
-    assert!(
-        obj.get("capital")
+        assert!(parsed.is_object());
+        let obj = parsed.as_object().expect("parsed JSON should be object");
+        assert!(obj.contains_key("capital"));
+        assert!(obj.contains_key("population"));
+        assert!(
+            obj.get("capital")
+                .and_then(serde_json::Value::as_str)
+                .is_some(),
+            "capital should be a string"
+        );
+        assert!(
+            obj.get("population")
+                .map(serde_json::Value::is_i64)
+                .unwrap_or(false),
+            "population should be an integer"
+        );
+
+        let capital = obj
+            .get("capital")
             .and_then(serde_json::Value::as_str)
-            .is_some(),
-        "capital should be a string"
-    );
-    assert!(
-        obj.get("population")
-            .map(serde_json::Value::is_i64)
-            .unwrap_or(false),
-        "population should be an integer"
-    );
-
-    let capital = obj
-        .get("capital")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_lowercase();
-    assert!(capital.contains("paris"), "capital should mention paris");
+            .unwrap_or_default()
+            .to_lowercase();
+        assert!(capital.contains("paris"), "capital should mention paris");
+    }
 }

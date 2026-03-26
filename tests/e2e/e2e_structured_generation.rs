@@ -5,9 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message};
-
-const MODEL_ID: &str = "moondream3";
+use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test generation with JSON schema response format.
 /// Mirrors: test_e2e_structured_generation.py::test_chat_completion_structured_json_response
@@ -58,80 +56,80 @@ async fn test_chat_completion_structured_json_response() {
 
     let messages = vec![make_message("user", &prompt)];
 
-    let result = client.achat(MODEL_ID, messages, params, false).await;
-    assert!(
-        result.is_ok(),
-        "Structured generation failed: {:?}",
-        result.err()
-    );
+    for &model_id in TEXT_MODELS {
+        let result = client.achat(model_id, messages.clone(), params.clone(), false).await;
+        assert!(
+            result.is_ok(),
+            "Structured generation failed for {}: {:?}",
+            model_id,
+            result.err()
+        );
 
-    match result.unwrap() {
-        orchard::ChatResult::Complete(response) => {
-            let content = response.text.trim();
-            assert!(
-                !content.is_empty(),
-                "Expected structured content in completion."
-            );
-
-            // Find JSON in response
-            let start = content.find('{');
-            let end = content.rfind('}');
-            let json_str = match (start, end) {
-                (Some(s), Some(e)) if e > s => &content[s..=e],
-                _ => panic!("Invalid JSON in completion: {}", content),
-            };
-
-            let parsed: serde_json::Value = serde_json::from_str(json_str)
-                .unwrap_or_else(|_| panic!("Failed to parse JSON: {}", json_str));
-
-            assert!(parsed.is_object(), "Output should be a JSON object");
-            let obj = parsed.as_object().unwrap();
-
-            // Verify color structure
-            assert!(obj.contains_key("color"), "Should have 'color' field");
-            let color = obj.get("color").unwrap();
-            assert!(color.is_object(), "'color' should be an object");
-            let color_obj = color.as_object().unwrap();
-            assert!(color_obj.contains_key("R"), "Should have 'R' field");
-            assert!(
-                color_obj.get("R").unwrap().is_number(),
-                "'R' should be a number"
-            );
-            assert!(color_obj.contains_key("G"), "Should have 'G' field");
-            assert!(
-                color_obj.get("G").unwrap().is_number(),
-                "'G' should be a number"
-            );
-            assert!(color_obj.contains_key("B"), "Should have 'B' field");
-            assert!(
-                color_obj.get("B").unwrap().is_number(),
-                "'B' should be a number"
-            );
-
-            // Verify confidence if present
-            if let Some(confidence) = obj.get("confidence") {
-                assert!(confidence.is_number(), "'confidence' should be a number");
-            }
-
-            // Print colored output like Python
-            let r = color_obj.get("R").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-            let g = color_obj.get("G").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-            let b = color_obj.get("B").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-            if let Some(confidence) = obj.get("confidence").and_then(|v| v.as_f64()) {
-                let opacity = (confidence * 255.0) as u8;
-                println!(
-                    "\x1b[38;2;{};{};{};{}m{}'s color is rgb({}, {}, {}) with confidence {} at temperature {}.\x1b[0m",
-                    r, g, b, opacity, MODEL_ID, r, g, b, confidence, temperature
+        match result.unwrap() {
+            orchard::ChatResult::Complete(response) => {
+                let content = response.text.trim();
+                assert!(
+                    !content.is_empty(),
+                    "Expected structured content in completion for {}.",
+                    model_id
                 );
-            } else {
-                println!(
-                    "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {}) at temperature {}. No confidence score provided.\x1b[0m",
-                    r, g, b, MODEL_ID, r, g, b, temperature
+
+                let start = content.find('{');
+                let end = content.rfind('}');
+                let json_str = match (start, end) {
+                    (Some(s), Some(e)) if e > s => &content[s..=e],
+                    _ => panic!("Invalid JSON in completion for {}: {}", model_id, content),
+                };
+
+                let parsed: serde_json::Value = serde_json::from_str(json_str)
+                    .unwrap_or_else(|_| panic!("Failed to parse JSON: {}", json_str));
+
+                assert!(parsed.is_object(), "Output should be a JSON object");
+                let obj = parsed.as_object().unwrap();
+
+                assert!(obj.contains_key("color"), "Should have 'color' field");
+                let color = obj.get("color").unwrap();
+                assert!(color.is_object(), "'color' should be an object");
+                let color_obj = color.as_object().unwrap();
+                assert!(color_obj.contains_key("R"), "Should have 'R' field");
+                assert!(
+                    color_obj.get("R").unwrap().is_number(),
+                    "'R' should be a number"
                 );
+                assert!(color_obj.contains_key("G"), "Should have 'G' field");
+                assert!(
+                    color_obj.get("G").unwrap().is_number(),
+                    "'G' should be a number"
+                );
+                assert!(color_obj.contains_key("B"), "Should have 'B' field");
+                assert!(
+                    color_obj.get("B").unwrap().is_number(),
+                    "'B' should be a number"
+                );
+
+                if let Some(confidence) = obj.get("confidence") {
+                    assert!(confidence.is_number(), "'confidence' should be a number");
+                }
+
+                let r = color_obj.get("R").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                let g = color_obj.get("G").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                let b = color_obj.get("B").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
+                if let Some(confidence) = obj.get("confidence").and_then(|v| v.as_f64()) {
+                    let opacity = (confidence * 255.0) as u8;
+                    println!(
+                        "\x1b[38;2;{};{};{};{}m{}'s color is rgb({}, {}, {}) with confidence {} at temperature {}.\x1b[0m",
+                        r, g, b, opacity, model_id, r, g, b, confidence, temperature
+                    );
+                } else {
+                    println!(
+                        "\x1b[38;2;{};{};{}m{}'s color is rgb({}, {}, {}) at temperature {}. No confidence score provided.\x1b[0m",
+                        r, g, b, model_id, r, g, b, temperature
+                    );
+                }
             }
-        }
-        orchard::ChatResult::Stream(_) => {
-            panic!("Expected complete response, got stream");
+            orchard::ChatResult::Stream(_) => {
+                panic!("Expected complete response, got stream for {}", model_id);
+            }
         }
     }
 }

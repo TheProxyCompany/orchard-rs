@@ -14,7 +14,7 @@ use crate::client::{Client, ClientError, Result, SamplingParams};
 use crate::model::registry::ModelRegistry;
 
 /// Model ID for Moondream.
-pub const MOONDREAM_MODEL_ID: &str = "moondream3";
+pub const MOONDREAM_MODEL_ID: &str = "moondream/moondream3-preview";
 
 /// A point coordinate (x, y) normalized to 0-1.
 pub type Point = (f64, f64);
@@ -130,7 +130,7 @@ pub struct MoondreamClient {
 impl MoondreamClient {
     /// Create a new MoondreamClient.
     ///
-    /// This will ensure the moondream3 model is loaded and ready.
+    /// This will ensure the configured Moondream model is loaded and ready.
     pub async fn new(client: Client, registry: Arc<ModelRegistry>) -> Result<Self> {
         let model_info = registry.ensure_loaded(MOONDREAM_MODEL_ID).await?;
 
