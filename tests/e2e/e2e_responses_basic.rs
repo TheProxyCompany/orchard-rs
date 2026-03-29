@@ -334,8 +334,7 @@ async fn test_responses_streaming_completed_snapshot() {
     let client = &fixture.client;
 
     for &model_id in TEXT_MODELS {
-        let mut request =
-            ResponsesRequest::from_text("Test. Respond with 'test received'");
+        let mut request = ResponsesRequest::from_text("Test. Respond with 'test received'");
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
