@@ -79,14 +79,21 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
                 for (idx, content) in reconstructed.iter().enumerate().skip(1) {
                     if content != first_content {
                         drifts += 1;
-                        println!("{} drift detected at candidate {}:\n{}", model_id, idx, content);
+                        println!(
+                            "{} drift detected at candidate {}:\n{}",
+                            model_id, idx, content
+                        );
                     } else {
                         print!("✓");
                     }
                 }
                 println!();
 
-                assert_eq!(drifts, 0, "Expected 0 drifts for {}, got {}", model_id, drifts);
+                assert_eq!(
+                    drifts, 0,
+                    "Expected 0 drifts for {}, got {}",
+                    model_id, drifts
+                );
 
                 for idx in 0..batch_size as u32 {
                     let reason = finish_reasons

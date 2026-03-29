@@ -29,7 +29,9 @@ async fn test_chat_completion_batched_homogeneous() {
             vec![make_message("user", "Give me a fun fact about space.")],
         ];
 
-        let result = client.achat_batch(model_id, conversations, params, false).await;
+        let result = client
+            .achat_batch(model_id, conversations, params, false)
+            .await;
         assert!(
             result.is_ok(),
             "Batched request failed for {}: {:?}",
@@ -86,7 +88,9 @@ async fn test_chat_completion_batched_heterogeneous() {
             )],
         ];
 
-        let result = client.achat_batch(model_id, conversations, params, false).await;
+        let result = client
+            .achat_batch(model_id, conversations, params, false)
+            .await;
         assert!(
             result.is_ok(),
             "Batched request failed for {}: {:?}",

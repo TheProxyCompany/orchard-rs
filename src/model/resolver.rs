@@ -60,9 +60,7 @@ impl ModelResolver {
         }
 
         // 2. Resolve via HuggingFace
-        let resolved = self
-            .resolve_huggingface(identifier)
-            .await?;
+        let resolved = self.resolve_huggingface(identifier).await?;
 
         self.resolved_cache.insert(cache_key, resolved.clone());
         Ok(resolved)

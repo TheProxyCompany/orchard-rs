@@ -5,7 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{first_visible_token_budget, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_e2e_basic.py::test_chat_completion_first_token
@@ -15,14 +15,17 @@ async fn test_chat_completion_first_token() {
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {
         let params = SamplingParams {
-            max_tokens: first_visible_token_budget(model_id),
+            max_tokens: 1,
             temperature: 1.0,
             ..Default::default()
         };
 
         let messages = vec![make_message("user", "Hello!")];
 
-        let result = fixture.client.achat(model_id, messages, params, false).await;
+        let result = fixture
+            .client
+            .achat(model_id, messages, params, false)
+            .await;
         assert!(
             result.is_ok(),
             "Chat request failed for {}: {:?}",
@@ -75,7 +78,10 @@ async fn test_chat_completion_multi_token() {
             "Provide one friendly sentence introducing yourself.",
         )];
 
-        let result = fixture.client.achat(model_id, messages, params, false).await;
+        let result = fixture
+            .client
+            .achat(model_id, messages, params, false)
+            .await;
         assert!(
             result.is_ok(),
             "Chat request failed for {}: {:?}",

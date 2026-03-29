@@ -318,7 +318,7 @@ async fn test_responses_tool_result_continuation() {
             max_output_tokens: Some(128),
             top_logprobs: None,
             tools: vec![weather_tool()],
-            tool_choice: None,
+            tool_choice: Some(serde_json::json!("none")),
             max_tool_calls: None,
             text: None,
             reasoning_effort: None,

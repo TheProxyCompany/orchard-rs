@@ -57,7 +57,9 @@ async fn test_chat_completion_structured_json_response() {
     let messages = vec![make_message("user", &prompt)];
 
     for &model_id in TEXT_MODELS {
-        let result = client.achat(model_id, messages.clone(), params.clone(), false).await;
+        let result = client
+            .achat(model_id, messages.clone(), params.clone(), false)
+            .await;
         assert!(
             result.is_ok(),
             "Structured generation failed for {}: {:?}",

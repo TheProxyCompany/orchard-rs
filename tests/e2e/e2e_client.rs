@@ -118,8 +118,7 @@ async fn run_client_chat_streaming(prompt: &str) {
 #[tokio::test]
 #[ignore]
 async fn test_client_chat_non_streaming_poem() {
-    run_client_chat_non_streaming("You have 5 output tokens. Respond with a 5 token poem.")
-        .await;
+    run_client_chat_non_streaming("You have 5 output tokens. Respond with a 5 token poem.").await;
 }
 
 /// Test non-streaming chat with exact token count.

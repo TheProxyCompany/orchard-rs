@@ -334,7 +334,8 @@ async fn test_responses_streaming_completed_snapshot() {
     let client = &fixture.client;
 
     for &model_id in TEXT_MODELS {
-        let mut request = ResponsesRequest::from_text("Hi");
+        let mut request =
+            ResponsesRequest::from_text("Test. Respond with 'test received'");
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
@@ -367,6 +368,13 @@ async fn test_responses_streaming_completed_snapshot() {
             .expect("expected response.completed event");
 
         assert_eq!(completed.response.status, OutputStatus::Completed);
+        let text = first_message_text(&completed.response.output).to_lowercase();
+        assert!(
+            text.contains("test received"),
+            "expected output to contain 'test received' for {}, got: {}",
+            model_id,
+            text
+        );
     }
 }
 

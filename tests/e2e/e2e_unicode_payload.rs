@@ -28,7 +28,9 @@ async fn test_unicode_payload_round_trip() {
     let messages = vec![make_message("user", &prompt)];
 
     for &model_id in TEXT_MODELS {
-        let result = client.achat(model_id, messages.clone(), params.clone(), true).await;
+        let result = client
+            .achat(model_id, messages.clone(), params.clone(), true)
+            .await;
         assert!(
             result.is_ok(),
             "Chat request failed for {}: {:?}",

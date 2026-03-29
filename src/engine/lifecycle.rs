@@ -8,14 +8,16 @@ use std::time::{Duration, Instant};
 
 use fs4::fs_std::FileExt;
 use nng::options::Options;
+use nng::{Protocol, Socket};
+use serde_json::json;
 
 use crate::engine::fetch::EngineFetcher;
 use crate::engine::multiprocess::{
-    filter_alive_pids, pid_is_alive, pid_is_engine, read_pid_file, read_ref_pids,
-    reap_engine_process, stop_engine_process, write_pid_file, write_ref_pids,
+    pid_is_alive, pid_is_engine, read_pid_file, reap_engine_process, stop_engine_process,
+    write_pid_file,
 };
 use crate::error::{Error, Result};
-use crate::ipc::endpoints::{response_url, EVENT_TOPIC_PREFIX};
+use crate::ipc::endpoints::{management_url, response_url, EVENT_TOPIC_PREFIX};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
 const LOCK_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -58,7 +60,6 @@ fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
 pub struct EnginePaths {
     pub cache_dir: PathBuf,
     pub pid_file: PathBuf,
-    pub refs_file: PathBuf,
     pub lock_file: PathBuf,
     pub ready_file: PathBuf,
     pub engine_log_file: PathBuf,
@@ -73,7 +74,6 @@ impl EnginePaths {
 
         Ok(Self {
             pid_file: cache_dir.join("engine.pid"),
-            refs_file: cache_dir.join("engine.refs"),
             lock_file: cache_dir.join("engine.lock"),
             ready_file: cache_dir.join("engine.ready"),
             engine_log_file: cache_dir.join("engine.log"),
@@ -116,8 +116,8 @@ fn set_current_engine_pid_file(pid_file: Option<PathBuf>) {
 /// Handles:
 /// - Binary fetching if not installed
 /// - Process spawning with proper daemonization
-/// - Reference counting across multiple clients
-/// - Graceful shutdown when the last client disconnects
+/// - Per-process lease tracking for orchard-rs clients
+/// - Registration with PIE's management plane
 pub struct InferenceEngine {
     paths: EnginePaths,
     fetcher: EngineFetcher,
@@ -158,8 +158,8 @@ impl InferenceEngine {
 
     /// Close this engine instance.
     ///
-    /// Decrements the reference count and shuts down the engine if this
-    /// was the last reference.
+    /// Releases this process's orchard-rs lease and best-effort deregisters
+    /// the client with PIE. Normal disconnect never sends signals to PIE.
     pub fn close(&mut self) -> Result<()> {
         if self.closed {
             return Ok(());
@@ -178,33 +178,28 @@ impl InferenceEngine {
             return Ok(());
         }
 
-        // Acquire lock for cleanup
+        // Acquire lock while checking the shared engine PID file so we don't race
+        // a concurrent startup or explicit shutdown in another process.
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_exclusive_with_timeout(&lock_file)?;
-
-        // Read current refs
-        let refs = read_ref_pids(&self.paths.refs_file);
-        let current_pid = std::process::id();
-        let alive_refs: Vec<_> = filter_alive_pids(&refs)
-            .into_iter()
-            .filter(|&p| p != current_pid)
-            .collect();
 
         let engine_pid = read_pid_file(&self.paths.pid_file);
         let engine_running = engine_pid.map(pid_is_alive).unwrap_or(false);
 
-        if alive_refs.is_empty() {
-            if engine_running {
-                if let Some(pid) = engine_pid {
-                    self.stop_engine_locked(pid)?;
-                }
-            } else {
-                remove_if_exists(&self.paths.pid_file);
-                remove_if_exists(&self.paths.ready_file);
+        if engine_running {
+            if let Err(e) =
+                self.send_client_lifecycle_command("client_deregister", Duration::from_secs(5))
+            {
+                tracing::warn!(
+                    "Failed to deregister orchard-rs client PID {} from PIE: {}",
+                    std::process::id(),
+                    e
+                );
             }
-            let _ = write_ref_pids(&self.paths.refs_file, &[]);
         } else {
-            let _ = write_ref_pids(&self.paths.refs_file, &alive_refs);
+            remove_if_exists(&self.paths.pid_file);
+            remove_if_exists(&self.paths.ready_file);
+            remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
         }
 
         drop(lock_file);
@@ -228,7 +223,7 @@ impl InferenceEngine {
         let cleanup_all = |paths: &EnginePaths| {
             remove_if_exists(&paths.pid_file);
             remove_if_exists(&paths.ready_file);
-            remove_if_exists(&paths.refs_file);
+            remove_if_exists(&paths.cache_dir.join("engine.refs"));
             let ipc_dir = paths.cache_dir.join("ipc");
             if ipc_dir.exists() {
                 remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
@@ -287,14 +282,11 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_exclusive_with_timeout(&lock_file)?;
 
-        // Read current state
-        let refs = read_ref_pids(&self.paths.refs_file);
-        let alive_refs = filter_alive_pids(&refs);
-
         let engine_pid = read_pid_file(&self.paths.pid_file);
         let engine_running = engine_pid
             .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
             .unwrap_or(false);
+        let mut launched_engine = false;
 
         // Launch engine if needed
         if !engine_running {
@@ -303,6 +295,7 @@ impl InferenceEngine {
             // Clean up stale state files
             remove_if_exists(&self.paths.pid_file);
             remove_if_exists(&self.paths.ready_file);
+            remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
 
             // Clean up stale IPC socket files (left over from crashed engine)
             let ipc_dir = self.paths.cache_dir.join("ipc");
@@ -314,15 +307,25 @@ impl InferenceEngine {
 
             self.launch_engine().await?;
             self.wait_for_engine_ready().await?;
+            launched_engine = true;
         }
 
-        // Register this process
-        let current_pid = std::process::id();
-        let mut new_refs = alive_refs;
-        if !new_refs.contains(&current_pid) {
-            new_refs.push(current_pid);
+        if let Err(e) =
+            self.send_client_lifecycle_command("client_register", Duration::from_secs(5))
+        {
+            if launched_engine {
+                if let Some(pid) = read_pid_file(&self.paths.pid_file) {
+                    if let Err(stop_err) = self.stop_engine_locked(pid) {
+                        tracing::warn!(
+                            "Failed to clean up newly launched engine {} after register failure: {}",
+                            pid,
+                            stop_err
+                        );
+                    }
+                }
+            }
+            return Err(e);
         }
-        write_ref_pids(&self.paths.refs_file, &new_refs)?;
 
         // Update global context
         GLOBAL_CONTEXT.ref_count.fetch_add(1, Ordering::SeqCst);
@@ -333,6 +336,39 @@ impl InferenceEngine {
 
         self.lease_active = true;
         Ok(())
+    }
+
+    fn send_client_lifecycle_command(&self, command_type: &str, timeout: Duration) -> Result<()> {
+        let socket = Socket::new(Protocol::Req0)?;
+        socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
+        socket.set_opt::<nng::options::SendTimeout>(Some(timeout))?;
+        socket.dial(&management_url())?;
+
+        let payload = json!({
+            "type": command_type,
+            "client_pid": std::process::id(),
+        });
+        let data = serde_json::to_vec(&payload)?;
+        let msg = nng::Message::from(data.as_slice());
+        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+
+        let response = socket.recv()?;
+        let json: serde_json::Value = serde_json::from_slice(&response)?;
+        let status = json.get("status").and_then(|value| value.as_str());
+        if matches!(status, Some("ok") | Some("accepted")) {
+            return Ok(());
+        }
+
+        let message = json
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown error");
+        Err(Error::Other(format!(
+            "Engine rejected {} for PID {}: {}",
+            command_type,
+            std::process::id(),
+            message
+        )))
     }
 
     async fn launch_engine(&mut self) -> Result<()> {

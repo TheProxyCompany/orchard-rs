@@ -31,7 +31,7 @@ async fn test_responses_structured_json_schema() {
         "format": {
             "type": "json_schema",
             "name": "city_info",
-            "schema": schema,
+            "json_schema": schema,
             "strict": true
         }
     }));

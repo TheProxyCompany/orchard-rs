@@ -1,7 +1,7 @@
 //! Cross-process coordination utilities.
 //!
-//! Provides PID file management, process liveness checks, and signal handling
-//! for coordinating multiple clients with a shared engine process.
+//! Provides PID file management, process liveness checks, and explicit
+//! force-shutdown signaling for the shared engine process.
 
 use std::fs;
 use std::io;
@@ -102,47 +102,6 @@ pub fn read_pid_file(path: &Path) -> Option<u32> {
 /// Write a PID to a file.
 pub fn write_pid_file(path: &Path, pid: u32) -> io::Result<()> {
     fs::write(path, format!("{}\n", pid))
-}
-
-/// Read reference PIDs from a JSON file.
-pub fn read_ref_pids(path: &Path) -> Vec<u32> {
-    match fs::read_to_string(path) {
-        Ok(content) if !content.is_empty() => {
-            serde_json::from_str::<Vec<u32>>(&content).unwrap_or_default()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// Write reference PIDs to a JSON file.
-pub fn write_ref_pids(path: &Path, pids: &[u32]) -> io::Result<()> {
-    // Deduplicate and filter
-    let mut unique: Vec<u32> = Vec::new();
-    for &pid in pids {
-        if pid > 0 && !unique.contains(&pid) {
-            unique.push(pid);
-        }
-    }
-
-    if unique.is_empty() {
-        // Remove the file if no PIDs
-        let _ = fs::remove_file(path);
-        return Ok(());
-    }
-
-    // Atomic write via temp file
-    let tmp_path = path.with_extension("tmp");
-    fs::write(&tmp_path, serde_json::to_string(&unique)?)?;
-    fs::rename(&tmp_path, path)?;
-    Ok(())
-}
-
-/// Filter a list of PIDs to only those that are still alive.
-pub fn filter_alive_pids(pids: &[u32]) -> Vec<u32> {
-    pids.iter()
-        .copied()
-        .filter(|&pid| pid_is_alive(pid))
-        .collect()
 }
 
 /// Stop an engine process gracefully.
@@ -266,38 +225,5 @@ mod tests {
     #[test]
     fn test_pid_is_alive_zero() {
         assert!(!pid_is_alive(0));
-    }
-
-    #[test]
-    fn test_ref_pids_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("refs.json");
-
-        let pids = vec![1234, 5678];
-        write_ref_pids(&path, &pids).unwrap();
-
-        let read = read_ref_pids(&path);
-        assert_eq!(read, pids);
-    }
-
-    #[test]
-    fn test_ref_pids_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("refs.json");
-
-        write_ref_pids(&path, &[]).unwrap();
-        assert!(!path.exists());
-
-        let read = read_ref_pids(&path);
-        assert!(read.is_empty());
-    }
-
-    #[test]
-    fn test_filter_alive_pids() {
-        let current = std::process::id();
-        let pids = vec![current, 999999999]; // Current PID should be alive, huge PID should not
-
-        let alive = filter_alive_pids(&pids);
-        assert!(alive.contains(&current));
     }
 }
