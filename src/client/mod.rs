@@ -472,11 +472,15 @@ impl Client {
                 }
             }
 
+            let total_completion_tokens: u32 =
+                candidate_states.iter().map(|c| c.completion_tokens).sum();
+
             // Score and select best candidates (matching Python logic)
             let selected = select_best_candidates(candidate_states, best_of, final_candidates);
 
             Ok(ChatResult::Complete(build_response_from_candidates(
                 selected,
+                total_completion_tokens,
             )))
         }
     }
@@ -1109,14 +1113,16 @@ fn select_best_candidates(
     candidates
 }
 
-/// Build a ClientResponse from selected candidates, consuming them to avoid clones.
-fn build_response_from_candidates(candidates: Vec<CandidateState>) -> ClientResponse {
+/// Build a ClientResponse from selected candidates, using completion tokens from the full best_of fan-out.
+fn build_response_from_candidates(
+    candidates: Vec<CandidateState>,
+    total_completion_tokens: u32,
+) -> ClientResponse {
     let prompt_tokens = candidates
         .iter()
         .map(|c| c.prompt_tokens)
         .max()
         .unwrap_or(0);
-    let completion_tokens: u32 = candidates.iter().map(|c| c.completion_tokens).sum();
 
     let capacity: usize = candidates.iter().map(|c| c.deltas.len()).sum();
     let mut all_deltas = Vec::with_capacity(capacity);
@@ -1136,8 +1142,8 @@ fn build_response_from_candidates(candidates: Vec<CandidateState>) -> ClientResp
         finish_reason,
         usage: UsageStats {
             prompt_tokens,
-            completion_tokens,
-            total_tokens: prompt_tokens + completion_tokens,
+            completion_tokens: total_completion_tokens,
+            total_tokens: prompt_tokens + total_completion_tokens,
         },
         deltas: all_deltas,
     }
@@ -1278,5 +1284,29 @@ mod tests {
         let bytes = encode_float32_pcm_bytes(&[0.0, 1.5, -2.25]);
         let decoded = decode_embedding_bytes(&bytes).expect("audio bytes should decode");
         assert_eq!(decoded, vec![0.0, 1.5, -2.25]);
+    }
+
+    #[test]
+    fn test_build_response_from_candidates_uses_total_completion_tokens() {
+        let response = build_response_from_candidates(
+            vec![CandidateState {
+                content: "winner".to_string(),
+                finish_reason: Some("stop".to_string()),
+                completion_tokens: 2,
+                prompt_tokens: 5,
+                deltas: vec![ClientDelta {
+                    content: Some("winner".to_string()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            /*total_completion_tokens=*/ 7,
+        );
+
+        assert_eq!(response.text, "winner");
+        assert_eq!(response.finish_reason, Some("stop".to_string()));
+        assert_eq!(response.usage.prompt_tokens, 5);
+        assert_eq!(response.usage.completion_tokens, 7);
+        assert_eq!(response.usage.total_tokens, 12);
     }
 }
