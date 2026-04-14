@@ -12,12 +12,14 @@ fn cleanup_engine() {
 
 pub(crate) const LLAMA_MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
 pub(crate) const GEMMA_MODEL_ID: &str = "google/gemma-3-4b-it";
+pub(crate) const GEMMA4_MODEL_ID: &str = "google/gemma-4-E2B-it";
 pub(crate) const QWEN_MODEL_ID: &str = "Qwen/Qwen3.5-4B";
 pub(crate) const MOONDREAM_MODEL_ID: &str = "moondream/moondream3-preview";
 
 pub(crate) const TEXT_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
     GEMMA_MODEL_ID,
+    GEMMA4_MODEL_ID,
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
 ];
@@ -25,6 +27,7 @@ pub(crate) const VISION_MODELS: &[&str] = &[GEMMA_MODEL_ID, MOONDREAM_MODEL_ID];
 pub(crate) const ALL_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
     GEMMA_MODEL_ID,
+    GEMMA4_MODEL_ID,
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
 ];
