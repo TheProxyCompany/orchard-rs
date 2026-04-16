@@ -320,6 +320,15 @@ impl ChatFormatter {
                     Self::json_to_minijinja(&normalized_tool_calls),
                 );
             }
+            if let Some(tool_call_id) = msg.get("tool_call_id") {
+                map.insert(
+                    "tool_call_id".to_string(),
+                    Self::json_to_minijinja(tool_call_id),
+                );
+            }
+            if let Some(name) = msg.get("name") {
+                map.insert("name".to_string(), Self::json_to_minijinja(name));
+            }
 
             interactions.push(Value::from_object(map));
         }

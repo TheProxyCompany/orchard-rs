@@ -104,6 +104,8 @@ pub fn build_multimodal_messages(
             .cloned()
             .unwrap_or(serde_json::Value::Null);
         let tool_calls = message.get("tool_calls").cloned();
+        let tool_call_id = message.get("tool_call_id").cloned();
+        let tool_name = message.get("name").cloned();
 
         if let Some(text) = content.as_str() {
             let mut msg = HashMap::new();
@@ -111,6 +113,12 @@ pub fn build_multimodal_messages(
             msg.insert("content".to_string(), serde_json::json!(text));
             if let Some(tool_calls) = &tool_calls {
                 msg.insert("tool_calls".to_string(), tool_calls.clone());
+            }
+            if let Some(tool_call_id) = &tool_call_id {
+                msg.insert("tool_call_id".to_string(), tool_call_id.clone());
+            }
+            if let Some(tool_name) = &tool_name {
+                msg.insert("name".to_string(), tool_name.clone());
             }
             messages.push(msg);
             continue;
@@ -196,6 +204,12 @@ pub fn build_multimodal_messages(
             if let Some(tool_calls) = &tool_calls {
                 msg.insert("tool_calls".to_string(), tool_calls.clone());
             }
+            if let Some(tool_call_id) = &tool_call_id {
+                msg.insert("tool_call_id".to_string(), tool_call_id.clone());
+            }
+            if let Some(tool_name) = &tool_name {
+                msg.insert("name".to_string(), tool_name.clone());
+            }
             messages.push(msg);
         } else if content.is_null() {
             if let Some(tool_calls) = &tool_calls {
@@ -203,6 +217,12 @@ pub fn build_multimodal_messages(
                 msg.insert("role".to_string(), serde_json::json!(role));
                 msg.insert("content".to_string(), serde_json::json!(""));
                 msg.insert("tool_calls".to_string(), tool_calls.clone());
+                if let Some(tool_call_id) = &tool_call_id {
+                    msg.insert("tool_call_id".to_string(), tool_call_id.clone());
+                }
+                if let Some(tool_name) = &tool_name {
+                    msg.insert("name".to_string(), tool_name.clone());
+                }
                 messages.push(msg);
             }
         } else if !content.is_null() {
