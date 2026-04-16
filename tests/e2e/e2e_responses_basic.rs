@@ -10,6 +10,10 @@ use orchard::{
 
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
+const SYSTEM_PROMPT_COMPLIANCE_SENTINEL: &str = "7-4-7";
+const SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS: &str =
+    "You are a helpful assistant. End every response with the exact string 7-4-7.";
+
 fn first_message_text(output: &[ResponseOutputItem]) -> String {
     output
         .iter()
@@ -482,10 +486,7 @@ async fn test_responses_instructions() {
 
     for &model_id in TEXT_MODELS {
         let mut request = ResponsesRequest::from_text("What is your name?");
-        request.instructions = Some(
-            "You are a helpful assistant named Orchard. Always introduce yourself by name."
-                .to_string(),
-        );
+        request.instructions = Some(SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS.to_string());
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
 
@@ -504,10 +505,11 @@ async fn test_responses_instructions() {
             }
         };
 
-        let text = first_message_text(&response.output).to_lowercase();
+        let text = first_message_text(&response.output);
         assert!(
-            text.contains("orchard"),
-            "expected orchard in output for {}, got: {}",
+            text.contains(SYSTEM_PROMPT_COMPLIANCE_SENTINEL),
+            "expected {} in output for {}, got: {}",
+            SYSTEM_PROMPT_COMPLIANCE_SENTINEL,
             model_id,
             text
         );
