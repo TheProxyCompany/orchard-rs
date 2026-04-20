@@ -77,6 +77,17 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
+fn log_prompt_debug_lines(label: &str, body: &str) {
+    if body.is_empty() {
+        tracing::info!("[PromptDebug] {} <empty>", label);
+        return;
+    }
+
+    for (index, line) in body.lines().enumerate() {
+        tracing::info!("[PromptDebug] {} line={} {}", label, index + 1, line);
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct CompletedToolCallValue {
     name: String,
@@ -1612,12 +1623,17 @@ impl Client {
             layout_segment_count = layout_segments.len(),
             "Prepared responses prompt payload"
         );
-        tracing::trace!(
+        tracing::info!(
             request_id,
             model_id = %model_id,
-            prompt = %format!("\n{}", final_prompt),
-            "Responses prompt sent to PIE"
+            tool_count = tool_schemas.len(),
+            tool_names = ?tool_schemas
+                .iter()
+                .filter_map(|tool| tool.get("name").and_then(|value| value.as_str()))
+                .collect::<Vec<_>>(),
+            "[PromptDebug] Responses prompt sent to PIE"
         );
+        log_prompt_debug_lines("orchard.prompt", &final_prompt);
 
         let response_format_json = request
             .text
