@@ -31,8 +31,11 @@ mod e2e_responses_basic;
 mod e2e_responses_structured;
 #[path = "e2e/e2e_responses_tools.rs"]
 mod e2e_responses_tools;
-#[path = "e2e/e2e_shared_prefix_bench.rs"]
-mod e2e_shared_prefix_bench;
+// Shared-prefix turn-by-turn benchmark lives at tests/e2e/e2e_shared_prefix_bench.rs.
+// It's a bench, not a correctness test — excluded from the default build so it
+// doesn't ship as an ignored test. Re-enable locally when you want to run it.
+// #[path = "e2e/e2e_shared_prefix_bench.rs"]
+// mod e2e_shared_prefix_bench;
 #[path = "e2e/e2e_stop_sequences.rs"]
 mod e2e_stop_sequences;
 #[path = "e2e/e2e_structured_generation.rs"]
