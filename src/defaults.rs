@@ -1,6 +1,6 @@
 //! Default values for sampling and generation parameters.
 
-pub const MAX_TOKENS: i32 = 1024;
+pub const MAX_TOKENS: i32 = 8192;
 pub const TEMPERATURE: f64 = 1.0;
 pub const TOP_P: f64 = 1.0;
 pub const TOP_K: i32 = -1;

@@ -1196,7 +1196,7 @@ mod tests {
     #[test]
     fn test_sampling_params_default() {
         let params = SamplingParams::default();
-        assert_eq!(params.max_tokens, 1024);
+        assert_eq!(params.max_tokens, 8192);
         assert_eq!(params.temperature, 1.0);
         assert_eq!(params.top_p, 1.0);
         assert_eq!(params.top_k, -1);
