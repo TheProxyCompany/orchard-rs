@@ -198,8 +198,6 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub top_logprobs: Option<i32>,
     #[serde(default)]
-    pub tools: Vec<Value>,
-    #[serde(default)]
     pub core_tools: Vec<Value>,
     #[serde(default)]
     pub active_tools: Vec<Value>,
@@ -231,7 +229,6 @@ impl ResponsesRequest {
             presence_penalty: None,
             max_output_tokens: None,
             top_logprobs: None,
-            tools: Vec::new(),
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,
@@ -1787,7 +1784,6 @@ mod tests {
             presence_penalty: None,
             max_output_tokens: None,
             top_logprobs: None,
-            tools: Vec::new(),
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,

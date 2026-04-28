@@ -139,8 +139,6 @@ pub struct SamplingParams {
     #[serde(default)]
     pub logit_bias: HashMap<i32, f64>,
     #[serde(default)]
-    pub tools: Vec<serde_json::Value>,
-    #[serde(default)]
     pub core_tools: Vec<serde_json::Value>,
     #[serde(default)]
     pub active_tools: Vec<serde_json::Value>,
@@ -179,7 +177,6 @@ impl Default for SamplingParams {
             final_candidates: None,
             top_logprobs: 0,
             logit_bias: HashMap::new(),
-            tools: Vec::new(),
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,
@@ -1247,7 +1244,7 @@ mod tests {
         assert_eq!(params.repetition_context_size, 60);
         assert_eq!(params.top_logprobs, 0);
         assert!(params.logit_bias.is_empty());
-        assert!(params.tools.is_empty());
+        assert!(params.core_tools.is_empty());
         assert!(params.response_format.is_none());
         assert!(!params.reasoning);
         assert!(params.reasoning_effort.is_none());
