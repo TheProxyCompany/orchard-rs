@@ -97,7 +97,7 @@ fn determine_model_type(config: &serde_json::Value) -> &str {
         "moondream3" | "moondream" => "moondream3",
         "gemma3" | "gemma3_text" | "gemma" => "gemma3",
         "gemma4" | "gemma4_text" => "gemma4",
-        "qwen3_5" | "qwen3_5_text" => "qwen3_5",
+        "qwen3_5" | "qwen3_5_text" | "qwen3_5_moe" => "qwen3_5",
         "qwen2" | "qwen" => "qwen2",
         other => other,
     }
@@ -568,6 +568,9 @@ mod tests {
 
         let config = serde_json::json!({"model_type": "gemma3_text"});
         assert_eq!(determine_model_type(&config), "gemma3");
+
+        let config = serde_json::json!({"model_type": "qwen3_5_moe"});
+        assert_eq!(determine_model_type(&config), "qwen3_5");
 
         let config = serde_json::json!({});
         assert_eq!(determine_model_type(&config), "llama3");
