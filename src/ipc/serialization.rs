@@ -52,6 +52,8 @@ pub struct PromptPayload {
     #[serde(default)]
     pub tool_schemas_json: String,
     #[serde(default)]
+    pub active_tool_schemas_json: String,
+    #[serde(default)]
     pub tool_calling_tokens: ToolCallingTokens,
     #[serde(default = "default_tool_choice")]
     pub tool_choice: String,
@@ -305,6 +307,7 @@ pub fn build_batch_request_payload(
             "repetition_penalty": prompt.repetition_penalty,
             "stop_sequences": prompt.stop_sequences,
             "tool_schemas_json": prompt.tool_schemas_json,
+            "active_tool_schemas_json": prompt.active_tool_schemas_json,
             "tool_calling_tokens": {
                 "formats": &prompt.tool_calling_tokens.formats,
                 "section_start": prompt.tool_calling_tokens.section_start,

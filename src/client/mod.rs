@@ -141,6 +141,10 @@ pub struct SamplingParams {
     #[serde(default)]
     pub tools: Vec<serde_json::Value>,
     #[serde(default)]
+    pub core_tools: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub active_tools: Vec<serde_json::Value>,
+    #[serde(default)]
     pub tool_choice: Option<serde_json::Value>,
     #[serde(default)]
     pub max_tool_calls: Option<i32>,
@@ -176,6 +180,8 @@ impl Default for SamplingParams {
             top_logprobs: 0,
             logit_bias: HashMap::new(),
             tools: Vec::new(),
+            core_tools: Vec::new(),
+            active_tools: Vec::new(),
             tool_choice: None,
             max_tool_calls: None,
             response_format: None,
@@ -194,6 +200,44 @@ fn tool_choice_to_string(tool_choice: Option<&Value>) -> String {
         Some(Value::Object(value)) => serde_json::to_string(value).unwrap_or_default(),
         Some(other) => other.to_string(),
     }
+}
+
+fn tool_schema_name(tool: &Value) -> &str {
+    tool.get("name")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            tool.get("function")
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("")
+}
+
+fn sorted_tool_schemas(tools: &[Value]) -> Vec<Value> {
+    let mut schemas = tools.to_vec();
+    schemas.sort_by(|a, b| tool_schema_name(a).cmp(tool_schema_name(b)));
+    schemas
+}
+
+fn serialize_tool_schemas(tools: &[Value]) -> String {
+    if tools.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(tools).unwrap_or_default()
+    }
+}
+
+fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Value>) {
+    let core_source = &params.core_tools;
+    let active_source = if params.active_tools.is_empty() {
+        core_source
+    } else {
+        &params.active_tools
+    };
+    (
+        sorted_tool_schemas(core_source),
+        sorted_tool_schemas(active_source),
+    )
 }
 
 /// A high-level client for the Proxy Inference Engine.
@@ -359,12 +403,10 @@ impl Client {
             "Chat prompt sent to PIE"
         );
 
-        // Serialize tools and response_format to JSON strings (matching Python)
-        let tool_schemas_json = if params.tools.is_empty() {
-            String::new()
-        } else {
-            serde_json::to_string(&params.tools).unwrap_or_default()
-        };
+        // Core tools are rendered in the prompt; active tools drive PSE grammar.
+        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
+        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
         let response_format_json = params
             .response_format
             .as_ref()
@@ -404,6 +446,7 @@ impl Client {
             top_logprobs: params.top_logprobs,
             logit_bias: params.logit_bias.clone(),
             tool_schemas_json,
+            active_tool_schemas_json,
             tool_calling_tokens,
             tool_choice,
             max_tool_calls,
@@ -553,12 +596,10 @@ impl Client {
         // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
         let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
 
-        // Serialize tools and response_format to JSON strings (matching Python)
-        let tool_schemas_json = if params.tools.is_empty() {
-            String::new()
-        } else {
-            serde_json::to_string(&params.tools).unwrap_or_default()
-        };
+        // Core tools are rendered in the prompt; active tools drive PSE grammar.
+        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
+        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
         let response_format_json = params
             .response_format
             .as_ref()
@@ -663,6 +704,7 @@ impl Client {
                 top_logprobs: params.top_logprobs,
                 logit_bias: params.logit_bias.clone(),
                 tool_schemas_json: tool_schemas_json.clone(),
+                active_tool_schemas_json: active_tool_schemas_json.clone(),
                 tool_calling_tokens: tool_calling_tokens.clone(),
                 tool_choice: tool_choice.clone(),
                 max_tool_calls,
@@ -897,6 +939,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         top_logprobs: 0,
         logit_bias: HashMap::new(),
         tool_schemas_json: String::new(),
+        active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,
@@ -945,6 +988,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         top_logprobs: 0,
         logit_bias: HashMap::new(),
         tool_schemas_json: String::new(),
+        active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,

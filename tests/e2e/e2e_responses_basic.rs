@@ -110,6 +110,8 @@ async fn test_responses_non_streaming_message_items() {
             max_output_tokens: Some(8),
             top_logprobs: None,
             tools: Vec::new(),
+            core_tools: Vec::new(),
+            active_tools: Vec::new(),
             tool_choice: None,
             max_tool_calls: None,
             text: None,

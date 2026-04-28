@@ -77,17 +77,6 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
-fn log_prompt_debug_lines(label: &str, body: &str) {
-    if body.is_empty() {
-        tracing::info!("[PromptDebug] {} <empty>", label);
-        return;
-    }
-
-    for (index, line) in body.lines().enumerate() {
-        tracing::info!("[PromptDebug] {} line={} {}", label, index + 1, line);
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct CompletedToolCallValue {
     name: String,
@@ -144,6 +133,10 @@ fn normalize_response_tool_schema(tool: &Value) -> Value {
         "strict": strict,
         "required": ["name", "arguments"],
     })
+}
+
+fn response_tool_schema_name(tool: &Value) -> &str {
+    tool.get("name").and_then(Value::as_str).unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +200,10 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub tools: Vec<Value>,
     #[serde(default)]
+    pub core_tools: Vec<Value>,
+    #[serde(default)]
+    pub active_tools: Vec<Value>,
+    #[serde(default)]
     pub tool_choice: Option<Value>,
     #[serde(default)]
     pub max_tool_calls: Option<i32>,
@@ -235,6 +232,8 @@ impl ResponsesRequest {
             max_output_tokens: None,
             top_logprobs: None,
             tools: Vec::new(),
+            core_tools: Vec::new(),
+            active_tools: Vec::new(),
             tool_choice: None,
             max_tool_calls: None,
             text: None,
@@ -1531,7 +1530,7 @@ async fn gather_non_streaming_response(
         max_output_tokens: request.max_output_tokens,
         top_logprobs: request.top_logprobs,
         tool_choice: request.tool_choice.clone(),
-        tools: request.tools.clone(),
+        tools: request.core_tools.clone(),
         max_tool_calls: request.max_tool_calls,
         text: request.text.clone(),
     })
@@ -1578,16 +1577,34 @@ impl Client {
             "Responses messages after multimodal expansion"
         );
 
-        let tool_schemas = request
-            .tools
+        let core_source = &request.core_tools;
+        let active_source = if request.active_tools.is_empty() {
+            core_source
+        } else {
+            &request.active_tools
+        };
+        let mut tool_schemas = core_source
             .iter()
             .map(normalize_response_tool_schema)
             .collect::<Vec<_>>();
+        tool_schemas.sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
+        let mut active_tool_schemas = active_source
+            .iter()
+            .map(normalize_response_tool_schema)
+            .collect::<Vec<_>>();
+        active_tool_schemas
+            .sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
         let tool_schemas_json = if tool_schemas.is_empty() {
             String::new()
         } else {
             serde_json::to_string(&tool_schemas).unwrap_or_default()
         };
+        let active_tool_schemas_json = if active_tool_schemas.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&active_tool_schemas).unwrap_or_default()
+        };
+        let tool_schemas_chars = tool_schemas_json.chars().count();
         let template_tools = (!tool_schemas.is_empty()).then_some(tool_schemas.as_slice());
 
         let prompt_text = formatter
@@ -1621,20 +1638,10 @@ impl Client {
             image_count = image_buffers.len(),
             capability_count = capabilities.len(),
             layout_segment_count = layout_segments.len(),
+            tool_schema_chars = tool_schemas_chars,
+            message_count = messages_for_template.len(),
             "Prepared responses prompt payload"
         );
-        tracing::info!(
-            request_id,
-            model_id = %model_id,
-            tool_count = tool_schemas.len(),
-            tool_names = ?tool_schemas
-                .iter()
-                .filter_map(|tool| tool.get("name").and_then(|value| value.as_str()))
-                .collect::<Vec<_>>(),
-            "[PromptDebug] Responses prompt sent to PIE"
-        );
-        log_prompt_debug_lines("orchard.prompt", &final_prompt);
-
         let response_format_json = request
             .text
             .as_ref()
@@ -1665,6 +1672,7 @@ impl Client {
             top_logprobs: request.top_logprobs.unwrap_or(0),
             logit_bias: HashMap::new(),
             tool_schemas_json,
+            active_tool_schemas_json,
             tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
@@ -1780,6 +1788,8 @@ mod tests {
             max_output_tokens: None,
             top_logprobs: None,
             tools: Vec::new(),
+            core_tools: Vec::new(),
+            active_tools: Vec::new(),
             tool_choice: None,
             max_tool_calls: None,
             text: None,
@@ -1871,6 +1881,44 @@ mod tests {
                 "limit": null,
             })
         );
+    }
+
+    #[test]
+    fn test_build_output_items_preserves_parallel_tool_calls() {
+        let mut output_items = BTreeMap::new();
+        for (output_index, name, arguments) in [
+            (1, "get_weather", serde_json::json!({"location": "Tokyo"})),
+            (2, "set_alarm", serde_json::json!({"time": "7am"})),
+        ] {
+            process_state_event_for_output(
+                &ResponseStateEvent {
+                    event_type: "item_completed".to_string(),
+                    item_type: "tool_call".to_string(),
+                    output_index,
+                    identifier: format!("tool_call:{name}"),
+                    delta: String::new(),
+                    value: Some(Value::String(
+                        serde_json::json!({
+                            "name": name,
+                            "arguments": arguments,
+                        })
+                        .to_string(),
+                    )),
+                },
+                &mut output_items,
+            );
+        }
+
+        let output = build_output_items(&output_items);
+        let calls = output
+            .iter()
+            .filter_map(|item| match item {
+                ResponseOutputItem::FunctionCall(call) => Some(call.name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(calls, vec!["get_weather", "set_alarm"]);
     }
 
     #[test]
