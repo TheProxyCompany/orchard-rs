@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::ipc::client::ResponseDelta;
+use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 
 /// Result of a batch chat completion that can be streamed or complete.
 pub enum BatchChatResult {
@@ -42,6 +42,8 @@ pub struct ClientDelta {
     pub cumulative_logprob: Option<f64>,
     pub modal_decoder_id: Option<String>,
     pub modal_bytes_b64: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub state_events: Vec<ResponseStateEvent>,
 }
 
 impl From<ResponseDelta> for ClientDelta {
@@ -65,8 +67,15 @@ impl From<ResponseDelta> for ClientDelta {
             cumulative_logprob: delta.cumulative_logprob,
             modal_decoder_id: delta.modal_decoder_id,
             modal_bytes_b64: delta.modal_bytes_b64,
+            state_events: delta.state_events,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ClientToolCall {
+    pub name: String,
+    pub arguments: serde_json::Value,
 }
 
 /// A complete response from a chat completion.
@@ -75,6 +84,10 @@ pub struct ClientResponse {
     pub text: String,
     pub finish_reason: Option<String>,
     pub usage: UsageStats,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasoning: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ClientToolCall>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deltas: Vec<ClientDelta>,
 }
@@ -130,5 +143,6 @@ mod tests {
         assert_eq!(delta.tokens, vec![1, 2, 3]);
         assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
+        assert!(delta.state_events.is_empty());
     }
 }

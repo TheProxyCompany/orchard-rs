@@ -40,7 +40,7 @@ pub use moondream::{
     MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
     MOONDREAM_MODEL_ID,
 };
-pub use response::{BatchChatResult, ClientDelta, ClientResponse, UsageStats};
+pub use response::{BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, UsageStats};
 pub use responses::{
     ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
     FunctionCallArgumentsDoneEvent, IncompleteDetails, InputTokensDetails, OutputFunctionCall,
@@ -1186,17 +1186,129 @@ fn build_response_from_candidates(
             completion_tokens: total_completion_tokens,
             total_tokens: prompt_tokens + total_completion_tokens,
         },
+        reasoning: Vec::new(),
+        tool_calls: Vec::new(),
         deltas: all_deltas,
     }
 }
 
+fn value_to_text(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
+    if !deltas.iter().any(|delta| !delta.state_events.is_empty()) {
+        return deltas
+            .iter()
+            .filter_map(|delta| delta.content.as_ref())
+            .cloned()
+            .collect();
+    }
+
+    let mut text = String::new();
+    let mut completed_value = None;
+    for event in deltas.iter().flat_map(|delta| &delta.state_events) {
+        if event.item_type != "message" {
+            continue;
+        }
+        if event.event_type == "content_delta" {
+            text.push_str(&event.delta);
+        } else if event.event_type == "item_completed" {
+            if let Some(value) = &event.value {
+                completed_value = Some(value_to_text(value));
+            }
+        }
+    }
+
+    if !text.is_empty() {
+        return text;
+    }
+    completed_value.unwrap_or_default()
+}
+
+fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<ClientToolCall>) {
+    let mut reasoning_by_identifier: HashMap<String, String> = HashMap::new();
+    let mut tool_calls_by_index: HashMap<u32, ClientToolCall> = HashMap::new();
+
+    for event in deltas.iter().flat_map(|delta| &delta.state_events) {
+        match event.item_type.as_str() {
+            "reasoning" => {
+                let entry = reasoning_by_identifier
+                    .entry(event.identifier.clone())
+                    .or_default();
+                if event.event_type == "content_delta" {
+                    entry.push_str(&event.delta);
+                } else if event.event_type == "item_completed" {
+                    if let Some(value) = &event.value {
+                        *entry = value_to_text(value);
+                    }
+                }
+            }
+            "tool_call" => {
+                let tool_call = tool_calls_by_index
+                    .entry(event.output_index)
+                    .or_insert_with(|| ClientToolCall {
+                        name: event
+                            .identifier
+                            .trim_start_matches("tool_call:")
+                            .to_string(),
+                        arguments: Value::String(String::new()),
+                    });
+                if event.identifier != "arguments" && !event.identifier.is_empty() {
+                    tool_call.name = event
+                        .identifier
+                        .trim_start_matches("tool_call:")
+                        .to_string();
+                }
+                if event.identifier == "arguments" && event.event_type == "content_delta" {
+                    match &mut tool_call.arguments {
+                        Value::String(arguments) => arguments.push_str(&event.delta),
+                        _ => tool_call.arguments = Value::String(event.delta.clone()),
+                    }
+                } else if event.event_type == "item_completed" {
+                    if let Some(Value::Object(object)) = &event.value {
+                        if let Some(Value::String(name)) = object.get("name") {
+                            tool_call.name = name.clone();
+                        }
+                        if let Some(arguments) = object.get("arguments") {
+                            tool_call.arguments = arguments.clone();
+                        }
+                    } else if event.identifier == "arguments" {
+                        if let Some(value) = &event.value {
+                            tool_call.arguments = value.clone();
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut reasoning_entries: Vec<_> = reasoning_by_identifier.into_iter().collect();
+    reasoning_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let reasoning = reasoning_entries
+        .into_iter()
+        .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
+        .collect();
+
+    let mut tool_call_entries: Vec<_> = tool_calls_by_index.into_iter().collect();
+    tool_call_entries.sort_by_key(|(index, _)| *index);
+    let tool_calls = tool_call_entries
+        .into_iter()
+        .map(|(_, value)| value)
+        .filter(|value| !value.name.is_empty())
+        .collect();
+
+    (reasoning, tool_calls)
+}
+
 /// Aggregate deltas into a complete response.
 fn aggregate_response(deltas: Vec<ClientDelta>) -> ClientResponse {
-    let text: String = deltas
-        .iter()
-        .filter_map(|d| d.content.as_ref())
-        .cloned()
-        .collect();
+    let text = aggregate_message_text(&deltas);
 
     let finish_reason = deltas
         .iter()
@@ -1205,11 +1317,14 @@ fn aggregate_response(deltas: Vec<ClientDelta>) -> ClientResponse {
         .cloned();
 
     let usage = extract_usage(&deltas);
+    let (reasoning, tool_calls) = aggregate_structured_items(&deltas);
 
     ClientResponse {
         text,
         finish_reason,
         usage,
+        reasoning,
+        tool_calls,
         deltas,
     }
 }
@@ -1270,6 +1385,67 @@ mod tests {
         let response = aggregate_response(deltas);
         assert_eq!(response.text, "Hello World");
         assert_eq!(response.finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_aggregate_response_uses_message_state_events() {
+        let deltas = vec![
+            ClientDelta {
+                content: Some("hidden thought".to_string()),
+                state_events: vec![crate::ipc::client::ResponseStateEvent {
+                    event_type: "content_delta".to_string(),
+                    item_type: "reasoning".to_string(),
+                    identifier: "reasoning".to_string(),
+                    delta: "hidden thought".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ClientDelta {
+                content: Some("visible answer".to_string()),
+                state_events: vec![crate::ipc::client::ResponseStateEvent {
+                    event_type: "content_delta".to_string(),
+                    item_type: "message".to_string(),
+                    identifier: "message".to_string(),
+                    delta: "visible answer".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+
+        let response = aggregate_response(deltas);
+
+        assert_eq!(response.text, "visible answer");
+        assert_eq!(response.reasoning, vec!["hidden thought".to_string()]);
+    }
+
+    #[test]
+    fn test_aggregate_response_exposes_tool_calls() {
+        let deltas = vec![ClientDelta {
+            state_events: vec![crate::ipc::client::ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:share_to_party".to_string(),
+                value: Some(serde_json::json!({
+                    "name": "share_to_party",
+                    "arguments": {"content": "hi"}
+                })),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+
+        let response = aggregate_response(deltas);
+
+        assert_eq!(response.text, "");
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].name, "share_to_party");
+        assert_eq!(
+            response.tool_calls[0].arguments,
+            serde_json::json!({"content": "hi"})
+        );
     }
 
     #[test]
