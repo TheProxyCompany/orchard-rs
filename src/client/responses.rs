@@ -1671,6 +1671,7 @@ impl Client {
             tool_schemas_json,
             active_tool_schemas_json,
             tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
+            thinking_tokens: formatter.get_thinking_tokens().clone(),
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
             response_format_json,

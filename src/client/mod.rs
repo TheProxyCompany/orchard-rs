@@ -410,6 +410,7 @@ impl Client {
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
         let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
+        let thinking_tokens = formatter.get_thinking_tokens().clone();
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
@@ -445,6 +446,7 @@ impl Client {
             tool_schemas_json,
             active_tool_schemas_json,
             tool_calling_tokens,
+            thinking_tokens,
             tool_choice,
             max_tool_calls,
             response_format_json,
@@ -703,6 +705,7 @@ impl Client {
                 tool_schemas_json: tool_schemas_json.clone(),
                 active_tool_schemas_json: active_tool_schemas_json.clone(),
                 tool_calling_tokens: tool_calling_tokens.clone(),
+                thinking_tokens: formatter.get_thinking_tokens().clone(),
                 tool_choice: tool_choice.clone(),
                 max_tool_calls,
                 response_format_json: response_format_json.clone(),
@@ -938,6 +941,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         tool_schemas_json: String::new(),
         active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
+        thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,
         response_format_json: String::new(),
@@ -987,6 +991,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         tool_schemas_json: String::new(),
         active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
+        thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,
         response_format_json: String::new(),

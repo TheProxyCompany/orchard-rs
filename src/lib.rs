@@ -15,7 +15,7 @@ pub use ipc::client::{EventCallback, IPCClient, ResponseDelta, TokenLogProb};
 pub use ipc::endpoints;
 pub use ipc::serialization::{
     build_batch_request_payload, CapabilityEntry, LayoutEntry, PromptPayload, RequestType,
-    SegmentType,
+    SegmentType, ThinkingTokens,
 };
 
 pub use engine::fetch::EngineFetcher;

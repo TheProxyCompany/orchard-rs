@@ -20,7 +20,7 @@ pub use multimodal::{
 };
 
 use crate::error::{Error, Result};
-use crate::ipc::serialization::{ToolCallFormat, ToolCallingTokens};
+use crate::ipc::serialization::{ThinkingTokens, ToolCallFormat, ToolCallingTokens};
 
 /// Wrapper that renders as text but exposes an indexable `type` field for Jinja.
 /// Mirrors Python's _RenderableText behavior.
@@ -135,6 +135,8 @@ pub struct ChatFormatter {
     capability_placeholders: Vec<String>,
     /// Cached tool-calling delimiters from capabilities manifest.
     tool_calling_tokens: ToolCallingTokens,
+    /// Cached generated-output thinking delimiters from capabilities manifest.
+    thinking_tokens: ThinkingTokens,
 }
 
 impl ChatFormatter {
@@ -158,6 +160,7 @@ impl ChatFormatter {
         let capabilities = Self::load_capabilities(&profile)?;
         let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
         let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
+        let thinking_tokens = Self::extract_thinking_tokens(&capabilities);
 
         Ok(Self {
             model_path: model_path.to_string_lossy().to_string(),
@@ -168,6 +171,7 @@ impl ChatFormatter {
             capabilities,
             capability_placeholders,
             tool_calling_tokens,
+            thinking_tokens,
         })
     }
 
@@ -274,6 +278,11 @@ impl ChatFormatter {
     /// Tool-calling delimiters from capabilities.yaml.
     pub fn get_tool_calling_tokens(&self) -> &ToolCallingTokens {
         &self.tool_calling_tokens
+    }
+
+    /// Generated-output thinking delimiters from capabilities.yaml.
+    pub fn get_thinking_tokens(&self) -> &ThinkingTokens {
+        &self.thinking_tokens
     }
 
     fn render_template(
@@ -451,6 +460,25 @@ impl ChatFormatter {
         }
     }
 
+    fn extract_thinking_tokens(capabilities: &serde_json::Value) -> ThinkingTokens {
+        let tokens = capabilities
+            .get("thinking")
+            .and_then(|cap| cap.get("tokens"))
+            .and_then(serde_json::Value::as_object);
+        let token = |key: &str| {
+            tokens
+                .and_then(|map| map.get(key))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        ThinkingTokens {
+            start: token("start"),
+            end: token("end"),
+        }
+    }
+
     fn find_profile(model_type: &str) -> Result<embedded_profiles::EmbeddedProfile> {
         embedded_profiles::find_embedded_profile(model_type)
             .ok_or_else(|| Error::FormatterProfileNotFound(model_type.to_string()))
@@ -590,6 +618,22 @@ mod tests {
         assert_eq!(formatter.model_type, "gemma3");
         assert!(!formatter.template_source.is_empty());
         assert!(formatter.shared_tool_macros_source.is_some());
+    }
+
+    #[test]
+    fn test_chat_formatter_loads_gemma4_thinking_tokens() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let thinking_tokens = formatter.get_thinking_tokens();
+
+        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
+        assert_eq!(thinking_tokens.end, "<channel|>");
     }
 
     #[test]

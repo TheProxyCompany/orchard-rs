@@ -55,6 +55,8 @@ pub struct PromptPayload {
     pub active_tool_schemas_json: String,
     #[serde(default)]
     pub tool_calling_tokens: ToolCallingTokens,
+    #[serde(default)]
+    pub thinking_tokens: ThinkingTokens,
     #[serde(default = "default_tool_choice")]
     pub tool_choice: String,
     #[serde(default)]
@@ -85,6 +87,14 @@ pub struct ToolCallingTokens {
     pub section_start: String,
     #[serde(default)]
     pub section_end: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThinkingTokens {
+    #[serde(default)]
+    pub start: String,
+    #[serde(default)]
+    pub end: String,
 }
 
 fn default_tool_choice() -> String {
@@ -313,6 +323,10 @@ pub fn build_batch_request_payload(
                 "section_start": prompt.tool_calling_tokens.section_start,
                 "section_end": prompt.tool_calling_tokens.section_end,
             },
+            "thinking_tokens": {
+                "start": prompt.thinking_tokens.start,
+                "end": prompt.thinking_tokens.end,
+            },
             "tool_choice": prompt.tool_choice,
             "max_tool_calls": prompt.max_tool_calls,
             "response_format_json": prompt.response_format_json,
@@ -478,6 +492,34 @@ mod tests {
         assert_eq!(metadata["request_id"], 1);
         assert_eq!(metadata["model_id"], "test-model");
         assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_build_batch_request_payload_serializes_thinking_tokens() {
+        let prompt = PromptPayload {
+            prompt: "Hello".to_string(),
+            thinking_tokens: ThinkingTokens {
+                start: "<|channel>thought\n".to_string(),
+                end: "<channel|>".to_string(),
+            },
+            ..Default::default()
+        };
+
+        let payload = build_batch_request_payload(
+            1,
+            "test-model",
+            "/path/to/model",
+            RequestType::Generation,
+            12345,
+            &[prompt],
+        )
+        .unwrap();
+
+        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+        let prompt = &metadata["prompts"][0];
+        assert_eq!(prompt["thinking_tokens"]["start"], "<|channel>thought\n");
+        assert_eq!(prompt["thinking_tokens"]["end"], "<channel|>");
     }
 
     #[test]
