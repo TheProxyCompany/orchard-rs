@@ -523,6 +523,45 @@ mod tests {
     }
 
     #[test]
+    fn test_build_batch_request_payload_serializes_per_prompt_response_formats() {
+        let prompts = vec![
+            PromptPayload {
+                prompt: "City".to_string(),
+                response_format_json: r#"{"type":"json_schema","json_schema":{"name":"city"}}"#
+                    .to_string(),
+                ..Default::default()
+            },
+            PromptPayload {
+                prompt: "Animal".to_string(),
+                response_format_json: r#"{"type":"json_schema","json_schema":{"name":"animal"}}"#
+                    .to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let payload = build_batch_request_payload(
+            1,
+            "test-model",
+            "/path/to/model",
+            RequestType::Generation,
+            12345,
+            &prompts,
+        )
+        .unwrap();
+
+        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+        assert_eq!(
+            metadata["prompts"][0]["response_format_json"],
+            prompts[0].response_format_json
+        );
+        assert_eq!(
+            metadata["prompts"][1]["response_format_json"],
+            prompts[1].response_format_json
+        );
+    }
+
+    #[test]
     fn test_validate_layout_success() {
         let layout = vec![
             LayoutEntry {

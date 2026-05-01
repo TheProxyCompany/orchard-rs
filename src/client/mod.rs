@@ -575,8 +575,28 @@ impl Client {
         params: SamplingParams,
         stream: bool,
     ) -> Result<BatchChatResult> {
+        let batch_size = conversations.len();
+        self.achat_batch_with_params(model_id, conversations, vec![params; batch_size], stream)
+            .await
+    }
+
+    /// Perform batched chat completion with per-prompt sampling parameters.
+    pub async fn achat_batch_with_params(
+        &self,
+        model_id: &str,
+        conversations: Vec<Vec<HashMap<String, serde_json::Value>>>,
+        params_by_prompt: Vec<SamplingParams>,
+        stream: bool,
+    ) -> Result<BatchChatResult> {
         if conversations.is_empty() {
             return Ok(BatchChatResult::Complete(Vec::new()));
+        }
+        if params_by_prompt.len() != conversations.len() {
+            return Err(ClientError::RequestFailed(format!(
+                "params_by_prompt length ({}) does not match batch size ({})",
+                params_by_prompt.len(),
+                conversations.len()
+            )));
         }
 
         let info = self.registry.ensure_loaded(model_id).await?;
@@ -592,26 +612,25 @@ impl Client {
             "Building batched chat request"
         );
 
-        // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
-        let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
-
-        // Core tools are rendered in the prompt; active tools drive PSE grammar.
-        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-        let response_format_json = params
-            .response_format
-            .as_ref()
-            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-            .unwrap_or_default();
         let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
+            let params = &params_by_prompt[prompt_index];
+            let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
+            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(params);
+            let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
+            let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
+            let response_format_json = params
+                .response_format
+                .as_ref()
+                .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+                .unwrap_or_default();
+            let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
+            let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
+
             // Build multimodal content (pass instructions if provided)
             let (messages_for_template, image_buffers, capabilities, content_order) =
                 build_multimodal_messages(formatter, messages, params.instructions.as_deref())
