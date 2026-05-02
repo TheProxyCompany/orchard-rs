@@ -285,6 +285,13 @@ impl ChatFormatter {
         &self.thinking_tokens
     }
 
+    /// Whether this model profile has native generated-output thinking support.
+    pub fn supports_native_thinking(&self) -> bool {
+        self.capabilities["thinking"]["native"]
+            .as_bool()
+            .unwrap_or(false)
+    }
+
     fn render_template(
         &self,
         conversation: &[HashMap<String, serde_json::Value>],
@@ -634,6 +641,24 @@ mod tests {
 
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
+        assert!(formatter.supports_native_thinking());
+    }
+
+    #[test]
+    fn test_llama3_fallback_thinking_tokens_are_not_native_thinking() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let thinking_tokens = formatter.get_thinking_tokens();
+
+        assert_eq!(thinking_tokens.start, "```thinking\n");
+        assert_eq!(thinking_tokens.end, "\n```");
+        assert!(!formatter.supports_native_thinking());
     }
 
     #[test]

@@ -15,6 +15,8 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+use crate::defaults;
+
 /// Global runtime for synchronous operations.
 /// Uses current_thread for efficiency - sync callers don't need multi-thread.
 static SYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -32,7 +34,9 @@ use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
 use crate::ipc::client::{EventCallback, IPCClient, ResponseDelta};
-use crate::ipc::serialization::{CapabilityEntry, LayoutEntry, PromptPayload, RequestType};
+use crate::ipc::serialization::{
+    CapabilityEntry, LayoutEntry, PromptPayload, RequestType, ThinkingTokens,
+};
 use crate::model::registry::ModelRegistry;
 
 pub use moondream::{
@@ -101,7 +105,24 @@ impl From<crate::error::Error> for ClientError {
 
 pub type Result<T> = std::result::Result<T, ClientError>;
 
-use crate::defaults;
+fn native_reasoning_settings(
+    formatter: &crate::formatter::ChatFormatter,
+    requested_reasoning: bool,
+    requested_reasoning_effort: &Option<String>,
+) -> (bool, Option<String>, ThinkingTokens) {
+    let reasoning_flag = requested_reasoning && formatter.supports_native_thinking();
+    let reasoning_effort = if reasoning_flag {
+        requested_reasoning_effort.clone()
+    } else {
+        None
+    };
+    let thinking_tokens = if reasoning_flag {
+        formatter.get_thinking_tokens().clone()
+    } else {
+        ThinkingTokens::default()
+    };
+    (reasoning_flag, reasoning_effort, thinking_tokens)
+}
 
 /// Sampling parameters for generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,8 +360,11 @@ impl Client {
             "Chat messages before template application"
         );
 
-        // Compute reasoning flag (same as Python: reasoning OR reasoning_effort present)
-        let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
+        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+            formatter,
+            params.reasoning || params.reasoning_effort.is_some(),
+            &params.reasoning_effort,
+        );
 
         // Build multimodal content (pass instructions if provided)
         let (messages_for_template, image_buffers, capabilities, content_order) =
@@ -410,7 +434,6 @@ impl Client {
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
         let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let thinking_tokens = formatter.get_thinking_tokens().clone();
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
@@ -451,7 +474,7 @@ impl Client {
             max_tool_calls,
             response_format_json,
             task_name: params.task_name.clone(),
-            reasoning_effort: params.reasoning_effort.clone(),
+            reasoning_effort,
         };
 
         // Use unified batch request path (even for single prompts)
@@ -619,7 +642,11 @@ impl Client {
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
             let params = &params_by_prompt[prompt_index];
-            let reasoning_flag = params.reasoning || params.reasoning_effort.is_some();
+            let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+                formatter,
+                params.reasoning || params.reasoning_effort.is_some(),
+                &params.reasoning_effort,
+            );
             let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(params);
             let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
             let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
@@ -724,12 +751,12 @@ impl Client {
                 tool_schemas_json: tool_schemas_json.clone(),
                 active_tool_schemas_json: active_tool_schemas_json.clone(),
                 tool_calling_tokens: tool_calling_tokens.clone(),
-                thinking_tokens: formatter.get_thinking_tokens().clone(),
+                thinking_tokens,
                 tool_choice: tool_choice.clone(),
                 max_tool_calls,
                 response_format_json: response_format_json.clone(),
                 task_name: params.task_name.clone(),
-                reasoning_effort: params.reasoning_effort.clone(),
+                reasoning_effort,
             });
         }
 
@@ -1388,6 +1415,44 @@ mod tests {
         assert!(!params.reasoning);
         assert!(params.reasoning_effort.is_none());
         assert!(params.instructions.is_none());
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_drop_llama3_fallback_tokens() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, true, &Some("high".to_string()));
+
+        assert!(!reasoning_flag);
+        assert!(reasoning_effort.is_none());
+        assert_eq!(thinking_tokens.start, "");
+        assert_eq!(thinking_tokens.end, "");
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_keep_gemma4_native_tokens() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, true, &Some("high".to_string()));
+
+        assert!(reasoning_flag);
+        assert_eq!(reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
+        assert_eq!(thinking_tokens.end, "<channel|>");
     }
 
     #[test]

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::{tool_choice_to_string, Client, ClientError, Result};
+use super::{native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 use crate::ipc::serialization::PromptPayload;
@@ -1556,7 +1556,11 @@ impl Client {
             messages = ?messages,
             "Responses messages before multimodal expansion"
         );
-        let reasoning_flag = request.reasoning_effort.is_some();
+        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+            formatter,
+            request.reasoning_effort.is_some(),
+            &request.reasoning_effort,
+        );
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
@@ -1671,12 +1675,12 @@ impl Client {
             tool_schemas_json,
             active_tool_schemas_json,
             tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
-            thinking_tokens: formatter.get_thinking_tokens().clone(),
+            thinking_tokens,
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
             response_format_json,
             task_name: None,
-            reasoning_effort: request.reasoning_effort.clone(),
+            reasoning_effort,
         };
         tracing::debug!(
             request_id,
