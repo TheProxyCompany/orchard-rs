@@ -139,6 +139,28 @@ fn response_tool_schema_name(tool: &Value) -> &str {
     tool.get("name").and_then(Value::as_str).unwrap_or_default()
 }
 
+fn response_tool_schemas(
+    core_source: &[Value],
+    active_source: &[Value],
+) -> (Vec<Value>, Vec<Value>) {
+    let mut tool_schemas = core_source.to_vec();
+    tool_schemas.sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
+
+    let active_source = if active_source.is_empty() {
+        core_source
+    } else {
+        active_source
+    };
+    let mut active_tool_schemas = active_source
+        .iter()
+        .map(normalize_response_tool_schema)
+        .collect::<Vec<_>>();
+    active_tool_schemas
+        .sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
+
+    (tool_schemas, active_tool_schemas)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ResponsesInput {
@@ -1578,23 +1600,8 @@ impl Client {
             "Responses messages after multimodal expansion"
         );
 
-        let core_source = &request.core_tools;
-        let active_source = if request.active_tools.is_empty() {
-            core_source
-        } else {
-            &request.active_tools
-        };
-        let mut tool_schemas = core_source
-            .iter()
-            .map(normalize_response_tool_schema)
-            .collect::<Vec<_>>();
-        tool_schemas.sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
-        let mut active_tool_schemas = active_source
-            .iter()
-            .map(normalize_response_tool_schema)
-            .collect::<Vec<_>>();
-        active_tool_schemas
-            .sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
+        let (tool_schemas, active_tool_schemas) =
+            response_tool_schemas(&request.core_tools, &request.active_tools);
         let tool_schemas_json = if tool_schemas.is_empty() {
             String::new()
         } else {
@@ -1752,6 +1759,47 @@ mod tests {
             })
         );
         assert_eq!(finish_reason_to_incomplete(Some("stop")), None);
+    }
+
+    #[test]
+    fn test_response_tool_schemas_keep_core_raw_and_wrap_active() {
+        let weather_tool = serde_json::json!({
+            "type": "function",
+            "name": "get_weather",
+            "description": "Get the current weather for a location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string"}
+                },
+                "required": ["location"]
+            }
+        });
+
+        let (core_tools, active_tools) =
+            response_tool_schemas(std::slice::from_ref(&weather_tool), &[]);
+
+        assert_eq!(core_tools, vec![weather_tool]);
+        assert_eq!(
+            active_tools,
+            vec![serde_json::json!({
+                "name": "get_weather",
+                "type": "object",
+                "description": "Get the current weather for a location.",
+                "properties": {
+                    "name": {"const": "get_weather"},
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string"}
+                        },
+                        "required": ["location"]
+                    }
+                },
+                "strict": true,
+                "required": ["name", "arguments"]
+            })]
+        );
     }
 
     #[test]
