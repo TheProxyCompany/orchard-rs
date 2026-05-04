@@ -8,7 +8,9 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::{get_fixture, TEXT_MODELS};
+use crate::fixture::{get_fixture, MOONDREAM_MODEL_ID, TEXT_MODELS};
+
+const MULTI_TURN_TOOL_UNSUPPORTED_MODELS: &[&str] = &[MOONDREAM_MODEL_ID];
 
 fn weather_tool() -> serde_json::Value {
     serde_json::json!({
@@ -243,6 +245,10 @@ async fn test_responses_tool_result_continuation() {
     let client = &fixture.client;
 
     for &model_id in TEXT_MODELS {
+        if MULTI_TURN_TOOL_UNSUPPORTED_MODELS.contains(&model_id) {
+            continue;
+        }
+
         let first_request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: false,
