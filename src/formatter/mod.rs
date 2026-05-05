@@ -131,6 +131,8 @@ pub struct ChatFormatter {
     shared_tool_macros_source: Option<String>,
     /// Parsed capabilities.yaml content.
     capabilities: serde_json::Value,
+    /// Parsed model config.json content.
+    model_config: serde_json::Value,
     /// Placeholder tokens from capabilities manifest.
     capability_placeholders: Vec<String>,
     /// Cached tool-calling delimiters from capabilities manifest.
@@ -169,6 +171,7 @@ impl ChatFormatter {
             template_source,
             shared_tool_macros_source,
             capabilities,
+            model_config: config,
             capability_placeholders,
             tool_calling_tokens,
             thinking_tokens,
@@ -354,6 +357,7 @@ impl ChatFormatter {
             .map(|items| Self::json_to_minijinja(&serde_json::Value::Array(items.to_vec())))
             .unwrap_or(Value::UNDEFINED);
         let capabilities_value = Self::json_to_minijinja(&self.capabilities);
+        let model_config_value = Self::json_to_minijinja(&self.model_config);
 
         let ctx = context! {
             interactions => interactions,
@@ -370,6 +374,7 @@ impl ChatFormatter {
             roles => roles,
             tools => tools_value,
             capabilities => capabilities_value,
+            model_config => model_config_value,
         };
 
         template
@@ -642,6 +647,57 @@ mod tests {
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
         assert!(formatter.supports_native_thinking());
+    }
+
+    #[test]
+    fn test_gemma4_e4b_does_not_suppress_thinking_when_reasoning_disabled() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({
+                "model_type": "gemma4",
+                "text_config": {"hidden_size": 2560}
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let conversation = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("Return only 7.")),
+        ])];
+        let rendered = formatter
+            .apply_template(&conversation, true, false, None)
+            .unwrap();
+
+        assert!(rendered.ends_with("<|turn>model\n"));
+        assert!(!rendered.contains("<|channel>thought\n<channel|>"));
+    }
+
+    #[test]
+    fn test_gemma4_26b_suppresses_thinking_when_reasoning_disabled() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({
+                "model_type": "gemma4",
+                "text_config": {"hidden_size": 2816, "num_experts": 128}
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let conversation = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("Return only 7.")),
+        ])];
+        let rendered = formatter
+            .apply_template(&conversation, true, false, None)
+            .unwrap();
+
+        assert!(rendered.ends_with("<|turn>model\n<|channel>thought\n<channel|>"));
     }
 
     #[test]

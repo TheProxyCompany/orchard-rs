@@ -110,13 +110,14 @@ fn native_reasoning_settings(
     requested_reasoning: bool,
     requested_reasoning_effort: &Option<String>,
 ) -> (bool, Option<String>, ThinkingTokens) {
-    let reasoning_flag = requested_reasoning && formatter.supports_native_thinking();
+    let supports_native_thinking = formatter.supports_native_thinking();
+    let reasoning_flag = requested_reasoning && supports_native_thinking;
     let reasoning_effort = if reasoning_flag {
         requested_reasoning_effort.clone()
     } else {
         None
     };
-    let thinking_tokens = if reasoning_flag {
+    let thinking_tokens = if supports_native_thinking {
         formatter.get_thinking_tokens().clone()
     } else {
         ThinkingTokens::default()
