@@ -17,6 +17,7 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
         let params = SamplingParams {
             max_tokens: 64,
             temperature: 0.0,
+            deterministic: true,
             n: batch_size,
             ..Default::default()
         };
@@ -128,6 +129,7 @@ async fn run_sequential_request_determinism() {
         let params = SamplingParams {
             max_tokens: 64,
             temperature: 0.0,
+            deterministic: true,
             ..Default::default()
         };
 
