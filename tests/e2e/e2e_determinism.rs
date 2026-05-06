@@ -7,8 +7,7 @@ use orchard::SamplingParams;
 
 use crate::fixture::{get_fixture, make_message, ALL_MODELS};
 
-const DETERMINISM_PROMPT: &str =
-    "Reply with exactly this text and nothing else: Orchard determinism check.";
+const DETERMINISM_PROMPT: &str = "Answer with the single character X.";
 
 async fn run_multi_candidate_determinism(batch_size: i32) {
     use std::collections::HashMap;
