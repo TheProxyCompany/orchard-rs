@@ -7,9 +7,6 @@ use orchard::SamplingParams;
 
 use crate::fixture::{get_fixture, make_message, ALL_MODELS};
 
-const DETERMINISM_PROMPT: &str =
-    "Reply with exactly this text and nothing else: Orchard determinism check.";
-
 async fn run_multi_candidate_determinism(batch_size: i32) {
     use std::collections::HashMap;
 
@@ -24,7 +21,10 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
             ..Default::default()
         };
 
-        let messages = vec![make_message("user", DETERMINISM_PROMPT)];
+        let messages = vec![make_message(
+            "user",
+            "Provide one friendly sentence introducing yourself.",
+        )];
 
         let result = client.achat(model_id, messages, params, true).await;
         assert!(
@@ -132,7 +132,10 @@ async fn run_sequential_request_determinism() {
         };
 
         for i in 0..num_requests {
-            let messages = vec![make_message("user", DETERMINISM_PROMPT)];
+            let messages = vec![make_message(
+                "user",
+                "Provide one friendly sentence introducing yourself.",
+            )];
 
             let result = client
                 .achat(model_id, messages, params.clone(), false)
