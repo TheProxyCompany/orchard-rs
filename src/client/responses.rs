@@ -212,6 +212,8 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub min_p: Option<f64>,
     #[serde(default)]
+    pub deterministic: bool,
+    #[serde(default)]
     pub frequency_penalty: Option<f64>,
     #[serde(default)]
     pub presence_penalty: Option<f64>,
@@ -247,6 +249,7 @@ impl ResponsesRequest {
             top_p: None,
             top_k: None,
             min_p: None,
+            deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
             max_output_tokens: None,
@@ -1669,6 +1672,7 @@ impl Client {
             top_k: request.top_k.unwrap_or(-1),
             min_p: request.min_p.unwrap_or(0.0),
             rng_seed,
+            deterministic: request.deterministic,
             stop_sequences: Vec::new(),
             num_candidates: 1,
             best_of: Some(1),
@@ -1833,6 +1837,7 @@ mod tests {
             top_p: None,
             top_k: None,
             min_p: None,
+            deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
             max_output_tokens: None,

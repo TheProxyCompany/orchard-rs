@@ -30,6 +30,8 @@ pub struct PromptPayload {
     #[serde(default)]
     pub rng_seed: u64,
     #[serde(default)]
+    pub deterministic: bool,
+    #[serde(default)]
     pub stop_sequences: Vec<String>,
     #[serde(default = "defaults::num_candidates")]
     pub num_candidates: i32,
@@ -310,6 +312,7 @@ pub fn build_batch_request_payload(
             "top_k": prompt.top_k,
             "min_p": prompt.min_p,
             "rng_seed": (prompt.rng_seed & 0xFFFFFFFF) as u32,
+            "deterministic": prompt.deterministic,
             "top_logprobs": prompt.top_logprobs,
             "frequency_penalty": prompt.frequency_penalty,
             "presence_penalty": prompt.presence_penalty,
@@ -468,6 +471,7 @@ mod tests {
             max_generated_tokens: 100,
             temperature: 0.7,
             top_p: 0.9,
+            deterministic: true,
             ..Default::default()
         };
 
@@ -492,6 +496,7 @@ mod tests {
         assert_eq!(metadata["request_id"], 1);
         assert_eq!(metadata["model_id"], "test-model");
         assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
+        assert_eq!(metadata["prompts"][0]["deterministic"], true);
     }
 
     #[test]

@@ -105,6 +105,7 @@ async fn test_responses_non_streaming_message_items() {
             top_p: None,
             top_k: None,
             min_p: None,
+            deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
             max_output_tokens: Some(8),

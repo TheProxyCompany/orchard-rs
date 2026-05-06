@@ -141,6 +141,8 @@ pub struct SamplingParams {
     #[serde(default)]
     pub rng_seed: u64,
     #[serde(default)]
+    pub deterministic: bool,
+    #[serde(default)]
     pub stop: Vec<String>,
     #[serde(default)]
     pub frequency_penalty: f64,
@@ -189,6 +191,7 @@ impl Default for SamplingParams {
             top_k: defaults::TOP_K,
             min_p: 0.0,
             rng_seed: 0,
+            deterministic: false,
             stop: Vec::new(),
             frequency_penalty: 0.0,
             presence_penalty: 0.0,
@@ -457,6 +460,7 @@ impl Client {
             top_k: params.top_k,
             min_p: params.min_p,
             rng_seed,
+            deterministic: params.deterministic,
             stop_sequences: params.stop.clone(),
             num_candidates: params.n,
             best_of: params.best_of,
@@ -739,6 +743,7 @@ impl Client {
                 top_k: params.top_k,
                 min_p: params.min_p,
                 rng_seed,
+                deterministic: params.deterministic,
                 stop_sequences: params.stop.clone(),
                 num_candidates: params.n,
                 best_of: params.best_of,
@@ -975,6 +980,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         top_k: defaults::TOP_K,
         min_p: 0.0,
         rng_seed: rand::thread_rng().gen::<u64>(),
+        deterministic: false,
         stop_sequences: Vec::new(),
         num_candidates: 1,
         best_of: Some(1),
@@ -1025,6 +1031,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         top_k: defaults::TOP_K,
         min_p: 0.0,
         rng_seed: rand::thread_rng().gen::<u64>(),
+        deterministic: false,
         stop_sequences: Vec::new(),
         num_candidates: 1,
         best_of: Some(1),
@@ -1413,6 +1420,7 @@ mod tests {
         assert!(params.logit_bias.is_empty());
         assert!(params.core_tools.is_empty());
         assert!(params.response_format.is_none());
+        assert!(!params.deterministic);
         assert!(!params.reasoning);
         assert!(params.reasoning_effort.is_none());
         assert!(params.instructions.is_none());
