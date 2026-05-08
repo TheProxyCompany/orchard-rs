@@ -348,6 +348,7 @@ impl Client {
     ) -> Result<ChatResult> {
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
+        let request_model_id = info.model_id.as_str();
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -491,7 +492,7 @@ impl Client {
         );
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
-            model_id,
+            request_model_id,
             &info.model_path,
             &[prompt_payload],
         )?;
@@ -629,6 +630,7 @@ impl Client {
 
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
+        let request_model_id = info.model_id.as_str();
 
         let request_id = self.ipc.next_request_id();
         let num_prompts = conversations.len();
@@ -776,7 +778,7 @@ impl Client {
         );
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
-            model_id,
+            request_model_id,
             &info.model_path,
             &prompt_payloads,
         )?;
@@ -844,6 +846,7 @@ impl Client {
         }
 
         let info = self.registry.ensure_loaded(model_id).await?;
+        let request_model_id = info.model_id.as_str();
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -882,7 +885,7 @@ impl Client {
         );
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
-            model_id,
+            request_model_id,
             &info.model_path,
             RequestType::Embedding,
             &prompt_payloads,
@@ -898,6 +901,7 @@ impl Client {
         }
 
         let info = self.registry.ensure_loaded(model_id).await?;
+        let request_model_id = info.model_id.as_str();
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -917,7 +921,7 @@ impl Client {
         );
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
-            model_id,
+            request_model_id,
             &info.model_path,
             RequestType::Omni,
             &[prompt_payload],

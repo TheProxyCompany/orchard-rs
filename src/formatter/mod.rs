@@ -154,6 +154,11 @@ impl ChatFormatter {
         let config: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
+        Self::from_config(model_path, config)
+    }
+
+    /// Create a chat formatter from engine-inspected model config.
+    pub fn from_config(model_path: &Path, config: serde_json::Value) -> Result<Self> {
         let model_type = determine_model_type(&config).to_string();
         let profile = Self::find_profile(&model_type)?;
         let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &model_type)?;
@@ -715,6 +720,32 @@ mod tests {
         assert_eq!(thinking_tokens.start, "```thinking\n");
         assert_eq!(thinking_tokens.end, "\n```");
         assert!(!formatter.supports_native_thinking());
+    }
+
+    #[test]
+    fn test_chat_formatter_uses_engine_inspected_config() {
+        let model_dir = tempdir().unwrap();
+        let model_path = model_dir.path().join("model.gguf");
+        std::fs::write(&model_path, b"GGUF").unwrap();
+
+        let formatter = ChatFormatter::from_config(
+            &model_path,
+            serde_json::json!({
+                "model_type": "llama",
+                "source_format": "gguf"
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(formatter.model_type, "llama3");
+        let conversation = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+        let rendered = formatter
+            .apply_template(&conversation, true, false, None)
+            .unwrap();
+        assert!(rendered.contains("<|start_header_id|>user<|end_header_id|>"));
     }
 
     #[test]

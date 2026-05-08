@@ -16,6 +16,8 @@ pub struct ResolvedModel {
     pub source: String,
     pub metadata: HashMap<String, String>,
     pub hf_repo: Option<String>,
+    #[serde(default)]
+    pub formatter_config: Option<serde_json::Value>,
 }
 
 /// Resolves model identifiers to local filesystem paths.
@@ -74,20 +76,28 @@ impl ModelResolver {
     async fn try_local_path(&self, identifier: &str) -> Result<Option<ResolvedModel>> {
         let path = PathBuf::from(identifier);
 
-        // Check absolute path
-        if path.is_absolute() && path.is_dir() {
-            return Ok(Some(
-                self.build_resolved_model(path, "local", None, None).await?,
-            ));
+        if path.is_absolute() && path.exists() {
+            if path.is_dir() && path.join("config.json").exists() {
+                return Ok(Some(
+                    self.build_resolved_model(path, "local", None, None).await?,
+                ));
+            }
+            if path.is_dir() || path.is_file() {
+                return Ok(Some(Self::build_local_source_model(path)));
+            }
         }
 
-        // Check relative path
-        if path.is_dir() {
+        if path.exists() {
             let resolved = std::fs::canonicalize(&path)?;
-            return Ok(Some(
-                self.build_resolved_model(resolved, "local", None, None)
-                    .await?,
-            ));
+            if resolved.is_dir() && resolved.join("config.json").exists() {
+                return Ok(Some(
+                    self.build_resolved_model(resolved, "local", None, None)
+                        .await?,
+                ));
+            }
+            if resolved.is_dir() || resolved.is_file() {
+                return Ok(Some(Self::build_local_source_model(resolved)));
+            }
         }
 
         Ok(None)
@@ -156,7 +166,33 @@ impl ModelResolver {
             source: source.to_string(),
             metadata,
             hf_repo,
+            formatter_config: None,
         })
+    }
+
+    fn build_local_source_model(model_path: PathBuf) -> ResolvedModel {
+        let canonical_id = if model_path.is_file() {
+            model_path
+                .file_stem()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        } else {
+            model_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+
+        let mut metadata = HashMap::new();
+        metadata.insert("source".to_string(), "local_source".to_string());
+        ResolvedModel {
+            canonical_id,
+            model_path,
+            source: "local_source".to_string(),
+            metadata,
+            hf_repo: None,
+            formatter_config: None,
+        }
     }
 
     fn load_config(&self, model_dir: &Path) -> Result<serde_json::Value> {
@@ -245,6 +281,7 @@ impl ModelResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_resolver_creation() {
@@ -287,5 +324,23 @@ mod tests {
 
         let repo = ModelResolver::infer_hf_repo(&config);
         assert_eq!(repo, None);
+    }
+
+    #[tokio::test]
+    async fn test_resolves_local_file_as_engine_inspected_source() {
+        let dir = tempdir().unwrap();
+        let model_path = dir.path().join("model.gguf");
+        std::fs::write(&model_path, b"GGUF").unwrap();
+
+        let mut resolver = ModelResolver::new().unwrap();
+        let resolved = resolver
+            .resolve(model_path.to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.source, "local_source");
+        assert_eq!(resolved.canonical_id, "model");
+        assert_eq!(resolved.model_path, model_path);
+        assert!(resolved.formatter_config.is_none());
     }
 }

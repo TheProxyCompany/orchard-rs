@@ -1,6 +1,7 @@
 //! Model registry for tracking loaded models and their state.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -110,6 +111,7 @@ pub struct ModelRegistry {
     entries: Arc<RwLock<HashMap<String, ModelEntry>>>,
     resolver: Mutex<ModelResolver>,
     alias_cache: RwLock<HashMap<String, String>>,
+    local_source_inspection_cache: RwLock<HashMap<String, ResolvedModel>>,
     /// IPC client for sending management commands to PIE
     ipc_client: RwLock<Option<Arc<IPCClient>>>,
 }
@@ -121,6 +123,7 @@ impl ModelRegistry {
             entries: Arc::new(RwLock::new(HashMap::new())),
             resolver: Mutex::new(ModelResolver::new()?),
             alias_cache: RwLock::new(HashMap::new()),
+            local_source_inspection_cache: RwLock::new(HashMap::new()),
             ipc_client: RwLock::new(None),
         })
     }
@@ -397,13 +400,29 @@ impl ModelRegistry {
         requested_model_id: &str,
         force_reload: bool,
     ) -> Result<(ModelLoadState, String), String> {
-        let resolved = {
+        if !force_reload {
+            if let Ok(canonical_id) = self.canonicalize(requested_model_id).await {
+                let entries = self.entries.read().await;
+                if let Some(entry) = entries.get(&canonical_id) {
+                    if entry.state != ModelLoadState::Idle {
+                        return Ok((entry.state, canonical_id));
+                    }
+                }
+            }
+        }
+
+        let mut resolved = {
             let mut resolver = self.resolver.lock().await;
             resolver
                 .resolve(requested_model_id)
                 .await
                 .map_err(|e| e.to_string())?
         };
+        if resolved.source == "local_source" {
+            resolved = self
+                .inspect_model_source(requested_model_id, resolved, force_reload)
+                .await?;
+        }
 
         let canonical_id = resolved.canonical_id.clone();
 
@@ -444,8 +463,16 @@ impl ModelRegistry {
         entry.notify = Arc::new(Notify::new());
         entry.activation_waiters.clear();
 
-        if resolved.source == "local" || resolved.source == "hf_cache" {
-            let formatter = ChatFormatter::new(&resolved.model_path).ok().map(Arc::new);
+        if matches!(
+            resolved.source.as_str(),
+            "local" | "local_source" | "hf_cache"
+        ) {
+            let formatter = match resolved.formatter_config.clone() {
+                Some(config) => ChatFormatter::from_config(&resolved.model_path, config)
+                    .ok()
+                    .map(Arc::new),
+                None => ChatFormatter::new(&resolved.model_path).ok().map(Arc::new),
+            };
             entry.info = Some(ModelInfo {
                 model_id: canonical_id.clone(),
                 model_path: resolved.model_path.to_string_lossy().to_string(),
@@ -512,6 +539,92 @@ impl ModelRegistry {
         });
 
         Ok((ModelLoadState::Downloading, canonical_id))
+    }
+
+    async fn inspect_model_source(
+        &self,
+        requested_model_id: &str,
+        resolved: ResolvedModel,
+        refresh: bool,
+    ) -> Result<ResolvedModel, String> {
+        let cache_key = Self::local_source_cache_key(&resolved.model_path);
+        if !refresh {
+            let cache = self.local_source_inspection_cache.read().await;
+            if let Some(cached) = cache.get(&cache_key) {
+                return Ok(cached.clone());
+            }
+        }
+
+        let ipc = {
+            let guard = self.ipc_client.read().await;
+            guard
+                .clone()
+                .ok_or_else(|| "IPC client not set".to_string())?
+        };
+
+        let command = json!({
+            "type": "inspect_model_source",
+            "requested_id": requested_model_id,
+            "model_path": resolved.model_path.to_string_lossy(),
+        });
+        let response = ipc
+            .send_management_command_async(command, Duration::from_secs(30))
+            .await
+            .map_err(|e| format!("Failed to send inspect_model_source command: {}", e))?;
+
+        let status = response
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        if status != "ok" {
+            let message = response
+                .get("message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown error");
+            return Err(format!("Engine rejected inspect_model_source: {}", message));
+        }
+
+        let source = response
+            .get("data")
+            .and_then(|data| data.get("inspect_model_source"))
+            .and_then(|value| value.as_object())
+            .ok_or_else(|| "Engine inspect_model_source response missing data".to_string())?;
+
+        let mut metadata = resolved.metadata;
+        for key in ["source_format", "architecture", "model_type"] {
+            if let Some(value) = source.get(key).and_then(|value| value.as_str()) {
+                metadata.insert(key.to_string(), value.to_string());
+            }
+        }
+
+        let inspected = ResolvedModel {
+            canonical_id: source
+                .get("canonical_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or(resolved.canonical_id.as_str())
+                .to_string(),
+            model_path: source
+                .get("model_path")
+                .and_then(|value| value.as_str())
+                .map(std::path::PathBuf::from)
+                .unwrap_or(resolved.model_path),
+            source: "local_source".to_string(),
+            metadata,
+            hf_repo: None,
+            formatter_config: source.get("formatter_config").cloned(),
+        };
+        let inspected_key = Self::local_source_cache_key(&inspected.model_path);
+        let mut cache = self.local_source_inspection_cache.write().await;
+        cache.insert(cache_key, inspected.clone());
+        cache.insert(inspected_key, inspected.clone());
+        Ok(inspected)
+    }
+
+    fn local_source_cache_key(model_path: &Path) -> String {
+        std::fs::canonicalize(model_path)
+            .unwrap_or_else(|_| model_path.to_path_buf())
+            .to_string_lossy()
+            .to_string()
     }
 
     /// Download a model from HuggingFace Hub.
@@ -933,6 +1046,7 @@ impl ModelRegistry {
 mod tests {
     use super::*;
     use serde_json::json;
+    use tempfile::tempdir;
     use tokio::sync::oneshot;
 
     #[tokio::test]
@@ -976,6 +1090,88 @@ mod tests {
         assert_eq!(entry.state, ModelLoadState::Failed);
         assert_eq!(entry.error.as_deref(), Some(error.as_str()));
         assert!(entry.activation_waiters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_schedule_model_uses_ready_alias_before_local_source_inspection() {
+        let registry = ModelRegistry::new().unwrap();
+        let dir = tempdir().unwrap();
+        let model_path = dir.path().join("Model.GGUF");
+        std::fs::write(&model_path, b"GGUF").unwrap();
+        let requested_id = model_path.to_string_lossy().to_string();
+        let canonical_id = "inspected-model".to_string();
+
+        {
+            let mut alias_cache = registry.alias_cache.write().await;
+            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
+        }
+
+        {
+            let mut entries = registry.entries.write().await;
+            entries.insert(
+                canonical_id.clone(),
+                ModelEntry {
+                    state: ModelLoadState::Ready,
+                    info: Some(ModelInfo {
+                        model_id: canonical_id.clone(),
+                        model_path: requested_id.clone(),
+                        formatter: None,
+                        capabilities: None,
+                        minimum_memory_bytes: None,
+                    }),
+                    ..ModelEntry::default()
+                },
+            );
+        }
+
+        let (state, resolved_id) = registry.schedule_model(&requested_id, false).await.unwrap();
+
+        assert_eq!(state, ModelLoadState::Ready);
+        assert_eq!(resolved_id, canonical_id);
+    }
+
+    #[tokio::test]
+    async fn test_inspect_model_source_uses_path_cache() {
+        let registry = ModelRegistry::new().unwrap();
+        let dir = tempdir().unwrap();
+        let model_path = dir.path().join("model.gguf");
+        std::fs::write(&model_path, b"GGUF").unwrap();
+        let requested_id = model_path.to_string_lossy().to_string();
+        let inspected = ResolvedModel {
+            canonical_id: "inspected-model".to_string(),
+            model_path: model_path.clone(),
+            source: "local_source".to_string(),
+            metadata: HashMap::new(),
+            hf_repo: None,
+            formatter_config: Some(json!({"model_type": "llama"})),
+        };
+
+        {
+            let mut cache = registry.local_source_inspection_cache.write().await;
+            cache.insert(
+                ModelRegistry::local_source_cache_key(&model_path),
+                inspected.clone(),
+            );
+        }
+
+        let resolved = registry
+            .inspect_model_source(
+                requested_id.as_str(),
+                ResolvedModel {
+                    canonical_id: "model".to_string(),
+                    model_path,
+                    source: "local_source".to_string(),
+                    metadata: HashMap::new(),
+                    hf_repo: None,
+                    formatter_config: None,
+                },
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.canonical_id, inspected.canonical_id);
+        assert_eq!(resolved.formatter_config, inspected.formatter_config);
     }
 
     #[test]
