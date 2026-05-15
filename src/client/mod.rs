@@ -1332,7 +1332,12 @@ fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<Clien
                         _ => tool_call.arguments = Value::String(event.delta.clone()),
                     }
                 } else if event.event_type == "item_completed" {
-                    if let Some(Value::Object(object)) = &event.value {
+                    let parsed_value = match &event.value {
+                        Some(Value::String(value)) => serde_json::from_str::<Value>(value).ok(),
+                        _ => None,
+                    };
+                    let value = parsed_value.as_ref().or(event.value.as_ref());
+                    if let Some(Value::Object(object)) = value {
                         if let Some(Value::String(name)) = object.get("name") {
                             tool_call.name = name.clone();
                         }
@@ -1534,6 +1539,37 @@ mod tests {
                     "name": "share_to_party",
                     "arguments": {"content": "hi"}
                 })),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+
+        let response = aggregate_response(deltas);
+
+        assert_eq!(response.text, "");
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].name, "share_to_party");
+        assert_eq!(
+            response.tool_calls[0].arguments,
+            serde_json::json!({"content": "hi"})
+        );
+    }
+
+    #[test]
+    fn test_aggregate_response_parses_tool_call_json_string_completion() {
+        let deltas = vec![ClientDelta {
+            state_events: vec![crate::ipc::client::ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:share_to_party".to_string(),
+                value: Some(Value::String(
+                    serde_json::json!({
+                        "name": "share_to_party",
+                        "arguments": {"content": "hi"}
+                    })
+                    .to_string(),
+                )),
                 ..Default::default()
             }],
             ..Default::default()
