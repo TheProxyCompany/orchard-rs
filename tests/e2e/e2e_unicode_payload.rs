@@ -24,7 +24,10 @@ async fn test_unicode_payload_round_trip() {
         ..Default::default()
     };
 
-    let prompt = format!("Respond with this emoji: {}", target);
+    let prompt = format!(
+        "Output exactly one character: 😊\n\
+         The rest is padding to test unicode transport; do not repeat it: {target}"
+    );
     let messages = vec![make_message("user", &prompt)];
 
     for &model_id in TEXT_MODELS {
