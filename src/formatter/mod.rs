@@ -334,6 +334,9 @@ impl ChatFormatter {
                 .unwrap_or(serde_json::Value::Null);
 
             let mut map = std::collections::BTreeMap::new();
+            for (key, value) in msg {
+                map.insert(key.clone(), Self::json_to_minijinja(value));
+            }
             map.insert("role".to_string(), Value::from(role));
             map.insert("content".to_string(), Self::json_to_minijinja(&content));
 
@@ -703,6 +706,77 @@ mod tests {
             .unwrap();
 
         assert!(rendered.ends_with("<|turn>model\n<|channel>thought\n<channel|>"));
+    }
+
+    #[test]
+    fn test_gemma4_tool_turn_preserves_assistant_reasoning_history() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({
+                "model_type": "gemma4",
+                "text_config": {"hidden_size": 2816, "num_experts": 128}
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("Use the schedule tool for Tuesday."),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("assistant")),
+                ("content".to_string(), serde_json::json!("")),
+                (
+                    "reasoning".to_string(),
+                    serde_json::json!("The schedule tool is the correct tool."),
+                ),
+                (
+                    "tool_calls".to_string(),
+                    serde_json::json!([{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_schedule",
+                            "arguments": {"day": "Tuesday"}
+                        }
+                    }]),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                ("tool_call_id".to_string(), serde_json::json!("call_1")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("{\"status\":\"ok\"}"),
+                ),
+            ]),
+        ];
+
+        let (messages, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
+        assert_eq!(
+            messages[1]
+                .get("reasoning")
+                .and_then(serde_json::Value::as_str),
+            Some("The schedule tool is the correct tool.")
+        );
+
+        let rendered = formatter
+            .apply_template(&messages, true, true, None)
+            .unwrap();
+
+        assert!(!rendered.contains("<|turn>agent"));
+        assert!(rendered.contains(
+            "<|turn>model\n<|channel>thought\nThe schedule tool is the correct tool.\n<channel|>"
+        ));
+        assert!(rendered
+            .contains("<|tool_call>call:lookup_schedule{day:<|\"|>Tuesday<|\"|>}<tool_call|>"));
     }
 
     #[test]
