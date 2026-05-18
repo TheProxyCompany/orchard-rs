@@ -251,8 +251,7 @@ async fn test_moondream_detect_gaze() {
     assert!(response.gaze.is_some(), "Should have gaze result");
     let gaze = response.gaze.unwrap();
 
-    // Baseline implementation returns center of image
-    assert!((gaze.x - 0.5).abs() < 0.01, "Gaze x should be ~0.5");
-    assert!((gaze.y - 0.5).abs() < 0.01, "Gaze y should be ~0.5");
+    assert_eq!(gaze.x, 0.517578125);
+    assert_eq!(gaze.y, 0.384765625);
     println!("Gaze: ({}, {})", gaze.x, gaze.y);
 }
