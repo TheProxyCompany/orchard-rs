@@ -271,8 +271,9 @@ impl MoondreamClient {
     ) -> Result<QueryResult> {
         let messages = self.build_query_messages(prompt, image_data_url, spatial_refs);
 
-        // Pass reasoning flag to chat template
-        params.reasoning = reasoning;
+        // Spatial references are only surfaced in Moondream's grounded
+        // reasoning path, so enable that path by default when refs are present.
+        params.reasoning = reasoning || !spatial_refs.is_empty();
 
         // Get streaming response
         let result = self
