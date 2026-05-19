@@ -265,6 +265,7 @@ fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Val
 /// A high-level client for the Proxy Inference Engine.
 ///
 /// Provides both synchronous and asynchronous interfaces for LLM inference.
+#[derive(Clone)]
 pub struct Client {
     ipc: Arc<IPCClient>,
     registry: Arc<ModelRegistry>,
