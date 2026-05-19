@@ -232,6 +232,8 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub text: Option<Value>,
     #[serde(default)]
+    pub reasoning: bool,
+    #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub metadata: Option<HashMap<String, String>>,
@@ -259,6 +261,7 @@ impl ResponsesRequest {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
+            reasoning: false,
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
@@ -642,6 +645,8 @@ pub struct FunctionCallArgumentsDeltaEvent {
     pub item_id: String,
     pub output_index: u32,
     pub delta: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1107,6 +1112,7 @@ fn process_state_event_for_streaming(
                     item_id,
                     output_index,
                     delta: event.delta.clone(),
+                    field_path: None,
                 },
             ));
         } else if event.event_type == "item_completed" {
@@ -1115,6 +1121,35 @@ fn process_state_event_for_streaming(
                 item.accumulated_arguments = value_to_string(value);
             }
         }
+        return;
+    }
+
+    if item_type == "tool_call"
+        && event.event_type == "content_delta"
+        && !identifier.is_empty()
+        && !identifier.starts_with("tool_call:")
+    {
+        let item_id = {
+            let item = stream_state.get_or_create_item(output_index, item_type, &identifier);
+            item.item_id.clone()
+        };
+        let sequence_number = stream_state.next_sequence_number();
+        events.push(ResponseEvent::FunctionCallArgumentsDelta(
+            FunctionCallArgumentsDeltaEvent {
+                sequence_number,
+                item_id,
+                output_index,
+                delta: event.delta.clone(),
+                field_path: Some(identifier),
+            },
+        ));
+        return;
+    }
+
+    if item_type == "tool_call"
+        && !identifier.is_empty()
+        && !identifier.starts_with("tool_call:")
+    {
         return;
     }
 
@@ -1263,6 +1298,7 @@ fn process_state_event_for_streaming(
 fn emit_stream_fallback_item_done(
     stream_state: &mut ResponseStreamState,
     events: &mut Vec<ResponseEvent>,
+    complete_tool_calls: bool,
 ) {
     let indexes = stream_state
         .items
@@ -1278,6 +1314,10 @@ fn emit_stream_fallback_item_done(
 
     for output_index in indexes {
         if let Some(item) = stream_state.items.get_mut(&output_index) {
+            if item.item_type == "tool_call" && !complete_tool_calls {
+                continue;
+            }
+
             item.status = OutputStatus::Completed;
             let item_type = item.item_type.clone();
             let item_id = item.item_id.clone();
@@ -1401,14 +1441,6 @@ async fn stream_response_events(
         }
     }
 
-    let mut completion_events = Vec::new();
-    emit_stream_fallback_item_done(&mut stream_state, &mut completion_events);
-    for event in completion_events {
-        if event_tx.send(event).await.is_err() {
-            return;
-        }
-    }
-
     if let Some(detail) = error_detail {
         stream_state.status = OutputStatus::Failed;
 
@@ -1439,7 +1471,20 @@ async fn stream_response_events(
     } else {
         stream_state.completed_at = Some(current_timestamp());
 
-        if let Some(incomplete_details) = finish_reason_to_incomplete(finish_reason.as_deref()) {
+        let incomplete_details = finish_reason_to_incomplete(finish_reason.as_deref());
+        let mut completion_events = Vec::new();
+        emit_stream_fallback_item_done(
+            &mut stream_state,
+            &mut completion_events,
+            incomplete_details.is_none(),
+        );
+        for event in completion_events {
+            if event_tx.send(event).await.is_err() {
+                return;
+            }
+        }
+
+        if let Some(incomplete_details) = incomplete_details {
             stream_state.status = OutputStatus::Incomplete;
             stream_state.incomplete_details = Some(incomplete_details);
             if event_tx
@@ -1582,11 +1627,8 @@ impl Client {
             messages = ?messages,
             "Responses messages before multimodal expansion"
         );
-        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-            formatter,
-            request.reasoning_effort.is_some(),
-            &request.reasoning_effort,
-        );
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(formatter, request.reasoning, &request.reasoning_effort);
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
@@ -1848,6 +1890,7 @@ mod tests {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
+            reasoning: false,
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
@@ -1998,6 +2041,30 @@ mod tests {
                 event_type: "content_delta".to_string(),
                 item_type: "tool_call".to_string(),
                 output_index: 0,
+                identifier: "location".to_string(),
+                delta: "Tokyo".to_string(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "location".to_string(),
+                delta: String::new(),
+                value: Some(Value::String("Tokyo".to_string())),
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
                 identifier: "arguments".to_string(),
                 delta: r#"location="Tokyo", verbose=True"#.to_string(),
                 value: None,
@@ -2078,5 +2145,104 @@ mod tests {
                 "verbose": true,
             })
         );
+    }
+
+    #[test]
+    fn test_streaming_incomplete_tool_call_is_not_synthesized_done() {
+        let mut stream_state = ResponseStreamState::new("resp_1".to_string(), "model".to_string());
+        let mut events = Vec::new();
+
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_started".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:share_to_party".to_string(),
+                delta: String::new(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "arguments".to_string(),
+                delta: r#"{"content":"hel"#.to_string(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+
+        let mut fallback_events = Vec::new();
+        emit_stream_fallback_item_done(&mut stream_state, &mut fallback_events, false);
+
+        assert!(!fallback_events.iter().any(|event| {
+            matches!(
+                event,
+                ResponseEvent::FunctionCallArgumentsDone(_)
+                    | ResponseEvent::OutputItemDone(OutputItemDoneEvent {
+                        item: ResponseOutputItem::FunctionCall(_),
+                        ..
+                    })
+            )
+        }));
+        assert_eq!(stream_state.items[&0].status, OutputStatus::InProgress);
+    }
+
+    #[test]
+    fn test_streaming_tool_argument_field_delta_preserves_semantic_field_path() {
+        let mut stream_state = ResponseStreamState::new("resp_1".to_string(), "model".to_string());
+        let mut events = Vec::new();
+
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "item_started".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "tool_call:share_to_party".to_string(),
+                delta: String::new(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+        process_state_event_for_streaming(
+            &ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "tool_call".to_string(),
+                output_index: 0,
+                identifier: "content".to_string(),
+                delta: "Hello".to_string(),
+                value: None,
+            },
+            &mut stream_state,
+            &mut events,
+        );
+
+        let argument_delta = events
+            .iter()
+            .find_map(|event| match event {
+                ResponseEvent::FunctionCallArgumentsDelta(delta) => Some(delta),
+                _ => None,
+            })
+            .expect("function arguments delta");
+        let started_call = events
+            .iter()
+            .find_map(|event| match event {
+                ResponseEvent::OutputItemAdded(OutputItemAddedEvent {
+                    item: ResponseOutputItem::FunctionCall(call),
+                    ..
+                }) => Some(call),
+                _ => None,
+            })
+            .expect("started function call");
+        assert_eq!(argument_delta.delta, "Hello");
+        assert_eq!(argument_delta.item_id, started_call.id);
+        assert_eq!(argument_delta.field_path.as_deref(), Some("content"));
+        assert_eq!(started_call.name, "share_to_party");
     }
 }

@@ -105,15 +105,20 @@ impl From<crate::error::Error> for ClientError {
 
 pub type Result<T> = std::result::Result<T, ClientError>;
 
+const DEFAULT_REASONING_EFFORT: &str = "medium";
+
 fn native_reasoning_settings(
     formatter: &crate::formatter::ChatFormatter,
     requested_reasoning: bool,
     requested_reasoning_effort: &Option<String>,
 ) -> (bool, Option<String>, ThinkingTokens) {
     let supports_native_thinking = formatter.supports_native_thinking();
+    let requested_reasoning = requested_reasoning || requested_reasoning_effort.is_some();
     let reasoning_flag = requested_reasoning && supports_native_thinking;
     let reasoning_effort = if reasoning_flag {
-        requested_reasoning_effort.clone()
+        requested_reasoning_effort
+            .clone()
+            .or_else(|| Some(DEFAULT_REASONING_EFFORT.to_string()))
     } else {
         None
     };
@@ -1321,7 +1326,7 @@ fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<Clien
                             .to_string(),
                         arguments: Value::String(String::new()),
                     });
-                if event.identifier != "arguments" && !event.identifier.is_empty() {
+                if event.identifier.starts_with("tool_call:") {
                     tool_call.name = event
                         .identifier
                         .trim_start_matches("tool_call:")
@@ -1470,6 +1475,63 @@ mod tests {
 
         assert!(reasoning_flag);
         assert_eq!(reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
+        assert_eq!(thinking_tokens.end, "<channel|>");
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_effort_enables_gemma4_reasoning() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, false, &Some("high".to_string()));
+
+        assert!(reasoning_flag);
+        assert_eq!(reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
+        assert_eq!(thinking_tokens.end, "<channel|>");
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_keep_gemma4_tokens_when_reasoning_disabled() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, false, &None);
+
+        assert!(!reasoning_flag);
+        assert!(reasoning_effort.is_none());
+        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
+        assert_eq!(thinking_tokens.end, "<channel|>");
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_boolean_reasoning_uses_default_effort() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, true, &None);
+
+        assert!(reasoning_flag);
+        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
     }

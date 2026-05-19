@@ -115,6 +115,7 @@ async fn test_responses_non_streaming_message_items() {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
+            reasoning: false,
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
