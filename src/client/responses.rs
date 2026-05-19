@@ -1146,10 +1146,7 @@ fn process_state_event_for_streaming(
         return;
     }
 
-    if item_type == "tool_call"
-        && !identifier.is_empty()
-        && !identifier.starts_with("tool_call:")
-    {
+    if item_type == "tool_call" && !identifier.is_empty() && !identifier.starts_with("tool_call:") {
         return;
     }
 
