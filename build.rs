@@ -6,6 +6,7 @@ const REQUIRED_PROFILE_FILES: &[&str] = &[
     "chat_template.jinja",
     "capabilities.yaml",
     "control_tokens.json",
+    "generation.yaml",
 ];
 const SHARED_TEMPLATE_FILES: &[&str] = &["tool_macros.jinja"];
 
@@ -36,6 +37,7 @@ fn build_embedded_profiles_source(
     generated.push_str("    pub chat_template: &'static str,\n");
     generated.push_str("    pub capabilities: &'static str,\n");
     generated.push_str("    pub control_tokens: &'static str,\n");
+    generated.push_str("    pub generation: &'static str,\n");
     generated.push_str("}\n\n");
 
     for profile_name in &profile_names {
@@ -71,12 +73,13 @@ fn build_embedded_profiles_source(
     for profile_name in &profile_names {
         let const_prefix = profile_const_prefix(profile_name);
         generated.push_str(&format!(
-            "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, chat_template: {}, capabilities: {}, control_tokens: {} }}),\n",
+            "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, chat_template: {}, capabilities: {}, control_tokens: {}, generation: {} }}),\n",
             profile_name,
             profile_name,
             profile_file_const_name(&const_prefix, "chat_template.jinja"),
             profile_file_const_name(&const_prefix, "capabilities.yaml"),
             profile_file_const_name(&const_prefix, "control_tokens.json"),
+            profile_file_const_name(&const_prefix, "generation.yaml"),
         ));
     }
     generated.push_str("        _ => None,\n");

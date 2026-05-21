@@ -130,6 +130,54 @@ fn native_reasoning_settings(
     (reasoning_flag, reasoning_effort, thinking_tokens)
 }
 
+fn sampling_with_profile_defaults(
+    formatter: &crate::formatter::ChatFormatter,
+    params: &SamplingParams,
+) -> SamplingParams {
+    let mut resolved = params.clone();
+    if resolved.temperature == defaults::TEMPERATURE {
+        if let Some(value) = formatter.generation_default_f64("temperature") {
+            resolved.temperature = value;
+        }
+    }
+    if resolved.top_p == defaults::TOP_P {
+        if let Some(value) = formatter.generation_default_f64("top_p") {
+            resolved.top_p = value;
+        }
+    }
+    if resolved.top_k == defaults::TOP_K {
+        if let Some(value) = formatter.generation_default_i32("top_k") {
+            resolved.top_k = value;
+        }
+    }
+    if resolved.min_p == 0.0 {
+        if let Some(value) = formatter.generation_default_f64("min_p") {
+            resolved.min_p = value;
+        }
+    }
+    if resolved.frequency_penalty == 0.0 {
+        if let Some(value) = formatter.generation_default_f64("frequency_penalty") {
+            resolved.frequency_penalty = value;
+        }
+    }
+    if resolved.presence_penalty == 0.0 {
+        if let Some(value) = formatter.generation_default_f64("presence_penalty") {
+            resolved.presence_penalty = value;
+        }
+    }
+    if resolved.repetition_penalty == defaults::REPETITION_PENALTY {
+        if let Some(value) = formatter.generation_default_f64("repetition_penalty") {
+            resolved.repetition_penalty = value;
+        }
+    }
+    if resolved.repetition_context_size == defaults::REPETITION_CONTEXT_SIZE {
+        if let Some(value) = formatter.generation_default_i32("repetition_context_size") {
+            resolved.repetition_context_size = value;
+        }
+    }
+    resolved
+}
+
 /// Sampling parameters for generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SamplingParams {
@@ -355,6 +403,7 @@ impl Client {
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
         let request_model_id = info.model_id.as_str();
+        let params = sampling_with_profile_defaults(formatter, &params);
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -654,13 +703,13 @@ impl Client {
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
-            let params = &params_by_prompt[prompt_index];
+            let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
             let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
                 formatter,
                 params.reasoning || params.reasoning_effort.is_some(),
                 &params.reasoning_effort,
             );
-            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(params);
+            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
             let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
             let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
             let response_format_json = params

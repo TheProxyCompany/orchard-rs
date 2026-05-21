@@ -1701,26 +1701,56 @@ impl Client {
             .unwrap_or_default();
 
         let rng_seed = rand::thread_rng().gen::<u64>();
+        let temperature = request.temperature.unwrap_or_else(|| {
+            formatter
+                .generation_default_f64("temperature")
+                .unwrap_or(1.0)
+        });
+        let top_p = request
+            .top_p
+            .unwrap_or_else(|| formatter.generation_default_f64("top_p").unwrap_or(1.0));
+        let top_k = request
+            .top_k
+            .unwrap_or_else(|| formatter.generation_default_i32("top_k").unwrap_or(-1));
+        let min_p = request
+            .min_p
+            .unwrap_or_else(|| formatter.generation_default_f64("min_p").unwrap_or(0.0));
+        let frequency_penalty = request.frequency_penalty.unwrap_or_else(|| {
+            formatter
+                .generation_default_f64("frequency_penalty")
+                .unwrap_or(0.0)
+        });
+        let presence_penalty = request.presence_penalty.unwrap_or_else(|| {
+            formatter
+                .generation_default_f64("presence_penalty")
+                .unwrap_or(0.0)
+        });
+        let repetition_penalty = formatter
+            .generation_default_f64("repetition_penalty")
+            .unwrap_or(1.0);
+        let repetition_context_size = formatter
+            .generation_default_i32("repetition_context_size")
+            .unwrap_or(60);
         let prompt_payload = PromptPayload {
             prompt: final_prompt,
             image_buffers,
             capabilities: super::convert_capabilities(&capabilities),
             layout: super::convert_layout(&layout_segments),
             max_generated_tokens: request.max_output_tokens.unwrap_or(0),
-            temperature: request.temperature.unwrap_or(1.0),
-            top_p: request.top_p.unwrap_or(1.0),
-            top_k: request.top_k.unwrap_or(-1),
-            min_p: request.min_p.unwrap_or(0.0),
+            temperature,
+            top_p,
+            top_k,
+            min_p,
             rng_seed,
             deterministic: request.deterministic,
             stop_sequences: Vec::new(),
             num_candidates: 1,
             best_of: Some(1),
             final_candidates: Some(1),
-            frequency_penalty: request.frequency_penalty.unwrap_or(0.0),
-            presence_penalty: request.presence_penalty.unwrap_or(0.0),
-            repetition_penalty: 1.0,
-            repetition_context_size: 60,
+            frequency_penalty,
+            presence_penalty,
+            repetition_penalty,
+            repetition_context_size,
             top_logprobs: request.top_logprobs.unwrap_or(0),
             logit_bias: HashMap::new(),
             tool_schemas_json,

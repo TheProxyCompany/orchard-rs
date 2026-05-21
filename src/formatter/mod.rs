@@ -131,6 +131,8 @@ pub struct ChatFormatter {
     shared_tool_macros_source: Option<String>,
     /// Parsed capabilities.yaml content.
     capabilities: serde_json::Value,
+    /// Parsed generation.yaml content.
+    generation: serde_json::Value,
     /// Parsed model config.json content.
     model_config: serde_json::Value,
     /// Placeholder tokens from capabilities manifest.
@@ -165,6 +167,7 @@ impl ChatFormatter {
         let template_source = profile.chat_template.to_string();
         let shared_tool_macros_source = Self::load_shared_template("tool_macros.jinja")?;
         let capabilities = Self::load_capabilities(&profile)?;
+        let generation = Self::load_generation(&profile)?;
         let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
         let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
         let thinking_tokens = Self::extract_thinking_tokens(&capabilities);
@@ -176,6 +179,7 @@ impl ChatFormatter {
             template_source,
             shared_tool_macros_source,
             capabilities,
+            generation,
             model_config: config,
             capability_placeholders,
             tool_calling_tokens,
@@ -300,6 +304,23 @@ impl ChatFormatter {
             .unwrap_or(false)
     }
 
+    /// Numeric f64 value from generation.yaml's default lane.
+    pub fn generation_default_f64(&self, key: &str) -> Option<f64> {
+        self.generation
+            .get("default")
+            .and_then(|value| value.get(key))
+            .and_then(serde_json::Value::as_f64)
+    }
+
+    /// Numeric i32 value from generation.yaml's default lane.
+    pub fn generation_default_i32(&self, key: &str) -> Option<i32> {
+        self.generation
+            .get("default")
+            .and_then(|value| value.get(key))
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+    }
+
     fn render_template(
         &self,
         conversation: &[HashMap<String, serde_json::Value>],
@@ -404,6 +425,23 @@ impl ChatFormatter {
         serde_json::to_value(parsed_yaml).map_err(|e| {
             Error::Template(format!(
                 "Failed to convert embedded capabilities for {}: {}",
+                profile.model_type, e
+            ))
+        })
+    }
+
+    fn load_generation(profile: &embedded_profiles::EmbeddedProfile) -> Result<serde_json::Value> {
+        let parsed_yaml: serde_yaml::Value =
+            serde_yaml::from_str(profile.generation).map_err(|e| {
+                Error::Template(format!(
+                    "Failed to parse embedded generation for {}: {}",
+                    profile.model_type, e
+                ))
+            })?;
+
+        serde_json::to_value(parsed_yaml).map_err(|e| {
+            Error::Template(format!(
+                "Failed to convert embedded generation for {}: {}",
                 profile.model_type, e
             ))
         })
