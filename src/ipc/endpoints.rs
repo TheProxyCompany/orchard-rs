@@ -16,6 +16,12 @@ pub fn ipc_root() -> PathBuf {
         return PathBuf::from(root);
     }
 
+    if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
+        let path = PathBuf::from(cache_root).join("ipc");
+        std::fs::create_dir_all(&path).ok();
+        return path;
+    }
+
     // Default to the standard application cache directory.
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
 

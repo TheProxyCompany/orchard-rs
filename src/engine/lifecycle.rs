@@ -68,9 +68,13 @@ pub struct EnginePaths {
 
 impl EnginePaths {
     pub fn new() -> Result<Self> {
-        let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?
-            .join("com.theproxycompany");
+        let cache_dir = if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
+            PathBuf::from(cache_root)
+        } else {
+            dirs::cache_dir()
+                .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?
+                .join("com.theproxycompany")
+        };
 
         Ok(Self {
             pid_file: cache_dir.join("engine.pid"),
@@ -568,10 +572,14 @@ mod tests {
     #[test]
     fn test_engine_paths() {
         let paths = EnginePaths::new().expect("cache dir should be available");
-        assert!(paths
-            .cache_dir
-            .to_string_lossy()
-            .contains("com.theproxycompany"));
+        if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
+            assert_eq!(paths.cache_dir, PathBuf::from(cache_root));
+        } else {
+            assert!(paths
+                .cache_dir
+                .to_string_lossy()
+                .contains("com.theproxycompany"));
+        }
     }
 
     #[test]
