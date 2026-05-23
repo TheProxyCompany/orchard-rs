@@ -1631,7 +1631,7 @@ impl Client {
             && request.text.is_none()
             && request
                 .max_output_tokens
-                .map_or(true, |tokens| tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS);
+                .is_none_or(|tokens| tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS);
         let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
             formatter,
             request.reasoning || default_reasoning,

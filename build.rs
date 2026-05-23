@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 const REQUIRED_PROFILE_FILES: &[&str] = &[
@@ -104,9 +105,7 @@ fn build_embedded_profiles_source(
     Ok(generated)
 }
 
-fn discover_profiles(
-    profiles_dir: &Path,
-) -> Result<Vec<(String, Vec<String>)>, Box<dyn std::error::Error>> {
+fn discover_profiles(profiles_dir: &Path) -> io::Result<Vec<(String, Vec<String>)>> {
     let mut profile_names = Vec::new();
 
     for entry in fs::read_dir(profiles_dir)? {
@@ -126,17 +125,20 @@ fn discover_profiles(
         for required_file in REQUIRED_PROFILE_FILES {
             let required_path = path.join(required_file);
             if !required_path.is_file() {
-                return Err(format!(
-                    "Profile '{}' is missing required file '{}'",
-                    file_name, required_file
-                )
-                .into());
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Profile '{}' is missing required file '{}'",
+                        file_name, required_file
+                    ),
+                ));
             }
         }
 
         let control_tokens_path = path.join("control_tokens.json");
+        let control_tokens_text = fs::read_to_string(control_tokens_path)?;
         let control_tokens: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(control_tokens_path)?)?;
+            serde_json::from_str(&control_tokens_text).map_err(io::Error::other)?;
         let mut model_types = control_tokens
             .get("model_types")
             .and_then(serde_json::Value::as_array)
