@@ -6,6 +6,7 @@ use crate::defaults;
 use crate::error::{Error, Result};
 use serde::{ser::Serialize as SerializeTrait, Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 /// A single prompt payload for batched requests.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -58,6 +59,8 @@ pub struct PromptPayload {
     #[serde(default)]
     pub tool_calling_tokens: ToolCallingTokens,
     #[serde(default)]
+    pub output_frame_tokens: BTreeMap<String, String>,
+    #[serde(default)]
     pub thinking_tokens: ThinkingTokens,
     #[serde(default = "default_tool_choice")]
     pub tool_choice: String,
@@ -77,6 +80,18 @@ pub struct ToolCallFormat {
     pub name: String,
     #[serde(default)]
     pub call_start: String,
+    #[serde(default)]
+    pub inline_start: String,
+    #[serde(default)]
+    pub channel: String,
+    #[serde(default)]
+    pub recipient_prefix: String,
+    #[serde(default)]
+    pub constraint_prefix: String,
+    #[serde(default)]
+    pub constraint: String,
+    #[serde(default)]
+    pub message: String,
     #[serde(default)]
     pub call_end: String,
 }
@@ -145,6 +160,7 @@ pub enum RequestType {
     Detect = 4,
     Agent = 5,
     Omni = 6,
+    PrefillTask = 7,
 }
 
 /// Align offset to payload alignment boundary
@@ -326,6 +342,7 @@ pub fn build_batch_request_payload(
                 "section_start": prompt.tool_calling_tokens.section_start,
                 "section_end": prompt.tool_calling_tokens.section_end,
             },
+            "output_frame_tokens": &prompt.output_frame_tokens,
             "thinking_tokens": {
                 "start": prompt.thinking_tokens.start,
                 "end": prompt.thinking_tokens.end,
@@ -497,6 +514,68 @@ mod tests {
         assert_eq!(metadata["model_id"], "test-model");
         assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
         assert_eq!(metadata["prompts"][0]["deterministic"], true);
+    }
+
+    #[test]
+    fn test_prefill_task_request_payload_serializes_task_name() {
+        let prompt = PromptPayload {
+            prompt: "email me at jack@example.com".to_string(),
+            max_generated_tokens: 0,
+            task_name: Some("privacy_filter".to_string()),
+            ..Default::default()
+        };
+
+        let payload = build_batch_request_payload(
+            1,
+            "openai/privacy-filter",
+            "/path/to/privacy-filter",
+            RequestType::PrefillTask,
+            12345,
+            &[prompt],
+        )
+        .unwrap();
+
+        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+        assert_eq!(metadata["request_type"], 7);
+        assert_eq!(metadata["prompts"][0]["task_name"], "privacy_filter");
+        assert_eq!(metadata["prompts"][0]["max_generated_tokens"], 0);
+    }
+
+    #[test]
+    fn test_prefill_task_batch_request_payload_serializes_prompt_indices() {
+        let prompts = vec![
+            PromptPayload {
+                prompt: "email me at jack@example.com".to_string(),
+                max_generated_tokens: 0,
+                task_name: Some("privacy_filter".to_string()),
+                ..Default::default()
+            },
+            PromptPayload {
+                prompt: "hello world".to_string(),
+                max_generated_tokens: 0,
+                task_name: Some("privacy_filter".to_string()),
+                ..Default::default()
+            },
+        ];
+
+        let payload = build_batch_request_payload(
+            1,
+            "openai/privacy-filter",
+            "/path/to/privacy-filter",
+            RequestType::PrefillTask,
+            12345,
+            &prompts,
+        )
+        .unwrap();
+
+        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+        assert_eq!(metadata["request_type"], 7);
+        assert_eq!(metadata["prompts"][0]["prompt_index"], 0);
+        assert_eq!(metadata["prompts"][1]["prompt_index"], 1);
+        assert_eq!(metadata["prompts"][0]["task_name"], "privacy_filter");
+        assert_eq!(metadata["prompts"][1]["task_name"], "privacy_filter");
     }
 
     #[test]

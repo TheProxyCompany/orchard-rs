@@ -6,7 +6,7 @@ mod embedded_profiles {
 }
 pub mod multimodal;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::Path;
 
@@ -86,13 +86,14 @@ impl Object for RenderableCapability {
 }
 
 /// Determine model type from config.
-fn determine_model_type(config: &serde_json::Value) -> &str {
+fn determine_model_type(config: &serde_json::Value) -> Result<&str> {
     let model_type = config
         .get("model_type")
         .and_then(|v| v.as_str())
-        .unwrap_or("llama");
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| Error::FormatterConfigNotFound("config.json missing model_type".to_string()))?;
 
-    match model_type {
+    Ok(match model_type {
         "llama" | "llama3" => "llama3",
         "moondream3" | "moondream" => "moondream3",
         "gemma3" | "gemma3_text" | "gemma" => "gemma3",
@@ -100,7 +101,7 @@ fn determine_model_type(config: &serde_json::Value) -> &str {
         "qwen3_5" | "qwen3_5_text" | "qwen3_5_moe" => "qwen3_5",
         "qwen2" | "qwen" => "qwen2",
         other => other,
-    }
+    })
 }
 
 fn tojson_filter(
@@ -139,6 +140,8 @@ pub struct ChatFormatter {
     capability_placeholders: Vec<String>,
     /// Cached tool-calling delimiters from capabilities manifest.
     tool_calling_tokens: ToolCallingTokens,
+    /// Cached output-frame syntax and semantic channel values from capabilities manifest.
+    output_frame_tokens: BTreeMap<String, String>,
     /// Cached generated-output thinking delimiters from capabilities manifest.
     thinking_tokens: ThinkingTokens,
 }
@@ -161,7 +164,7 @@ impl ChatFormatter {
 
     /// Create a chat formatter from engine-inspected model config.
     pub fn from_config(model_path: &Path, config: serde_json::Value) -> Result<Self> {
-        let model_type = determine_model_type(&config).to_string();
+        let model_type = determine_model_type(&config)?.to_string();
         let profile = Self::find_profile(&model_type)?;
         let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &model_type)?;
         let template_source = profile.chat_template.to_string();
@@ -170,6 +173,7 @@ impl ChatFormatter {
         let generation = Self::load_generation(&profile)?;
         let capability_placeholders = Self::extract_capability_placeholders(&capabilities);
         let tool_calling_tokens = Self::extract_tool_calling_tokens(&capabilities);
+        let output_frame_tokens = Self::extract_output_frame_tokens(&capabilities);
         let thinking_tokens = Self::extract_thinking_tokens(&capabilities);
 
         Ok(Self {
@@ -183,6 +187,7 @@ impl ChatFormatter {
             model_config: config,
             capability_placeholders,
             tool_calling_tokens,
+            output_frame_tokens,
             thinking_tokens,
         })
     }
@@ -193,6 +198,15 @@ impl ChatFormatter {
     /// it stays in the text for tokenization. If it's a synthetic placeholder
     /// (like <|image|>), it gets clipped.
     pub fn should_clip_image_placeholder(&self) -> bool {
+        let has_placeholder = self.capabilities["vision"]["placeholders"]["image"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+            || self.capabilities["vision"]["tokens"]["placeholder"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty());
+        if has_placeholder {
+            return true;
+        }
         let has_vision_tokens = self.capabilities["vision"]["tokens"]["start"]
             .as_str()
             .is_some_and(|s| !s.is_empty());
@@ -208,6 +222,12 @@ impl ChatFormatter {
     pub fn image_placeholder_token(&self) -> &str {
         // Explicit placeholder (e.g. moondream: vision.placeholders.image)
         if let Some(p) = self.capabilities["vision"]["placeholders"]["image"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            return p;
+        }
+        if let Some(p) = self.capabilities["vision"]["tokens"]["placeholder"]
             .as_str()
             .filter(|s| !s.is_empty())
         {
@@ -271,8 +291,16 @@ impl ChatFormatter {
         add_generation_prompt: bool,
         reasoning: bool,
         task: Option<&str>,
+        reasoning_effort: Option<&str>,
     ) -> Result<String> {
-        self.apply_template_with_tools(conversation, add_generation_prompt, reasoning, task, None)
+        self.apply_template_with_tools(
+            conversation,
+            add_generation_prompt,
+            reasoning,
+            task,
+            reasoning_effort,
+            None,
+        )
     }
 
     /// Apply the chat template with tool schemas and capabilities context.
@@ -282,14 +310,27 @@ impl ChatFormatter {
         add_generation_prompt: bool,
         reasoning: bool,
         task: Option<&str>,
+        reasoning_effort: Option<&str>,
         tools: Option<&[serde_json::Value]>,
     ) -> Result<String> {
-        self.render_template(conversation, add_generation_prompt, reasoning, task, tools)
+        self.render_template(
+            conversation,
+            add_generation_prompt,
+            reasoning,
+            task,
+            reasoning_effort,
+            tools,
+        )
     }
 
     /// Tool-calling delimiters from capabilities.yaml.
     pub fn get_tool_calling_tokens(&self) -> &ToolCallingTokens {
         &self.tool_calling_tokens
+    }
+
+    /// Output-frame syntax and semantic channel values from capabilities.yaml.
+    pub fn get_output_frame_tokens(&self) -> &BTreeMap<String, String> {
+        &self.output_frame_tokens
     }
 
     /// Generated-output thinking delimiters from capabilities.yaml.
@@ -302,6 +343,14 @@ impl ChatFormatter {
         self.capabilities["thinking"]["native"]
             .as_bool()
             .unwrap_or(false)
+    }
+
+    /// Whether this profile should enter native thinking unless the caller overrides it.
+    pub fn defaults_to_native_thinking(&self) -> bool {
+        self.supports_native_thinking()
+            && self.capabilities["thinking"]["default"]
+                .as_bool()
+                .unwrap_or(false)
     }
 
     /// Numeric f64 value from generation.yaml's default lane.
@@ -327,6 +376,7 @@ impl ChatFormatter {
         add_generation_prompt: bool,
         reasoning: bool,
         task: Option<&str>,
+        reasoning_effort: Option<&str>,
         tools: Option<&[serde_json::Value]>,
     ) -> Result<String> {
         let mut env = Environment::new();
@@ -389,6 +439,7 @@ impl ChatFormatter {
         let model_config_value = Self::json_to_minijinja(&self.model_config);
 
         let ctx = context! {
+            messages => interactions.clone(),
             interactions => interactions,
             add_generation_prompt => add_generation_prompt,
             begin_of_text => self.control_tokens.begin_of_text,
@@ -399,6 +450,7 @@ impl ChatFormatter {
             thinking_start_token => self.control_tokens.thinking_start_token,
             thinking_end_token => self.control_tokens.thinking_end_token,
             reasoning => reasoning,
+            reasoning_effort => reasoning_effort.unwrap_or("medium"),
             task => task,
             roles => roles,
             tools => tools_value,
@@ -502,6 +554,12 @@ impl ChatFormatter {
                         .unwrap_or_default()
                         .to_string(),
                     call_start: token("start"),
+                    inline_start: token("inline_start"),
+                    channel: token("channel"),
+                    recipient_prefix: token("recipient_prefix"),
+                    constraint_prefix: token("constraint_prefix"),
+                    constraint: token("constraint"),
+                    message: token("message"),
                     call_end: token("end"),
                 });
                 if index == 0 {
@@ -516,6 +574,33 @@ impl ChatFormatter {
             section_start,
             section_end,
         }
+    }
+
+    fn extract_output_frame_tokens(capabilities: &serde_json::Value) -> BTreeMap<String, String> {
+        let mut output_frame_tokens = BTreeMap::new();
+        if let Some(markers) = capabilities
+            .get("output_framing")
+            .and_then(|cap| cap.get("markers"))
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, value) in markers {
+                if let Some(token) = value.as_str() {
+                    output_frame_tokens.insert(format!("marker.{}", name), token.to_string());
+                }
+            }
+        }
+        if let Some(channels) = capabilities
+            .get("output_framing")
+            .and_then(|cap| cap.get("channels"))
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, value) in channels {
+                if let Some(token) = value.as_str() {
+                    output_frame_tokens.insert(format!("channel.{}", name), token.to_string());
+                }
+            }
+        }
+        output_frame_tokens
     }
 
     fn extract_thinking_tokens(capabilities: &serde_json::Value) -> ThinkingTokens {
@@ -647,19 +732,104 @@ mod tests {
     #[test]
     fn test_determine_model_type() {
         let config = serde_json::json!({"model_type": "llama"});
-        assert_eq!(determine_model_type(&config), "llama3");
+        assert_eq!(determine_model_type(&config).unwrap(), "llama3");
 
         let config = serde_json::json!({"model_type": "moondream3"});
-        assert_eq!(determine_model_type(&config), "moondream3");
+        assert_eq!(determine_model_type(&config).unwrap(), "moondream3");
 
         let config = serde_json::json!({"model_type": "gemma3_text"});
-        assert_eq!(determine_model_type(&config), "gemma3");
+        assert_eq!(determine_model_type(&config).unwrap(), "gemma3");
 
         let config = serde_json::json!({"model_type": "qwen3_5_moe"});
-        assert_eq!(determine_model_type(&config), "qwen3_5");
+        assert_eq!(determine_model_type(&config).unwrap(), "qwen3_5");
+
+        let config = serde_json::json!({"model_type": "lfm2_moe"});
+        assert_eq!(determine_model_type(&config).unwrap(), "lfm2_moe");
+
+        let config = serde_json::json!({"model_type": "afmoe"});
+        assert_eq!(determine_model_type(&config).unwrap(), "afmoe");
 
         let config = serde_json::json!({});
-        assert_eq!(determine_model_type(&config), "llama3");
+        assert!(determine_model_type(&config).is_err());
+    }
+
+    #[test]
+    fn test_new_text_model_profiles_render_generation_prompt() {
+        let cases = [
+            ("lfm2", "lfm2", "<|im_start|>assistant\n"),
+            ("lfm2_moe", "lfm2_moe", "<|im_start|>assistant\n"),
+            ("phi3", "phi3", "<|im_start|>assistant<|im_sep|>"),
+            ("olmo_hybrid", "olmo_hybrid", "<|im_start|>assistant\n"),
+            (
+                "nemotron_h",
+                "nemotron_h",
+                "<|im_start|>assistant\n<think>\n",
+            ),
+            (
+                "granite_switch",
+                "granite_switch",
+                "<|start_of_role|>assistant<|end_of_role|>",
+            ),
+        ];
+
+        for (source_type, profile_type, expected_suffix) in cases {
+            let model_dir = tempdir().unwrap();
+            std::fs::write(
+                model_dir.path().join("config.json"),
+                serde_json::json!({"model_type": source_type}).to_string(),
+            )
+            .unwrap();
+
+            let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+            let rendered = formatter
+                .apply_template(
+                    &[HashMap::from([
+                        ("role".to_string(), serde_json::json!("user")),
+                        ("content".to_string(), serde_json::json!("hello")),
+                    ])],
+                    true,
+                    formatter.defaults_to_native_thinking(),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(formatter.model_type, profile_type);
+            assert!(
+                rendered.ends_with(expected_suffix),
+                "{source_type}: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_granite_switch_profile_inserts_adapter_tokens() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "granite_switch"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let messages = [HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("cite this")),
+        ])];
+
+        let lora = formatter
+            .apply_template(&messages, true, false, Some("citations"), None)
+            .unwrap();
+        assert!(lora.starts_with(
+            "<|citations|><|start_of_role|>user<|end_of_role|>"
+        ));
+
+        let alora = formatter
+            .apply_template(&messages, true, false, Some("query_rewrite"), None)
+            .unwrap();
+        assert!(alora.ends_with(
+            "<|query_rewrite|><|start_of_role|>assistant<|end_of_role|>"
+        ));
     }
 
     #[test]
@@ -692,7 +862,554 @@ mod tests {
 
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("marker.channel")
+                .unwrap(),
+            "<|channel>"
+        );
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("marker.message")
+                .unwrap(),
+            "\n"
+        );
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("channel.analysis")
+                .unwrap(),
+            "thought"
+        );
         assert!(formatter.supports_native_thinking());
+    }
+
+    #[test]
+    fn test_gemma4_uses_multimodal_placeholder_token() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+
+        assert_eq!(formatter.image_placeholder_token(), "<|image|>");
+        assert!(formatter.should_clip_image_placeholder());
+    }
+
+    #[test]
+    fn test_gemma4_multimodal_layout_matches_rendered_placeholder() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            (
+                "content".to_string(),
+                serde_json::json!([
+                    {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+                    {"type": "input_text", "text": "What is shown?"},
+                ]),
+            ),
+        ])];
+
+        let (messages, image_buffers, capabilities, content_order) =
+            build_multimodal_messages(&formatter, &items, None).unwrap();
+        let rendered = formatter
+            .apply_template(&messages, true, false, None, None)
+            .unwrap();
+        let layout = build_multimodal_layout(
+            &rendered,
+            &image_buffers,
+            &capabilities,
+            &content_order,
+            formatter.image_placeholder_token(),
+            formatter.should_clip_image_placeholder(),
+            formatter.capability_placeholder_token(),
+        )
+        .unwrap();
+
+        assert!(rendered.contains("<|image|>"));
+        assert!(layout.iter().any(|segment| segment.segment_type == "image"));
+        assert!(!formatter
+            .strip_template_placeholders(&rendered)
+            .contains("<|image|>"));
+    }
+
+    #[test]
+    fn test_chat_formatter_loads_gpt_oss_harmony_profile() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gpt_oss"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let conversation = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+        let rendered = formatter
+            .apply_template(&conversation, true, true, None, None)
+            .unwrap();
+
+        assert_eq!(formatter.model_type, "gpt_oss");
+        let thinking_tokens = formatter.get_thinking_tokens();
+        assert_eq!(thinking_tokens.start, "<|channel|>analysis<|message|>");
+        assert_eq!(thinking_tokens.end, "<|end|>");
+        assert!(formatter.supports_native_thinking());
+        assert!(rendered.starts_with("<|start|>system<|message|>"));
+        assert!(rendered.contains("<|start|>user<|message|>hello<|end|>"));
+        assert!(rendered.ends_with("<|start|>assistant"));
+    }
+
+    #[test]
+    fn test_gpt_oss_harmony_preserves_system_and_developer_messages() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gpt_oss"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let conversation = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("system")),
+                ("content".to_string(), serde_json::json!("System rule.")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("developer")),
+                ("content".to_string(), serde_json::json!("Developer rule.")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("hello")),
+            ]),
+        ];
+        let rendered = formatter
+            .apply_template(&conversation, true, true, None, None)
+            .unwrap();
+
+        assert!(
+            rendered.contains("<|start|>developer<|message|># Instructions\n\nSystem rule.<|end|>")
+        );
+        assert!(rendered
+            .contains("<|start|>developer<|message|># Instructions\n\nDeveloper rule.<|end|>"));
+        assert!(rendered.contains("<|start|>user<|message|>hello<|end|>"));
+    }
+
+    #[test]
+    fn test_gpt_oss_harmony_tool_history() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gpt_oss"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("Use lookup.")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("assistant")),
+                ("content".to_string(), serde_json::json!("Need lookup.")),
+                (
+                    "tool_calls".to_string(),
+                    serde_json::json!([{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": "{\"query\":\"orchard\"}"
+                        }
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "rank",
+                            "arguments": {"target": "orchard"}
+                        }
+                    }]),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                ("tool_call_id".to_string(), serde_json::json!("call_2")),
+                ("content".to_string(), serde_json::json!("{\"score\":1}")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                ("tool_call_id".to_string(), serde_json::json!("call_1")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("{\"result\":\"ok\"}"),
+                ),
+            ]),
+        ];
+
+        let rendered = formatter
+            .apply_template_with_tools(
+                &items,
+                true,
+                true,
+                None,
+                Some("high"),
+                Some(&[
+                    serde_json::json!({
+                        "type": "function",
+                        "name": "lookup",
+                        "description": "Lookup a value.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string", "description": "Search query"}
+                            },
+                            "required": ["query"]
+                        }
+                    }),
+                    serde_json::json!({
+                        "type": "function",
+                        "name": "rank",
+                        "description": "Rank a value.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "target": {"type": "string", "description": "Target"}
+                            },
+                            "required": ["target"]
+                        }
+                    }),
+                ]),
+            )
+            .unwrap();
+
+        assert!(rendered.contains("namespace functions"));
+        assert!(rendered.contains("Reasoning: high"));
+        assert!(rendered
+            .contains("<|start|>assistant<|channel|>analysis<|message|>Need lookup.<|end|>"));
+        assert!(rendered.contains(
+            "<|start|>assistant<|channel|>commentary to=functions.lookup <|constrain|>json<|message|>{\"query\":\"orchard\"}<|call|>"
+        ));
+        assert!(rendered.contains(
+            "<|start|>assistant<|channel|>commentary to=functions.rank <|constrain|>json<|message|>{\"target\":\"orchard\"}<|call|>"
+        ));
+        assert!(rendered.contains(
+            "<|start|>functions.lookup to=assistant<|channel|>commentary<|message|>{\"result\":\"ok\"}<|end|>"
+        ));
+        assert!(rendered.contains(
+            "<|start|>functions.rank to=assistant<|channel|>commentary<|message|>{\"score\":1}<|end|>"
+        ));
+        let format = formatter.get_tool_calling_tokens().formats.first().unwrap();
+        assert_eq!(format.name, "harmony");
+        assert_eq!(format.call_start, "<|start|>assistant");
+        assert_eq!(format.inline_start, "");
+        assert_eq!(format.channel, "commentary");
+        assert_eq!(format.recipient_prefix, " to=functions.");
+        assert_eq!(format.constraint_prefix, " ");
+        assert_eq!(format.constraint, "json");
+        assert_eq!(format.message, "<|message|>");
+        assert_eq!(format.call_end, "<|call|>");
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("marker.channel")
+                .unwrap(),
+            "<|channel|>"
+        );
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("marker.message")
+                .unwrap(),
+            "<|message|>"
+        );
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("marker.constrain")
+                .unwrap(),
+            "<|constrain|>"
+        );
+        assert_eq!(
+            formatter
+                .get_output_frame_tokens()
+                .get("channel.final")
+                .unwrap(),
+            "final"
+        );
+    }
+
+    #[test]
+    fn test_chat_formatter_loads_afmoe_trinity_profile() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "afmoe"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("system")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("Follow the test instruction."),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("Use lookup.")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("assistant")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("<think>\nNeed lookup.\n</think>\nCalling lookup."),
+                ),
+                (
+                    "tool_calls".to_string(),
+                    serde_json::json!([{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": {"query": "orchard"}
+                        }
+                    }]),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                ("tool_call_id".to_string(), serde_json::json!("call_1")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("{\"result\":\"ok\"}"),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("Continue.")),
+            ]),
+        ];
+        let rendered = formatter
+            .apply_template_with_tools(
+                &items,
+                true,
+                true,
+                None,
+                Some("medium"),
+                Some(&[serde_json::json!({
+                    "name": "lookup",
+                    "description": "Lookup a value.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"]
+                    }
+                })]),
+            )
+            .unwrap();
+
+        assert_eq!(formatter.model_type, "afmoe");
+        let thinking_tokens = formatter.get_thinking_tokens();
+        assert_eq!(thinking_tokens.start, "<think>\n");
+        assert_eq!(thinking_tokens.end, "\n</think>");
+        assert!(formatter.defaults_to_native_thinking());
+
+        let format = formatter.get_tool_calling_tokens().formats.first().unwrap();
+        assert_eq!(format.name, "json");
+        assert_eq!(format.call_start, "<tool_call>\n");
+        assert_eq!(format.call_end, "\n</tool_call>");
+
+        assert!(rendered.starts_with("<|im_start|>system\n# Tools"));
+        assert!(rendered.contains("Follow the test instruction."));
+        assert!(rendered.contains("<|im_start|>user\nUse lookup.<|im_end|>\n"));
+        assert!(rendered.contains("<|im_start|>assistant\nCalling lookup.\n<tool_call>\n"));
+        assert!(rendered.contains("\"name\":\"lookup\""));
+        assert!(rendered.contains("\"arguments\":{\"query\":\"orchard\"}"));
+        assert!(!rendered.contains("<function="));
+        assert!(!rendered.contains("<parameter="));
+        assert!(rendered.contains("<tool_response>\n{\"result\":\"ok\"}\n</tool_response>"));
+        assert!(rendered.ends_with("<|im_start|>assistant\n<think>\n"));
+
+        let non_reasoning = formatter
+            .apply_template(
+                &[HashMap::from([
+                    ("role".to_string(), serde_json::json!("user")),
+                    ("content".to_string(), serde_json::json!("Say hi.")),
+                ])],
+                true,
+                false,
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(non_reasoning.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn test_phi_profile_preserves_system_messages_and_gates_thinking() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "phi3"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let rendered = formatter
+            .apply_template(
+                &[
+                    HashMap::from([
+                        ("role".to_string(), serde_json::json!("system")),
+                        (
+                            "content".to_string(),
+                            serde_json::json!("End every response with 7-4-7."),
+                        ),
+                    ]),
+                    HashMap::from([
+                        ("role".to_string(), serde_json::json!("user")),
+                        (
+                            "content".to_string(),
+                            serde_json::json!("What is your name?"),
+                        ),
+                    ]),
+                ],
+                true,
+                false,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert!(rendered.contains("You are Phi, a language model trained by Microsoft"));
+        assert!(rendered.contains("End every response with 7-4-7."));
+        assert!(!rendered.contains("Structure responses with <think>"));
+        assert!(rendered.contains("<|im_start|>user<|im_sep|>What is your name?<|im_end|>"));
+
+        let reasoning_rendered = formatter
+            .apply_template(
+                &[HashMap::from([
+                    ("role".to_string(), serde_json::json!("user")),
+                    ("content".to_string(), serde_json::json!("Think.")),
+                ])],
+                true,
+                true,
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(reasoning_rendered.contains("Structure responses with <think>"));
+    }
+
+    #[test]
+    fn test_chat_formatter_loads_glm4_moe_intellect_profile() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "glm4_moe"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("system")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("Follow the test instruction."),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("Use lookup.")),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("assistant")),
+                (
+                    "reasoning_content".to_string(),
+                    serde_json::json!("Need lookup."),
+                ),
+                ("content".to_string(), serde_json::json!("Calling lookup.")),
+                (
+                    "tool_calls".to_string(),
+                    serde_json::json!([{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": {"query": "orchard"}
+                        }
+                    }]),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("tool")),
+                ("tool_call_id".to_string(), serde_json::json!("call_1")),
+                (
+                    "content".to_string(),
+                    serde_json::json!("{\"result\":\"ok\"}"),
+                ),
+            ]),
+            HashMap::from([
+                ("role".to_string(), serde_json::json!("user")),
+                ("content".to_string(), serde_json::json!("Continue.")),
+            ]),
+        ];
+        let rendered = formatter
+            .apply_template_with_tools(
+                &items,
+                true,
+                true,
+                None,
+                Some("medium"),
+                Some(&[serde_json::json!({
+                    "name": "lookup",
+                    "description": "Lookup a value.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"]
+                    }
+                })]),
+            )
+            .unwrap();
+
+        assert_eq!(formatter.model_type, "glm4_moe");
+        let thinking_tokens = formatter.get_thinking_tokens();
+        assert_eq!(thinking_tokens.start, "<think>");
+        assert_eq!(thinking_tokens.end, "</think>");
+        assert!(formatter.defaults_to_native_thinking());
+
+        let format = formatter.get_tool_calling_tokens().formats.first().unwrap();
+        assert_eq!(format.name, "xml");
+        assert_eq!(format.call_start, "<tool_call>\n");
+        assert_eq!(format.call_end, "\n</tool_call>");
+
+        assert!(rendered.starts_with("<|im_start|>system\nFollow the test instruction."));
+        assert!(rendered.contains("<function>\n<name>lookup</name>"));
+        assert!(rendered.contains("<|im_start|>user\nUse lookup.<|im_end|>\n"));
+        assert!(rendered.contains("<think>Need lookup.</think>"));
+        assert!(rendered.contains("<tool_call>\n<function=lookup>\n"));
+        assert!(rendered.contains("<parameter=query>\norchard\n</parameter>"));
+        assert!(rendered.contains("<tool_response>\n{\"result\":\"ok\"}\n</tool_response>"));
+        assert!(rendered.ends_with("<|im_start|>assistant\n<think>"));
     }
 
     #[test]
@@ -714,7 +1431,7 @@ mod tests {
             ("content".to_string(), serde_json::json!("Return only 7.")),
         ])];
         let rendered = formatter
-            .apply_template(&conversation, true, false, None)
+            .apply_template(&conversation, true, false, None, None)
             .unwrap();
 
         assert!(rendered.ends_with("<|turn>model\n"));
@@ -740,7 +1457,7 @@ mod tests {
             ("content".to_string(), serde_json::json!("Return only 7.")),
         ])];
         let rendered = formatter
-            .apply_template(&conversation, true, false, None)
+            .apply_template(&conversation, true, false, None, None)
             .unwrap();
 
         assert!(rendered.ends_with("<|turn>model\n<|channel>thought\n<channel|>"));
@@ -806,7 +1523,7 @@ mod tests {
         );
 
         let rendered = formatter
-            .apply_template(&messages, true, true, None)
+            .apply_template(&messages, true, true, None, None)
             .unwrap();
 
         assert!(!rendered.contains("<|turn>agent"));
@@ -855,7 +1572,7 @@ mod tests {
             ("content".to_string(), serde_json::json!("hello")),
         ])];
         let rendered = formatter
-            .apply_template(&conversation, true, false, None)
+            .apply_template(&conversation, true, false, None, None)
             .unwrap();
         assert!(rendered.contains("<|start_header_id|>user<|end_header_id|>"));
     }
@@ -904,6 +1621,7 @@ mod tests {
                 &messages,
                 false,
                 false,
+                None,
                 None,
                 Some(&[serde_json::json!({
                     "name": "share_to_party",

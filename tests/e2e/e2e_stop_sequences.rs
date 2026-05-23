@@ -17,15 +17,13 @@ async fn test_chat_completion_respects_stop_sequence() {
     for &model_id in TEXT_MODELS {
         let params = SamplingParams {
             temperature: 0.0,
+            max_tokens: 32,
             stop: vec!["blue".to_string()],
             top_logprobs: 10,
             ..Default::default()
         };
 
-        let messages = vec![make_message(
-            "user",
-            "What are the national colors of the United States of America?",
-        )];
+        let messages = vec![make_message("user", "Reply with exactly: red, white, blue")];
 
         let result = client.achat(model_id, messages, params, false).await;
         assert!(

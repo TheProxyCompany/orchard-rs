@@ -107,15 +107,14 @@ impl ModelResolver {
         let repo = self.hf_api.model(repo_id.to_string());
 
         // Try to get from cache first, then download if needed
-        let path = match repo.get("config.json").await {
-            Ok(config_path) => config_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| config_path),
-            Err(e) => {
-                return Err(Error::DownloadFailed(repo_id.to_string(), e.to_string()));
-            }
-        };
+        let config_path = repo
+            .get("config.json")
+            .await
+            .map_err(|e| Error::DownloadFailed(repo_id.to_string(), e.to_string()))?;
+        let path = config_path
+            .parent()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| config_path.clone());
 
         let source = if path.to_string_lossy().contains("cache") {
             "hf_cache"
@@ -159,7 +158,6 @@ impl ModelResolver {
         let hf_repo = hf_repo
             .map(String::from)
             .or_else(|| Self::infer_hf_repo(&config));
-
         Ok(ResolvedModel {
             canonical_id,
             model_path,

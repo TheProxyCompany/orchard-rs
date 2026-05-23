@@ -34,15 +34,16 @@ pub use formatter::ChatFormatter;
 pub use client::{
     BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, ContentPartAddedEvent,
     ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent,
-    IncompleteDetails, InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent,
-    OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus, OutputTextContent,
-    OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails, ReasoningContent,
-    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    IncompleteDetails, InputTokensDetails, OpenAIPrivacyFilterClient, OutputFunctionCall,
+    OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,
+    OutputTextContent, OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails,
+    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
     ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
     ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
     ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
     ResponsesResult, SamplingParams, StreamErrorDetail, StreamErrorEvent, UsageStats,
+    OPENAI_PRIVACY_FILTER_MODEL_ID,
 };
 
 /// Library version

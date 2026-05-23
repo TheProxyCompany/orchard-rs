@@ -35,14 +35,21 @@ fn make_image_message(
     role: &str,
     text: &str,
     image_base64: &str,
+    image_first: bool,
 ) -> HashMap<String, serde_json::Value> {
     let mut msg = HashMap::new();
     msg.insert("role".to_string(), serde_json::json!(role));
 
-    let content = serde_json::json!([
-        {"type": "text", "text": text},
-        {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{}", image_base64)}}
-    ]);
+    let image = serde_json::json!({
+        "type": "image_url",
+        "image_url": {"url": format!("data:image/jpeg;base64,{}", image_base64)}
+    });
+    let text = serde_json::json!({"type": "text", "text": text});
+    let content = if image_first {
+        serde_json::json!([image, text])
+    } else {
+        serde_json::json!([text, image])
+    };
 
     msg.insert("content".to_string(), content);
     msg
@@ -67,6 +74,7 @@ async fn test_multimodal_apple_image() {
             "user",
             "What is in this image: ",
             &image_base64,
+            false,
         )];
 
         let result = client.achat(model_id, messages, params, false).await;
@@ -115,6 +123,7 @@ async fn test_multimodal_moondream_image() {
             "user",
             "What is the girl doing?",
             &image_base64,
+            true,
         )];
 
         let result = client.achat(model_id, messages, params, false).await;
@@ -179,7 +188,7 @@ mod unit_tests {
 
     #[test]
     fn test_make_image_message() {
-        let msg = make_image_message("user", "Describe this.", "abc123");
+        let msg = make_image_message("user", "Describe this.", "abc123", false);
 
         assert_eq!(msg.get("role").unwrap().as_str(), Some("user"));
 
@@ -187,5 +196,10 @@ mod unit_tests {
         assert_eq!(content.len(), 2);
         assert_eq!(content[0].get("type").unwrap().as_str(), Some("text"));
         assert_eq!(content[1].get("type").unwrap().as_str(), Some("image_url"));
+
+        let msg = make_image_message("user", "Describe this.", "abc123", true);
+        let content = msg.get("content").unwrap().as_array().unwrap();
+        assert_eq!(content[0].get("type").unwrap().as_str(), Some("image_url"));
+        assert_eq!(content[1].get("type").unwrap().as_str(), Some("text"));
     }
 }

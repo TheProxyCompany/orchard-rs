@@ -40,7 +40,7 @@ fn build_embedded_profiles_source(
     generated.push_str("    pub generation: &'static str,\n");
     generated.push_str("}\n\n");
 
-    for profile_name in &profile_names {
+    for (profile_name, _) in &profile_names {
         let profile_dir = profiles_dir.join(profile_name);
         let const_prefix = profile_const_prefix(profile_name);
 
@@ -70,17 +70,19 @@ fn build_embedded_profiles_source(
         "\npub fn find_embedded_profile(model_type: &str) -> Option<EmbeddedProfile> {\n",
     );
     generated.push_str("    match model_type {\n");
-    for profile_name in &profile_names {
+    for (profile_name, model_types) in &profile_names {
         let const_prefix = profile_const_prefix(profile_name);
-        generated.push_str(&format!(
-            "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, chat_template: {}, capabilities: {}, control_tokens: {}, generation: {} }}),\n",
-            profile_name,
-            profile_name,
-            profile_file_const_name(&const_prefix, "chat_template.jinja"),
-            profile_file_const_name(&const_prefix, "capabilities.yaml"),
-            profile_file_const_name(&const_prefix, "control_tokens.json"),
-            profile_file_const_name(&const_prefix, "generation.yaml"),
-        ));
+        for model_type in model_types {
+            generated.push_str(&format!(
+                "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, chat_template: {}, capabilities: {}, control_tokens: {}, generation: {} }}),\n",
+                model_type,
+                model_type,
+                profile_file_const_name(&const_prefix, "chat_template.jinja"),
+                profile_file_const_name(&const_prefix, "capabilities.yaml"),
+                profile_file_const_name(&const_prefix, "control_tokens.json"),
+                profile_file_const_name(&const_prefix, "generation.yaml"),
+            ));
+        }
     }
     generated.push_str("        _ => None,\n");
     generated.push_str("    }\n");
@@ -102,7 +104,9 @@ fn build_embedded_profiles_source(
     Ok(generated)
 }
 
-fn discover_profiles(profiles_dir: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn discover_profiles(
+    profiles_dir: &Path,
+) -> Result<Vec<(String, Vec<String>)>, Box<dyn std::error::Error>> {
     let mut profile_names = Vec::new();
 
     for entry in fs::read_dir(profiles_dir)? {
@@ -130,7 +134,27 @@ fn discover_profiles(profiles_dir: &Path) -> Result<Vec<String>, Box<dyn std::er
             }
         }
 
-        profile_names.push(file_name.to_string());
+        let control_tokens_path = path.join("control_tokens.json");
+        let control_tokens: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(control_tokens_path)?)?;
+        let mut model_types = control_tokens
+            .get("model_types")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|values| !values.is_empty())
+            .unwrap_or_else(|| vec![file_name.to_string()]);
+        if !model_types.iter().any(|model_type| model_type == file_name) {
+            model_types.push(file_name.to_string());
+        }
+        model_types.sort();
+        model_types.dedup();
+        profile_names.push((file_name.to_string(), model_types));
     }
 
     profile_names.sort();

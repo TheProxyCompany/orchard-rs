@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::{native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result};
+use super::{
+    native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result,
+    DEFAULT_NATIVE_REASONING_MIN_TOKENS,
+};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 use crate::ipc::serialization::PromptPayload;
@@ -1624,8 +1627,16 @@ impl Client {
             messages = ?messages,
             "Responses messages before multimodal expansion"
         );
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(formatter, request.reasoning, &request.reasoning_effort);
+        let default_reasoning = formatter.defaults_to_native_thinking()
+            && request.text.is_none()
+            && request
+                .max_output_tokens
+                .map_or(true, |tokens| tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS);
+        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+            formatter,
+            request.reasoning || default_reasoning,
+            &request.reasoning_effort,
+        );
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
@@ -1664,6 +1675,7 @@ impl Client {
                 true,
                 reasoning_flag,
                 None,
+                reasoning_effort.as_deref(),
                 template_tools,
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
@@ -1756,6 +1768,7 @@ impl Client {
             tool_schemas_json,
             active_tool_schemas_json,
             tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
+            output_frame_tokens: formatter.get_output_frame_tokens().clone(),
             thinking_tokens,
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
@@ -2171,6 +2184,83 @@ mod tests {
                 "location": "Tokyo",
                 "verbose": true,
             })
+        );
+    }
+
+    #[test]
+    fn test_harmony_reasoning_state_events_stream_deltas() {
+        let mut stream_state =
+            ResponseStreamState::new("resp_1".to_string(), "gpt-oss-test".to_string());
+        let mut events = Vec::new();
+
+        for event in [
+            ResponseStateEvent {
+                event_type: "item_started".to_string(),
+                item_type: "reasoning".to_string(),
+                output_index: 0,
+                identifier: "reasoning".to_string(),
+                delta: String::new(),
+                value: None,
+            },
+            ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "reasoning".to_string(),
+                output_index: 0,
+                identifier: "reasoning".to_string(),
+                delta: "First thought. ".to_string(),
+                value: None,
+            },
+            ResponseStateEvent {
+                event_type: "content_delta".to_string(),
+                item_type: "reasoning".to_string(),
+                output_index: 0,
+                identifier: "reasoning".to_string(),
+                delta: "Second thought.".to_string(),
+                value: None,
+            },
+            ResponseStateEvent {
+                event_type: "item_completed".to_string(),
+                item_type: "reasoning".to_string(),
+                output_index: 0,
+                identifier: "reasoning".to_string(),
+                delta: String::new(),
+                value: Some(Value::String("First thought. Second thought.".to_string())),
+            },
+        ] {
+            process_state_event_for_streaming(&event, &mut stream_state, &mut events);
+        }
+
+        let reasoning_deltas = events
+            .iter()
+            .filter_map(|event| match event {
+                ResponseEvent::ReasoningDelta(delta) => Some(delta.delta.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(reasoning_deltas, vec!["First thought. ", "Second thought."]);
+
+        let reasoning_done = events
+            .iter()
+            .find_map(|event| match event {
+                ResponseEvent::ReasoningDone(done) => Some(done),
+                _ => None,
+            })
+            .expect("reasoning done event");
+        assert_eq!(reasoning_done.text, "First thought. Second thought.");
+
+        let output_item_done = events
+            .iter()
+            .find_map(|event| match event {
+                ResponseEvent::OutputItemDone(done) => match &done.item {
+                    ResponseOutputItem::Reasoning(reasoning) => Some(reasoning),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .expect("reasoning output item done");
+        assert_eq!(
+            output_item_done.content[0].text,
+            "First thought. Second thought."
         );
     }
 

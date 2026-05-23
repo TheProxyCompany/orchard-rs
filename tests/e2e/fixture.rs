@@ -12,25 +12,40 @@ fn cleanup_engine() {
 }
 
 pub(crate) const LLAMA_MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
-pub(crate) const GEMMA_MODEL_ID: &str = "google/gemma-3-4b-it";
 pub(crate) const GEMMA4_MODEL_ID: &str = "google/gemma-4-E2B-it";
 pub(crate) const QWEN_MODEL_ID: &str = "Qwen/Qwen3.5-4B";
 pub(crate) const MOONDREAM_MODEL_ID: &str = "moondream/moondream3-preview";
+pub(crate) const TRINITY_MODEL_ID: &str = "mlx-community/Trinity-Mini-4bit";
+pub(crate) const LFM2_MODEL_ID: &str = "LiquidAI/LFM2.5-1.2B-Instruct";
+pub(crate) const OLMO_HYBRID_MODEL_ID: &str = "allenai/Olmo-Hybrid-Instruct-DPO-7B";
+pub(crate) const NEMOTRON_H_MODEL_ID: &str = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16";
+pub(crate) const GRANITE_SWITCH_MODEL_ID: &str = "ibm-granite/granite-switch-4.1-30b-preview";
+pub(crate) const PHI4_MODEL_ID: &str = "microsoft/Phi-4-reasoning-plus";
 
 pub(crate) const TEXT_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
-    GEMMA_MODEL_ID,
     GEMMA4_MODEL_ID,
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
+    TRINITY_MODEL_ID,
+    LFM2_MODEL_ID,
+    OLMO_HYBRID_MODEL_ID,
+    NEMOTRON_H_MODEL_ID,
+    GRANITE_SWITCH_MODEL_ID,
+    PHI4_MODEL_ID,
 ];
-pub(crate) const VISION_MODELS: &[&str] = &[GEMMA_MODEL_ID, MOONDREAM_MODEL_ID];
+pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
 pub(crate) const ALL_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
-    GEMMA_MODEL_ID,
     GEMMA4_MODEL_ID,
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
+    TRINITY_MODEL_ID,
+    LFM2_MODEL_ID,
+    OLMO_HYBRID_MODEL_ID,
+    NEMOTRON_H_MODEL_ID,
+    GRANITE_SWITCH_MODEL_ID,
+    PHI4_MODEL_ID,
 ];
 
 pub(crate) struct TestFixture {

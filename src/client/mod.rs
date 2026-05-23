@@ -3,6 +3,7 @@
 //! Provides the main user-facing interface for LLM inference.
 
 mod moondream;
+mod privacy_filter;
 mod response;
 mod responses;
 
@@ -44,6 +45,7 @@ pub use moondream::{
     MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
     MOONDREAM_MODEL_ID,
 };
+pub use privacy_filter::{OpenAIPrivacyFilterClient, OPENAI_PRIVACY_FILTER_MODEL_ID};
 pub use response::{BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, UsageStats};
 pub use responses::{
     ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
@@ -106,6 +108,7 @@ impl From<crate::error::Error> for ClientError {
 pub type Result<T> = std::result::Result<T, ClientError>;
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
+const DEFAULT_NATIVE_REASONING_MIN_TOKENS: i32 = 256;
 
 fn native_reasoning_settings(
     formatter: &crate::formatter::ChatFormatter,
@@ -420,9 +423,12 @@ impl Client {
             "Chat messages before template application"
         );
 
+        let default_reasoning = formatter.defaults_to_native_thinking()
+            && params.response_format.is_none()
+            && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
         let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
             formatter,
-            params.reasoning || params.reasoning_effort.is_some(),
+            params.reasoning || params.reasoning_effort.is_some() || default_reasoning,
             &params.reasoning_effort,
         );
 
@@ -442,14 +448,19 @@ impl Client {
             messages_for_template = ?messages_for_template,
             "Chat messages after multimodal expansion"
         );
+        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+        let template_tools =
+            (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
 
         // Apply template with reasoning flag
         let prompt_text = formatter
-            .apply_template(
+            .apply_template_with_tools(
                 &messages_for_template,
                 true,
                 reasoning_flag,
                 params.task_name.as_deref(),
+                reasoning_effort.as_deref(),
+                template_tools,
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
@@ -485,7 +496,6 @@ impl Client {
         );
 
         // Core tools are rendered in the prompt; active tools drive PSE grammar.
-        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
         let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
         let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
         let response_format_json = params
@@ -494,9 +504,9 @@ impl Client {
             .map(|rf| serde_json::to_string(rf).unwrap_or_default())
             .unwrap_or_default();
         let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
+        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-
         // Build PromptPayload with full multimodal data
         // Generate unique RNG seed if not explicitly provided
         let rng_seed = if params.rng_seed == 0 {
@@ -530,6 +540,7 @@ impl Client {
             tool_schemas_json,
             active_tool_schemas_json,
             tool_calling_tokens,
+            output_frame_tokens,
             thinking_tokens,
             tool_choice,
             max_tool_calls,
@@ -698,15 +709,19 @@ impl Client {
         );
 
         let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
+        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
 
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
             let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
+            let default_reasoning = formatter.defaults_to_native_thinking()
+                && params.response_format.is_none()
+                && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
             let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
                 formatter,
-                params.reasoning || params.reasoning_effort.is_some(),
+                params.reasoning || params.reasoning_effort.is_some() || default_reasoning,
                 &params.reasoning_effort,
             );
             let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
@@ -738,14 +753,18 @@ impl Client {
                 messages_for_template = ?messages_for_template,
                 "Prepared batch messages for prompt"
             );
+            let template_tools =
+                (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
 
             // Apply template with reasoning flag
             let prompt_text = formatter
-                .apply_template(
+                .apply_template_with_tools(
                     &messages_for_template,
                     true,
                     reasoning_flag,
                     params.task_name.as_deref(),
+                    reasoning_effort.as_deref(),
+                    template_tools,
                 )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
@@ -788,7 +807,6 @@ impl Client {
             } else {
                 params.rng_seed
             };
-
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
                 image_buffers,
@@ -814,6 +832,7 @@ impl Client {
                 tool_schemas_json: tool_schemas_json.clone(),
                 active_tool_schemas_json: active_tool_schemas_json.clone(),
                 tool_calling_tokens: tool_calling_tokens.clone(),
+                output_frame_tokens: output_frame_tokens.clone(),
                 thinking_tokens,
                 tool_choice: tool_choice.clone(),
                 max_tool_calls,
@@ -996,6 +1015,74 @@ impl Client {
             Err(_) => get_sync_runtime().block_on(future),
         }
     }
+
+    /// Run a prefill-only task and return the raw response deltas.
+    pub async fn aprefill_task(
+        &self,
+        model_id: &str,
+        text: &str,
+        task_name: &str,
+    ) -> Result<Vec<ClientDelta>> {
+        let mut results = self
+            .aprefill_task_batch(model_id, vec![text.to_string()], task_name)
+            .await?;
+        results.pop().ok_or_else(|| {
+            ClientError::RequestFailed("Prefill task response missing result".to_string())
+        })
+    }
+
+    /// Run a prefill-only task for multiple texts in one IPC request.
+    pub async fn aprefill_task_batch(
+        &self,
+        model_id: &str,
+        texts: Vec<String>,
+        task_name: &str,
+    ) -> Result<Vec<Vec<ClientDelta>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let request_id = self.ipc.next_request_id();
+        let prompt_payloads: Vec<_> = texts
+            .iter()
+            .map(|text| build_prefill_task_prompt_payload(text, task_name))
+            .collect();
+        let (_batch_size, mut rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            info.model_id.as_str(),
+            &info.model_path,
+            RequestType::PrefillTask,
+            &prompt_payloads,
+        )?;
+
+        let mut deltas_by_prompt = vec![Vec::new(); prompt_payloads.len()];
+        let mut completed_prompts = vec![false; prompt_payloads.len()];
+        let mut finals_received = 0usize;
+        while finals_received < prompt_payloads.len() {
+            match rx.recv().await {
+                Some(delta) => {
+                    if let Some(error) = delta.error.clone() {
+                        return Err(ClientError::RequestFailed(error));
+                    }
+                    let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
+                    let is_final = delta.is_final_delta;
+                    if prompt_index < deltas_by_prompt.len() {
+                        deltas_by_prompt[prompt_index].push(ClientDelta::from(delta));
+                        if is_final && !completed_prompts[prompt_index] {
+                            completed_prompts[prompt_index] = true;
+                            finals_received += 1;
+                        }
+                    }
+                }
+                None => {
+                    return Err(ClientError::RequestFailed(
+                        "Prefill task response channel closed before completion".to_string(),
+                    ));
+                }
+            }
+        }
+        Ok(deltas_by_prompt)
+    }
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -1053,12 +1140,20 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         tool_schemas_json: String::new(),
         active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
+        output_frame_tokens: Default::default(),
         thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,
         response_format_json: String::new(),
         task_name: None,
         reasoning_effort: None,
+    }
+}
+
+fn build_prefill_task_prompt_payload(prompt: &str, task_name: &str) -> PromptPayload {
+    PromptPayload {
+        task_name: Some(task_name.to_string()),
+        ..build_embedding_prompt_payload(prompt.to_string())
     }
 }
 
@@ -1104,6 +1199,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         tool_schemas_json: String::new(),
         active_tool_schemas_json: String::new(),
         tool_calling_tokens: Default::default(),
+        output_frame_tokens: Default::default(),
         thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         max_tool_calls: 0,
@@ -1558,7 +1654,7 @@ mod tests {
         let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
 
         let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, false, &None);
+            native_reasoning_settings(&formatter, formatter.defaults_to_native_thinking(), &None);
 
         assert!(!reasoning_flag);
         assert!(reasoning_effort.is_none());
@@ -1583,6 +1679,25 @@ mod tests {
         assert_eq!(reasoning_effort.as_deref(), Some("medium"));
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
+    }
+
+    #[test]
+    fn test_native_reasoning_settings_profile_default_enables_afmoe_reasoning() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "afmoe"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(&formatter, formatter.defaults_to_native_thinking(), &None);
+
+        assert!(reasoning_flag);
+        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
+        assert_eq!(thinking_tokens.start, "<think>\n");
+        assert_eq!(thinking_tokens.end, "\n</think>");
     }
 
     #[test]

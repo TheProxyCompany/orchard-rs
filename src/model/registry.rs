@@ -465,18 +465,25 @@ impl ModelRegistry {
 
         if matches!(
             resolved.source.as_str(),
-            "local" | "local_source" | "hf_cache"
+            "local" | "local_source" | "hf_cache" | "hf_hub"
         ) {
             let formatter = match resolved.formatter_config.clone() {
-                Some(config) => ChatFormatter::from_config(&resolved.model_path, config)
-                    .ok()
-                    .map(Arc::new),
-                None => ChatFormatter::new(&resolved.model_path).ok().map(Arc::new),
+                Some(config) => ChatFormatter::from_config(&resolved.model_path, config),
+                None => ChatFormatter::new(&resolved.model_path),
+            };
+            let formatter = match formatter {
+                Ok(formatter) => Arc::new(formatter),
+                Err(error) => {
+                    entry.error = Some(format!("Formatter failed: {}", error));
+                    entry.state = ModelLoadState::Failed;
+                    entry.notify.notify_waiters();
+                    return Ok((ModelLoadState::Failed, canonical_id));
+                }
             };
             entry.info = Some(ModelInfo {
                 model_id: canonical_id.clone(),
                 model_path: resolved.model_path.to_string_lossy().to_string(),
-                formatter,
+                formatter: Some(formatter),
                 capabilities: None,
                 minimum_memory_bytes: None,
             });
@@ -519,15 +526,22 @@ impl ModelRegistry {
                             resolved.source = "hf_cache".to_string();
                         }
 
-                        let formatter = ChatFormatter::new(&download_path).ok().map(Arc::new);
-                        entry.info = Some(ModelInfo {
-                            model_id: canonical_id_for_task.clone(),
-                            model_path: download_path.to_string_lossy().to_string(),
-                            formatter,
-                            capabilities: None,
-                            minimum_memory_bytes: None,
-                        });
-                        entry.state = ModelLoadState::Loading;
+                        match ChatFormatter::new(&download_path) {
+                            Ok(formatter) => {
+                                entry.info = Some(ModelInfo {
+                                    model_id: canonical_id_for_task.clone(),
+                                    model_path: download_path.to_string_lossy().to_string(),
+                                    formatter: Some(Arc::new(formatter)),
+                                    capabilities: None,
+                                    minimum_memory_bytes: None,
+                                });
+                                entry.state = ModelLoadState::Loading;
+                            }
+                            Err(error) => {
+                                entry.error = Some(format!("Formatter failed: {}", error));
+                                entry.state = ModelLoadState::Failed;
+                            }
+                        }
                     }
                     Err(e) => {
                         entry.error = Some(format!("Download failed: {}", e));
@@ -1128,6 +1142,22 @@ mod tests {
 
         assert_eq!(state, ModelLoadState::Ready);
         assert_eq!(resolved_id, canonical_id);
+    }
+
+    #[tokio::test]
+    async fn test_schedule_model_fails_on_formatter_config_error() {
+        let registry = ModelRegistry::new().unwrap();
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), "{}").unwrap();
+        let requested_id = dir.path().to_string_lossy().to_string();
+
+        let (state, resolved_id) = registry.schedule_model(&requested_id, false).await.unwrap();
+
+        assert_eq!(state, ModelLoadState::Failed);
+        let entries = registry.entries.read().await;
+        let entry = entries.get(&resolved_id).unwrap();
+        assert_eq!(entry.state, ModelLoadState::Failed);
+        assert!(entry.error.as_deref().unwrap().contains("model_type"));
     }
 
     #[tokio::test]
