@@ -1755,7 +1755,11 @@ impl Client {
             min_p,
             rng_seed,
             deterministic: request.deterministic,
-            stop_sequences: Vec::new(),
+            stop_sequences: if formatter.control_tokens.end_of_sequence.is_empty() {
+                Vec::new()
+            } else {
+                vec![formatter.control_tokens.end_of_sequence.clone()]
+            },
             num_candidates: 1,
             best_of: Some(1),
             final_candidates: Some(1),
