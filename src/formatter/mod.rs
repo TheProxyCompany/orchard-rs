@@ -91,7 +91,9 @@ fn determine_model_type(config: &serde_json::Value) -> Result<&str> {
         .get("model_type")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| Error::FormatterConfigNotFound("config.json missing model_type".to_string()))?;
+        .ok_or_else(|| {
+            Error::FormatterConfigNotFound("config.json missing model_type".to_string())
+        })?;
 
     Ok(match model_type {
         "llama" | "llama3" => "llama3",
@@ -820,16 +822,12 @@ mod tests {
         let lora = formatter
             .apply_template(&messages, true, false, Some("citations"), None)
             .unwrap();
-        assert!(lora.starts_with(
-            "<|citations|><|start_of_role|>user<|end_of_role|>"
-        ));
+        assert!(lora.starts_with("<|citations|><|start_of_role|>user<|end_of_role|>"));
 
         let alora = formatter
             .apply_template(&messages, true, false, Some("query_rewrite"), None)
             .unwrap();
-        assert!(alora.ends_with(
-            "<|query_rewrite|><|start_of_role|>assistant<|end_of_role|>"
-        ));
+        assert!(alora.ends_with("<|query_rewrite|><|start_of_role|>assistant<|end_of_role|>"));
     }
 
     #[test]
