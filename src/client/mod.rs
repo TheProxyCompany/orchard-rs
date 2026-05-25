@@ -602,6 +602,10 @@ impl Client {
                             state.finish_reason = delta.finish_reason.clone();
                             state.cumulative_logprob = delta.cumulative_logprob;
                             state.generation_len = delta.generation_len;
+                            if let Some(generation_len) = delta.generation_len {
+                                state.completion_tokens =
+                                    state.completion_tokens.max(generation_len);
+                            }
                             remaining_sequences -= 1;
                         }
                     }

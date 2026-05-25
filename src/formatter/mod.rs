@@ -751,6 +751,9 @@ mod tests {
         let config = serde_json::json!({"model_type": "afmoe"});
         assert_eq!(determine_model_type(&config).unwrap(), "afmoe");
 
+        let config = serde_json::json!({"model_type": "granite"});
+        assert_eq!(determine_model_type(&config).unwrap(), "granite");
+
         let config = serde_json::json!({});
         assert!(determine_model_type(&config).is_err());
     }
@@ -766,6 +769,11 @@ mod tests {
                 "nemotron_h",
                 "nemotron_h",
                 "<|im_start|>assistant\n<think>\n",
+            ),
+            (
+                "granite",
+                "granite",
+                "<|start_of_role|>assistant<|end_of_role|>",
             ),
             (
                 "granite_switch",

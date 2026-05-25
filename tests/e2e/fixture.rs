@@ -19,7 +19,7 @@ pub(crate) const TRINITY_MODEL_ID: &str = "mlx-community/Trinity-Mini-4bit";
 pub(crate) const LFM2_MODEL_ID: &str = "LiquidAI/LFM2.5-1.2B-Instruct";
 pub(crate) const OLMO_HYBRID_MODEL_ID: &str = "allenai/Olmo-Hybrid-Instruct-DPO-7B";
 pub(crate) const NEMOTRON_H_MODEL_ID: &str = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16";
-pub(crate) const GRANITE_SWITCH_MODEL_ID: &str = "ibm-granite/granite-switch-4.1-30b-preview";
+pub(crate) const GRANITE_MODEL_ID: &str = "mlx-community/granite-4.1-30b-4bit";
 pub(crate) const PHI4_MODEL_ID: &str = "microsoft/Phi-4-reasoning-plus";
 
 pub(crate) const TEXT_MODELS: &[&str] = &[
@@ -31,7 +31,7 @@ pub(crate) const TEXT_MODELS: &[&str] = &[
     LFM2_MODEL_ID,
     OLMO_HYBRID_MODEL_ID,
     NEMOTRON_H_MODEL_ID,
-    GRANITE_SWITCH_MODEL_ID,
+    GRANITE_MODEL_ID,
     PHI4_MODEL_ID,
 ];
 pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
@@ -44,7 +44,7 @@ pub(crate) const ALL_MODELS: &[&str] = &[
     LFM2_MODEL_ID,
     OLMO_HYBRID_MODEL_ID,
     NEMOTRON_H_MODEL_ID,
-    GRANITE_SWITCH_MODEL_ID,
+    GRANITE_MODEL_ID,
     PHI4_MODEL_ID,
 ];
 
