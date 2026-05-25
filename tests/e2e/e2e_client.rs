@@ -117,8 +117,11 @@ async fn run_client_chat_streaming(prompt: &str) {
 /// Mirrors: test_e2e_client.py::test_client_chat_non_streaming
 #[tokio::test]
 #[ignore]
-async fn test_client_chat_non_streaming_poem() {
-    run_client_chat_non_streaming("You have 5 output tokens. Respond with a 5 token poem.").await;
+async fn test_client_chat_non_streaming_continuation() {
+    run_client_chat_non_streaming(
+        "You have 5 output tokens. Respond with exactly five words: alpha beta gamma delta epsilon.",
+    )
+    .await;
 }
 
 /// Test non-streaming chat with exact token count.
