@@ -3,7 +3,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use ctor::dtor;
-use futures::future::join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
 
 #[dtor]
@@ -80,20 +79,8 @@ fn init_fixture() -> TestFixture {
             .await
             .expect("Failed to connect");
 
-        let preload_results = join_all(ALL_MODELS.iter().map(|&model_id| {
-            let registry = Arc::clone(&registry);
-            async move {
-                registry
-                    .ensure_loaded(model_id)
-                    .await
-                    .map(|_| model_id)
-                    .map_err(|e| (model_id, e))
-            }
-        }))
-        .await;
-
-        for result in preload_results {
-            if let Err((model_id, error)) = result {
+        for &model_id in ALL_MODELS {
+            if let Err(error) = registry.ensure_loaded(model_id).await {
                 panic!("Failed to preload model {}: {}", model_id, error);
             }
         }
