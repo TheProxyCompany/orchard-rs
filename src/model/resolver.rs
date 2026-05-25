@@ -158,13 +158,24 @@ impl ModelResolver {
         let hf_repo = hf_repo
             .map(String::from)
             .or_else(|| Self::infer_hf_repo(&config));
+        let formatter_config = hf_repo.as_ref().map(|repo| {
+            let mut config = config.clone();
+            if config
+                .get("_name_or_path")
+                .and_then(|v| v.as_str())
+                .is_none()
+            {
+                config["_name_or_path"] = serde_json::Value::String(repo.clone());
+            }
+            config
+        });
         Ok(ResolvedModel {
             canonical_id,
             model_path,
             source: source.to_string(),
             metadata,
             hf_repo,
-            formatter_config: None,
+            formatter_config,
         })
     }
 
@@ -340,5 +351,32 @@ mod tests {
         assert_eq!(resolved.canonical_id, "model");
         assert_eq!(resolved.model_path, model_path);
         assert!(resolved.formatter_config.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_hf_resolved_model_passes_repo_hint_to_formatter_config() {
+        let repo_id = "microsoft/Phi-4-reasoning-plus";
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.json"),
+            serde_json::json!({"model_type": "phi3"}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("tokenizer.json"), "{}").unwrap();
+
+        let resolver = ModelResolver::new().unwrap();
+        let resolved = resolver
+            .build_resolved_model(
+                dir.path().to_path_buf(),
+                "hf_cache",
+                Some(repo_id),
+                Some(repo_id),
+            )
+            .await
+            .unwrap();
+        let config = resolved.formatter_config.as_ref().unwrap();
+
+        assert_eq!(config["model_type"], "phi3");
+        assert_eq!(config["_name_or_path"], repo_id);
     }
 }

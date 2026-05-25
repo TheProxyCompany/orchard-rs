@@ -1628,7 +1628,6 @@ impl Client {
             "Responses messages before multimodal expansion"
         );
         let default_reasoning = formatter.defaults_to_native_thinking()
-            && request.text.is_none()
             && request
                 .max_output_tokens
                 .is_none_or(|tokens| tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS);

@@ -85,7 +85,7 @@ impl Object for RenderableCapability {
     }
 }
 
-/// Determine model type from config.
+/// Determine architecture model type from config.
 fn determine_model_type(config: &serde_json::Value) -> Result<&str> {
     let model_type = config
         .get("model_type")
@@ -94,6 +94,31 @@ fn determine_model_type(config: &serde_json::Value) -> Result<&str> {
         .ok_or_else(|| {
             Error::FormatterConfigNotFound("config.json missing model_type".to_string())
         })?;
+
+    Ok(model_type)
+}
+
+/// Determine Pantheon template type from config.
+fn determine_template_type(config: &serde_json::Value) -> Result<&str> {
+    if let Some(template_type) = config
+        .get("template_type")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Ok(template_type);
+    }
+
+    let model_type = determine_model_type(config)?;
+    let model_name = config
+        .get("_name_or_path")
+        .or_else(|| config.get("model_id"))
+        .or_else(|| config.get("original_repo"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if model_type == "phi3" && model_name.contains("phi-4-reasoning") {
+        return Ok("phi4_reasoning");
+    }
 
     Ok(match model_type {
         "llama" | "llama3" => "llama3",
@@ -126,6 +151,8 @@ pub struct ChatFormatter {
     model_path: String,
     /// Model type (e.g., "llama3", "moondream3")
     model_type: String,
+    /// Prompt template type (e.g., "llama3", "phi4_reasoning")
+    template_type: String,
     /// Control tokens
     pub control_tokens: ControlTokens,
     /// Compiled template
@@ -167,8 +194,9 @@ impl ChatFormatter {
     /// Create a chat formatter from engine-inspected model config.
     pub fn from_config(model_path: &Path, config: serde_json::Value) -> Result<Self> {
         let model_type = determine_model_type(&config)?.to_string();
-        let profile = Self::find_profile(&model_type)?;
-        let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &model_type)?;
+        let template_type = determine_template_type(&config)?.to_string();
+        let profile = Self::find_profile(&template_type)?;
+        let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &template_type)?;
         let template_source = profile.chat_template.to_string();
         let shared_tool_macros_source = Self::load_shared_template("tool_macros.jinja")?;
         let capabilities = Self::load_capabilities(&profile)?;
@@ -181,6 +209,7 @@ impl ChatFormatter {
         Ok(Self {
             model_path: model_path.to_string_lossy().to_string(),
             model_type,
+            template_type,
             control_tokens,
             template_source,
             shared_tool_macros_source,
@@ -720,6 +749,7 @@ impl std::fmt::Debug for ChatFormatter {
         f.debug_struct("ChatFormatter")
             .field("model_path", &self.model_path)
             .field("model_type", &self.model_type)
+            .field("template_type", &self.template_type)
             .finish()
     }
 }
@@ -734,16 +764,16 @@ mod tests {
     #[test]
     fn test_determine_model_type() {
         let config = serde_json::json!({"model_type": "llama"});
-        assert_eq!(determine_model_type(&config).unwrap(), "llama3");
+        assert_eq!(determine_model_type(&config).unwrap(), "llama");
 
         let config = serde_json::json!({"model_type": "moondream3"});
         assert_eq!(determine_model_type(&config).unwrap(), "moondream3");
 
         let config = serde_json::json!({"model_type": "gemma3_text"});
-        assert_eq!(determine_model_type(&config).unwrap(), "gemma3");
+        assert_eq!(determine_model_type(&config).unwrap(), "gemma3_text");
 
         let config = serde_json::json!({"model_type": "qwen3_5_moe"});
-        assert_eq!(determine_model_type(&config).unwrap(), "qwen3_5");
+        assert_eq!(determine_model_type(&config).unwrap(), "qwen3_5_moe");
 
         let config = serde_json::json!({"model_type": "lfm2_moe"});
         assert_eq!(determine_model_type(&config).unwrap(), "lfm2_moe");
@@ -756,6 +786,30 @@ mod tests {
 
         let config = serde_json::json!({});
         assert!(determine_model_type(&config).is_err());
+    }
+
+    #[test]
+    fn test_determine_template_type_prefers_explicit_template_type() {
+        let config = serde_json::json!({
+            "model_type": "phi3",
+            "template_type": "phi4_reasoning"
+        });
+        assert_eq!(determine_model_type(&config).unwrap(), "phi3");
+        assert_eq!(determine_template_type(&config).unwrap(), "phi4_reasoning");
+
+        let config = serde_json::json!({"model_type": "qwen3_5_moe"});
+        assert_eq!(determine_template_type(&config).unwrap(), "qwen3_5");
+    }
+
+    #[test]
+    fn test_determine_template_type_detects_phi4_reasoning_repo() {
+        let config = serde_json::json!({
+            "model_type": "phi3",
+            "_name_or_path": "microsoft/Phi-4-reasoning-plus"
+        });
+
+        assert_eq!(determine_model_type(&config).unwrap(), "phi3");
+        assert_eq!(determine_template_type(&config).unwrap(), "phi4_reasoning");
     }
 
     #[test]
@@ -804,7 +858,8 @@ mod tests {
                 )
                 .unwrap();
 
-            assert_eq!(formatter.model_type, profile_type);
+            assert_eq!(formatter.model_type, source_type);
+            assert_eq!(formatter.template_type, profile_type);
             assert!(
                 rendered.ends_with(expected_suffix),
                 "{source_type}: {rendered}"
@@ -849,7 +904,8 @@ mod tests {
 
         let formatter = ChatFormatter::new(model_dir.path()).unwrap();
 
-        assert_eq!(formatter.model_type, "gemma3");
+        assert_eq!(formatter.model_type, "gemma3_text");
+        assert_eq!(formatter.template_type, "gemma3");
         assert!(!formatter.template_source.is_empty());
         assert!(formatter.shared_tool_macros_source.is_some());
     }
@@ -1325,6 +1381,72 @@ mod tests {
     }
 
     #[test]
+    fn test_phi4_reasoning_profile_keeps_phi3_architecture_type() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({
+                "model_type": "phi3",
+                "template_type": "phi4_reasoning"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let rendered = formatter
+            .apply_template(
+                &[
+                    HashMap::from([
+                        ("role".to_string(), serde_json::json!("system")),
+                        (
+                            "content".to_string(),
+                            serde_json::json!("End every response with 7-4-7."),
+                        ),
+                    ]),
+                    HashMap::from([
+                        ("role".to_string(), serde_json::json!("user")),
+                        (
+                            "content".to_string(),
+                            serde_json::json!("What is your name?"),
+                        ),
+                    ]),
+                ],
+                true,
+                false,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(formatter.model_type, "phi3");
+        assert_eq!(formatter.template_type, "phi4_reasoning");
+        assert!(formatter.supports_native_thinking());
+        assert!(!formatter.defaults_to_native_thinking());
+        assert!(!rendered.contains("<think> {Thought section} </think> {Solution section}"));
+        assert!(rendered.contains("End every response with 7-4-7."));
+        assert!(!rendered.contains("Structure responses with <think>"));
+        assert!(rendered.contains("<|im_start|>user<|im_sep|>What is your name?<|im_end|>"));
+        assert!(rendered.ends_with("<|im_start|>assistant<|im_sep|>"));
+
+        let reasoning_rendered = formatter
+            .apply_template(
+                &[HashMap::from([
+                    ("role".to_string(), serde_json::json!("user")),
+                    ("content".to_string(), serde_json::json!("Think first.")),
+                ])],
+                true,
+                true,
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(
+            reasoning_rendered.contains("<think> {Thought section} </think> {Solution section}")
+        );
+    }
+
+    #[test]
     fn test_chat_formatter_loads_glm4_moe_intellect_profile() {
         let model_dir = tempdir().unwrap();
         std::fs::write(
@@ -1572,7 +1694,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(formatter.model_type, "llama3");
+        assert_eq!(formatter.model_type, "llama");
+        assert_eq!(formatter.template_type, "llama3");
         let conversation = vec![HashMap::from([
             ("role".to_string(), serde_json::json!("user")),
             ("content".to_string(), serde_json::json!("hello")),

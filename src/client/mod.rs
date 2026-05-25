@@ -424,7 +424,6 @@ impl Client {
         );
 
         let default_reasoning = formatter.defaults_to_native_thinking()
-            && params.response_format.is_none()
             && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
         let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
             formatter,
@@ -721,7 +720,6 @@ impl Client {
         for (prompt_index, messages) in conversations.iter().enumerate() {
             let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
             let default_reasoning = formatter.defaults_to_native_thinking()
-                && params.response_format.is_none()
                 && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
             let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
                 formatter,
@@ -1389,12 +1387,22 @@ fn build_response_from_candidates(
     let mut finish_reason = None;
 
     for candidate in candidates {
-        text.push_str(&candidate.content);
+        let has_structured_items = candidate
+            .deltas
+            .iter()
+            .flat_map(|delta| &delta.state_events)
+            .any(|event| event.item_type != "message");
+        if has_structured_items {
+            text.push_str(&aggregate_message_text(&candidate.deltas));
+        } else {
+            text.push_str(&candidate.content);
+        }
         if candidate.finish_reason.is_some() {
             finish_reason = candidate.finish_reason;
         }
         all_deltas.extend(candidate.deltas);
     }
+    let (reasoning, tool_calls) = aggregate_structured_items(&all_deltas);
 
     ClientResponse {
         text,
@@ -1404,8 +1412,8 @@ fn build_response_from_candidates(
             completion_tokens: total_completion_tokens,
             total_tokens: prompt_tokens + total_completion_tokens,
         },
-        reasoning: Vec::new(),
-        tool_calls: Vec::new(),
+        reasoning,
+        tool_calls,
         deltas: all_deltas,
     }
 }
@@ -1894,5 +1902,69 @@ mod tests {
         assert_eq!(response.usage.prompt_tokens, 5);
         assert_eq!(response.usage.completion_tokens, 7);
         assert_eq!(response.usage.total_tokens, 12);
+    }
+
+    #[test]
+    fn test_build_response_from_candidates_uses_message_state_events() {
+        let response = build_response_from_candidates(
+            vec![CandidateState {
+                content: "<think>private</think>{\"ok\":true}".to_string(),
+                finish_reason: Some("stop".to_string()),
+                prompt_tokens: 5,
+                deltas: vec![
+                    ClientDelta {
+                        state_events: vec![crate::ipc::client::ResponseStateEvent {
+                            event_type: "content_delta".to_string(),
+                            item_type: "reasoning".to_string(),
+                            identifier: "reasoning".to_string(),
+                            delta: "private".to_string(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    ClientDelta {
+                        state_events: vec![crate::ipc::client::ResponseStateEvent {
+                            event_type: "content_delta".to_string(),
+                            item_type: "message".to_string(),
+                            identifier: "message".to_string(),
+                            delta: "{\"ok\":true}".to_string(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            2,
+        );
+
+        assert_eq!(response.text, "{\"ok\":true}");
+        assert_eq!(response.reasoning, vec!["private".to_string()]);
+    }
+
+    #[test]
+    fn test_build_response_from_candidates_keeps_plain_raw_content() {
+        let response = build_response_from_candidates(
+            vec![CandidateState {
+                content: "red, white, blue".to_string(),
+                finish_reason: Some("stop".to_string()),
+                prompt_tokens: 5,
+                deltas: vec![ClientDelta {
+                    content: Some("red, white, blue".to_string()),
+                    state_events: vec![crate::ipc::client::ResponseStateEvent {
+                        event_type: "content_delta".to_string(),
+                        item_type: "message".to_string(),
+                        identifier: "message".to_string(),
+                        delta: "red, white, ".to_string(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            3,
+        );
+
+        assert_eq!(response.text, "red, white, blue");
     }
 }
