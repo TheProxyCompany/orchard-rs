@@ -23,7 +23,7 @@ async fn test_responses_structured_json_schema() {
     });
 
     let mut request = ResponsesRequest::from_text(
-        "What is the capital of France and its approximate population? Respond as JSON.",
+        "Return the capital of France and population 2148327 as JSON. Use the integer literal 2148327 without a decimal point.",
     );
     request.temperature = Some(0.0);
     request.max_output_tokens = Some(64);
