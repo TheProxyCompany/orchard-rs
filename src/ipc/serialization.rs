@@ -262,18 +262,21 @@ pub fn build_batch_request_payload(
             }
             encode_layout(&segments)
         } else {
-            let segments: Vec<(SegmentType, usize)> = prompt
-                .layout
-                .iter()
-                .map(|e| {
-                    let seg_type = match e.segment_type.as_str() {
-                        "image" => SegmentType::Image,
-                        "capability" => SegmentType::Capability,
-                        _ => SegmentType::Text,
-                    };
-                    (seg_type, e.length)
-                })
-                .collect();
+            let mut segments: Vec<(SegmentType, usize)> = Vec::with_capacity(prompt.layout.len());
+            for entry in &prompt.layout {
+                let seg_type = match entry.segment_type.as_str() {
+                    "text" => SegmentType::Text,
+                    "image" => SegmentType::Image,
+                    "capability" => SegmentType::Capability,
+                    other => {
+                        return Err(Error::Serialization(format!(
+                            "Prompt {}: Unsupported layout segment type: {}",
+                            index, other
+                        )));
+                    }
+                };
+                segments.push((seg_type, entry.length));
+            }
             encode_layout(&segments)
         };
         let layout_count = if prompt.layout.is_empty() {
@@ -408,7 +411,13 @@ fn validate_layout(
         match entry.segment_type.as_str() {
             "text" => layout_text_bytes += entry.length,
             "image" => layout_image_bytes += entry.length,
-            _ => {} // capabilities are handled separately
+            "capability" => {}
+            other => {
+                return Err(Error::Serialization(format!(
+                    "Prompt {}: Unsupported layout segment type: {}",
+                    prompt_index, other
+                )));
+            }
         }
     }
 
@@ -690,6 +699,21 @@ mod tests {
         let result = validate_layout(100, 5000, &layout, 0);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("image"));
+    }
+
+    #[test]
+    fn test_validate_layout_rejects_unknown_segment_type() {
+        let layout = vec![LayoutEntry {
+            segment_type: "audio".to_string(),
+            length: 0,
+        }];
+
+        let result = validate_layout(0, 0, &layout, 0);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported layout"));
     }
 
     #[test]
