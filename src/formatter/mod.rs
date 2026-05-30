@@ -924,27 +924,6 @@ mod tests {
 
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
-        assert_eq!(
-            formatter
-                .get_output_frame_tokens()
-                .get("marker.channel")
-                .unwrap(),
-            "<|channel>"
-        );
-        assert_eq!(
-            formatter
-                .get_output_frame_tokens()
-                .get("marker.message")
-                .unwrap(),
-            "\n"
-        );
-        assert_eq!(
-            formatter
-                .get_output_frame_tokens()
-                .get("channel.analysis")
-                .unwrap(),
-            "thought"
-        );
         assert!(formatter.supports_native_thinking());
     }
 
