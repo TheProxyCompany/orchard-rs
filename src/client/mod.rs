@@ -446,7 +446,7 @@ impl Client {
         );
 
         // Build multimodal content (pass instructions if provided)
-        let (messages_for_template, image_buffers, capabilities, content_order) =
+        let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, params.instructions.as_deref())
                 .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
@@ -477,16 +477,19 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        let capability_placeholder = formatter.capability_placeholder_token();
+        let audio_placeholder = formatter.audio_placeholder_token();
+        let capability_placeholder = formatter.coord_placeholder_token();
 
         // Build layout for multimodal content
         let layout_segments = build_multimodal_layout(
             &prompt_text,
             &image_buffers,
+            &audio_buffers,
             &capabilities,
             &content_order,
             formatter.image_placeholder_token(),
             formatter.should_clip_image_placeholder(),
+            audio_placeholder,
             capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
@@ -531,6 +534,7 @@ impl Client {
         let prompt_payload = PromptPayload {
             prompt: final_prompt,
             image_buffers,
+            audio_buffers,
             capabilities: convert_capabilities(&capabilities),
             layout: convert_layout(&layout_segments),
             max_generated_tokens: params.max_tokens,
@@ -755,7 +759,7 @@ impl Client {
             let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
 
             // Build multimodal content (pass instructions if provided)
-            let (messages_for_template, image_buffers, capabilities, content_order) =
+            let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
                 build_multimodal_messages(formatter, messages, params.instructions.as_deref())
                     .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
@@ -787,16 +791,19 @@ impl Client {
                 )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-            let capability_placeholder = formatter.capability_placeholder_token();
+            let audio_placeholder = formatter.audio_placeholder_token();
+            let capability_placeholder = formatter.coord_placeholder_token();
 
             // Build layout for multimodal content
             let layout_segments = build_multimodal_layout(
                 &prompt_text,
                 &image_buffers,
+                &audio_buffers,
                 &capabilities,
                 &content_order,
                 formatter.image_placeholder_token(),
                 formatter.should_clip_image_placeholder(),
+                audio_placeholder,
                 capability_placeholder,
             )
             .map_err(|e| ClientError::Multimodal(e.to_string()))?;
@@ -829,6 +836,7 @@ impl Client {
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
                 image_buffers,
+                audio_buffers,
                 capabilities: convert_capabilities(&capabilities),
                 layout: convert_layout(&layout_segments),
                 max_generated_tokens: params.max_tokens,
@@ -1136,6 +1144,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
     PromptPayload {
         prompt,
         image_buffers: Vec::new(),
+        audio_buffers: Vec::new(),
         capabilities: Vec::new(),
         layout: vec![LayoutEntry {
             segment_type: "text".to_string(),
@@ -1187,18 +1196,15 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
     PromptPayload {
         prompt: String::new(),
         image_buffers: Vec::new(),
-        capabilities: vec![CapabilityEntry {
-            name: "audio".to_string(),
-            position: 0,
-            payload: audio_payload,
-        }],
+        audio_buffers: vec![audio_payload],
+        capabilities: Vec::new(),
         layout: vec![
             LayoutEntry {
                 segment_type: "text".to_string(),
                 length: 0,
             },
             LayoutEntry {
-                segment_type: "capability".to_string(),
+                segment_type: "audio".to_string(),
                 length: audio_payload_size,
             },
         ],
@@ -1908,13 +1914,13 @@ mod tests {
         let payload = build_stt_prompt_payload(&[0.25, -0.5]);
 
         assert!(payload.prompt.is_empty());
-        assert_eq!(payload.capabilities.len(), 1);
-        assert_eq!(payload.capabilities[0].name, "audio");
-        assert_eq!(payload.capabilities[0].payload.len(), 8);
+        assert_eq!(payload.audio_buffers.len(), 1);
+        assert_eq!(payload.audio_buffers[0].len(), 8);
+        assert!(payload.capabilities.is_empty());
         assert_eq!(payload.layout.len(), 2);
         assert_eq!(payload.layout[0].segment_type, "text");
         assert_eq!(payload.layout[0].length, 0);
-        assert_eq!(payload.layout[1].segment_type, "capability");
+        assert_eq!(payload.layout[1].segment_type, "audio");
         assert_eq!(payload.layout[1].length, 8);
     }
 

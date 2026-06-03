@@ -15,6 +15,8 @@ pub struct PromptPayload {
     #[serde(default)]
     pub image_buffers: Vec<Vec<u8>>,
     #[serde(default)]
+    pub audio_buffers: Vec<Vec<u8>>,
+    #[serde(default)]
     pub capabilities: Vec<CapabilityEntry>,
     #[serde(default)]
     pub layout: Vec<LayoutEntry>,
@@ -157,7 +159,8 @@ const LAYOUT_SEGMENT_SIZE: usize = 16;
 pub enum SegmentType {
     Text = 0,
     Image = 1,
-    Capability = 2,
+    Audio = 2,
+    Capability = 3,
 }
 
 /// Request type codes matching PIE
@@ -256,9 +259,11 @@ pub fn build_batch_request_payload(
     for (index, prompt) in prompts.iter().enumerate() {
         let text_bytes = prompt.prompt.as_bytes().to_vec();
 
-        // Encode image buffers
+        // Encode media buffers
         let (image_span_bytes, image_count, image_data_bytes) =
-            encode_image_buffers(&prompt.image_buffers);
+            encode_media_buffers(&prompt.image_buffers);
+        let (audio_span_bytes, audio_count, audio_data_bytes) =
+            encode_media_buffers(&prompt.audio_buffers);
 
         // Encode capabilities
         let (capability_metadata, capability_data_bytes) =
@@ -266,10 +271,13 @@ pub fn build_batch_request_payload(
 
         // Build layout
         let layout_data = if prompt.layout.is_empty() {
-            // Default layout: text followed by images
+            // Default layout: text followed by media
             let mut segments = vec![(SegmentType::Text, text_bytes.len())];
             for img in &prompt.image_buffers {
                 segments.push((SegmentType::Image, img.len()));
+            }
+            for audio in &prompt.audio_buffers {
+                segments.push((SegmentType::Audio, audio.len()));
             }
             encode_layout(&segments)
         } else {
@@ -279,6 +287,7 @@ pub fn build_batch_request_payload(
                 .map(|e| {
                     let seg_type = match e.segment_type.as_str() {
                         "image" => SegmentType::Image,
+                        "audio" => SegmentType::Audio,
                         "capability" => SegmentType::Capability,
                         _ => SegmentType::Text,
                     };
@@ -288,7 +297,7 @@ pub fn build_batch_request_payload(
             encode_layout(&segments)
         };
         let layout_count = if prompt.layout.is_empty() {
-            1 + prompt.image_buffers.len()
+            1 + prompt.image_buffers.len() + prompt.audio_buffers.len()
         } else {
             prompt.layout.len()
         };
@@ -296,13 +305,22 @@ pub fn build_batch_request_payload(
         // Validate layout if explicitly provided
         if !prompt.layout.is_empty() {
             let total_image_size: usize = prompt.image_buffers.iter().map(|b| b.len()).sum();
-            validate_layout(text_bytes.len(), total_image_size, &prompt.layout, index)?;
+            let total_audio_size: usize = prompt.audio_buffers.iter().map(|b| b.len()).sum();
+            validate_layout(
+                text_bytes.len(),
+                total_image_size,
+                total_audio_size,
+                &prompt.layout,
+                index,
+            )?;
         }
 
         // Reserve space for all blob data
         let (text_offset, text_size) = reserve_blob(text_bytes);
         let (image_sizes_offset, _) = reserve_blob(image_span_bytes);
         let (image_data_offset, image_data_size) = reserve_blob(image_data_bytes);
+        let (audio_sizes_offset, _) = reserve_blob(audio_span_bytes);
+        let (audio_data_offset, audio_data_size) = reserve_blob(audio_data_bytes);
         let (capability_data_offset, capability_data_size) = reserve_blob(capability_data_bytes);
         let (layout_offset, _) = reserve_blob(layout_data);
 
@@ -317,7 +335,7 @@ pub fn build_batch_request_payload(
             .map(|(&k, &v)| json!({"token": k, "bias": v}))
             .collect();
 
-        let prompt_meta = json!({
+        let mut prompt_meta = json!({
             "prompt_index": index,
             "num_candidates": prompt.num_candidates.max(1),
             "best_of": best_of,
@@ -369,6 +387,13 @@ pub fn build_batch_request_payload(
             "prefix_cache": prompt.prefix_cache.unwrap_or(true),
         });
 
+        if let Some(prompt_meta_obj) = prompt_meta.as_object_mut() {
+            prompt_meta_obj.insert("audio_data_offset".to_string(), json!(audio_data_offset));
+            prompt_meta_obj.insert("audio_data_size".to_string(), json!(audio_data_size));
+            prompt_meta_obj.insert("audio_sizes_offset".to_string(), json!(audio_sizes_offset));
+            prompt_meta_obj.insert("audio_count".to_string(), json!(audio_count));
+        }
+
         prompt_metadata_list.push(prompt_meta);
     }
 
@@ -412,17 +437,20 @@ pub fn build_batch_request_payload(
 fn validate_layout(
     text_size: usize,
     image_data_size: usize,
+    audio_data_size: usize,
     layout: &[LayoutEntry],
     prompt_index: usize,
 ) -> Result<()> {
     let mut layout_text_bytes = 0usize;
     let mut layout_image_bytes = 0usize;
+    let mut layout_audio_bytes = 0usize;
 
     for entry in layout {
         match entry.segment_type.as_str() {
             "text" => layout_text_bytes += entry.length,
             "image" => layout_image_bytes += entry.length,
-            _ => {} // capabilities are handled separately
+            "audio" => layout_audio_bytes += entry.length,
+            _ => {}
         }
     }
 
@@ -440,16 +468,23 @@ fn validate_layout(
         )));
     }
 
+    if layout_audio_bytes != audio_data_size {
+        return Err(Error::Serialization(format!(
+            "Prompt {}: Layout audio bytes ({}) != actual audio size ({})",
+            prompt_index, layout_audio_bytes, audio_data_size
+        )));
+    }
+
     Ok(())
 }
 
-/// Encode image buffers into span array and concatenated data.
-fn encode_image_buffers(buffers: &[Vec<u8>]) -> (Vec<u8>, usize, Vec<u8>) {
+/// Encode media buffers into span array and concatenated data.
+fn encode_media_buffers(buffers: &[Vec<u8>]) -> (Vec<u8>, usize, Vec<u8>) {
     if buffers.is_empty() {
         return (Vec::new(), 0, Vec::new());
     }
 
-    // Span array: 8 bytes per image (length as u64 LE)
+    // Span array: 8 bytes per media item (length as u64 LE)
     let mut span_buffer = Vec::with_capacity(buffers.len() * 8);
     let total_data_size: usize = buffers.iter().map(|b| b.len()).sum();
     let mut data_buffer = Vec::with_capacity(total_data_size);
@@ -674,7 +709,7 @@ mod tests {
             },
         ];
 
-        let result = validate_layout(100, 5000, &layout, 0);
+        let result = validate_layout(100, 5000, 0, &layout, 0);
         assert!(result.is_ok());
     }
 
@@ -685,7 +720,7 @@ mod tests {
             length: 50, // Mismatch!
         }];
 
-        let result = validate_layout(100, 0, &layout, 0);
+        let result = validate_layout(100, 0, 0, &layout, 0);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("text bytes"));
     }
@@ -703,7 +738,7 @@ mod tests {
             },
         ];
 
-        let result = validate_layout(100, 5000, &layout, 0);
+        let result = validate_layout(100, 5000, 0, &layout, 0);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("image"));
     }

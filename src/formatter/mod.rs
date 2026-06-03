@@ -66,6 +66,25 @@ impl Object for RenderableImage {
     }
 }
 
+/// Placeholder wrapper that renders as empty text and reports `type=audio`.
+#[derive(Debug, Clone)]
+struct RenderableAudio;
+
+impl fmt::Display for RenderableAudio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl Object for RenderableAudio {
+    fn get_value(self: &std::sync::Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "type" => Some(Value::from("audio")),
+            _ => None,
+        }
+    }
+}
+
 /// Placeholder wrapper for capability inputs. Renders as empty.
 #[derive(Debug, Clone)]
 struct RenderableCapability;
@@ -122,6 +141,7 @@ fn determine_pantheon_profile(config: &serde_json::Value) -> Result<&str> {
         "moondream3" | "moondream" => "moondream3",
         "gemma3" | "gemma3_text" | "gemma" => "gemma3",
         "gemma4" | "gemma4_text" => "gemma4",
+        "gemma4u" | "gemma4_unified" | "gemma4_unified_text" => "gemma4u",
         "qwen3_5" | "qwen3_5_text" | "qwen3_5_moe" => "qwen3_5",
         "qwen2" | "qwen" => "qwen2",
         "lfm2_moe" => "lfm2_5",
@@ -344,10 +364,39 @@ impl ChatFormatter {
     /// This excludes image placeholders, which are handled separately.
     pub fn capability_placeholder_token(&self) -> Option<&str> {
         let image_token = self.image_placeholder_token();
+        let audio_token = self.audio_placeholder_token();
         self.capability_placeholders
             .iter()
             .map(String::as_str)
-            .find(|token| *token != image_token)
+            .find(|token| *token != image_token && Some(*token) != audio_token)
+    }
+
+    pub fn coord_placeholder_token(&self) -> Option<&str> {
+        ["pointing", "gaze_detection"].into_iter().find_map(|name| {
+            self.capabilities
+                .get(name)
+                .and_then(|cap| cap.get("placeholders"))
+                .and_then(|placeholders| placeholders.get("coord"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|token| !token.is_empty())
+        })
+    }
+
+    pub fn audio_placeholder_token(&self) -> Option<&str> {
+        self.capabilities
+            .get("audio")
+            .and_then(|cap| cap.get("placeholders"))
+            .and_then(|placeholders| placeholders.get("audio"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty())
+            .or_else(|| {
+                self.capabilities
+                    .get("audio")
+                    .and_then(|cap| cap.get("tokens"))
+                    .and_then(|tokens| tokens.get("placeholder"))
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|token| !token.is_empty())
+            })
     }
 
     /// Strip placeholders that should not be sent to PIE as text bytes.
@@ -757,6 +806,9 @@ impl ChatFormatter {
                         "image" => {
                             return Value::from_object(RenderableImage);
                         }
+                        "audio" => {
+                            return Value::from_object(RenderableAudio);
+                        }
                         "capability" => {
                             return Value::from_object(RenderableCapability);
                         }
@@ -1012,7 +1064,7 @@ mod tests {
             ),
         ])];
 
-        let (messages, image_buffers, capabilities, content_order) =
+        let (messages, image_buffers, audio_buffers, capabilities, content_order) =
             build_multimodal_messages(&formatter, &items, None).unwrap();
         let rendered = formatter
             .apply_template(&messages, true, false, None, None)
@@ -1020,11 +1072,13 @@ mod tests {
         let layout = build_multimodal_layout(
             &rendered,
             &image_buffers,
+            &audio_buffers,
             &capabilities,
             &content_order,
             formatter.image_placeholder_token(),
             formatter.should_clip_image_placeholder(),
-            formatter.capability_placeholder_token(),
+            formatter.audio_placeholder_token(),
+            formatter.coord_placeholder_token(),
         )
         .unwrap();
 
@@ -1033,6 +1087,55 @@ mod tests {
         assert!(!formatter
             .strip_template_placeholders(&rendered)
             .contains("<|image|>"));
+    }
+
+    #[test]
+    fn test_gemma4u_audio_layout_uses_audio_segment() {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "gemma4_unified"}).to_string(),
+        )
+        .unwrap();
+
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        let items = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            (
+                "content".to_string(),
+                serde_json::json!([
+                    {"type": "input_audio", "data": [0.0, 0.5, -0.5]},
+                    {"type": "input_text", "text": "Transcribe this."},
+                ]),
+            ),
+        ])];
+
+        let (messages, image_buffers, audio_buffers, capabilities, content_order) =
+            build_multimodal_messages(&formatter, &items, None).unwrap();
+        let rendered = formatter
+            .apply_template(&messages, true, false, None, None)
+            .unwrap();
+        let layout = build_multimodal_layout(
+            &rendered,
+            &image_buffers,
+            &audio_buffers,
+            &capabilities,
+            &content_order,
+            formatter.image_placeholder_token(),
+            formatter.should_clip_image_placeholder(),
+            formatter.audio_placeholder_token(),
+            formatter.coord_placeholder_token(),
+        )
+        .unwrap();
+
+        assert_eq!(formatter.audio_placeholder_token(), Some("<|audio|>"));
+        assert_eq!(audio_buffers.len(), 1);
+        assert!(capabilities.is_empty());
+        assert!(rendered.contains("<|audio|>"));
+        assert!(layout.iter().any(|segment| segment.segment_type == "audio"));
+        assert!(!formatter
+            .strip_template_placeholders(&rendered)
+            .contains("<|audio|>"));
     }
 
     #[test]
@@ -1549,7 +1652,7 @@ mod tests {
             ]),
         ];
 
-        let (messages, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
+        let (messages, _, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
         assert_eq!(
             messages[1]
                 .get("reasoning")
@@ -1649,7 +1752,7 @@ mod tests {
             ]),
         ];
 
-        let (messages, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
+        let (messages, _, _, _, _) = build_multimodal_messages(&formatter, &items, None).unwrap();
         assert!(messages[0].contains_key("tool_calls"));
 
         let rendered = formatter

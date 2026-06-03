@@ -23,6 +23,7 @@ pub struct CapabilityInput {
 pub enum ContentType {
     Text,
     Image,
+    Audio,
     Capability,
 }
 
@@ -41,6 +42,7 @@ pub struct LayoutSegment {
 /// Returns a tuple of:
 /// - Messages for the template
 /// - Image buffers (raw bytes)
+/// - Audio buffers (float32 PCM bytes)
 /// - Capability inputs
 /// - Content order (type, index) for layout building
 #[allow(clippy::type_complexity)]
@@ -50,6 +52,7 @@ pub fn build_multimodal_messages(
     instructions: Option<&str>,
 ) -> Result<(
     Vec<HashMap<String, serde_json::Value>>,
+    Vec<Vec<u8>>,
     Vec<Vec<u8>>,
     Vec<CapabilityInput>,
     Vec<(ContentType, usize)>,
@@ -77,6 +80,7 @@ pub fn build_multimodal_messages(
 
     let mut messages = Vec::new();
     let mut image_buffers = Vec::new();
+    let mut audio_buffers = Vec::new();
     let mut capabilities = Vec::new();
     let mut content_order = Vec::new();
 
@@ -147,6 +151,32 @@ pub fn build_multimodal_messages(
                         image_buffers.push(decoded);
                         rendered_parts.push(serde_json::json!({"type": "image"}));
                     }
+                    "audio" | "input_audio" => {
+                        let data = content_part
+                            .get("data")
+                            .and_then(|v| {
+                                v.as_array().or_else(|| {
+                                    v.get("samples")
+                                        .and_then(serde_json::Value::as_array)
+                                })
+                            })
+                            .ok_or_else(|| {
+                                Error::Other(format!(
+                                    "Audio content part {} in message {} missing float32 'data' array",
+                                    part_idx, msg_idx
+                                ))
+                            })?;
+
+                        let mut payload = Vec::with_capacity(data.len() * 4);
+                        for val in data {
+                            let f = val.as_f64().unwrap_or(0.0) as f32;
+                            payload.extend_from_slice(&f.to_le_bytes());
+                        }
+
+                        content_order.push((ContentType::Audio, audio_buffers.len()));
+                        audio_buffers.push(payload);
+                        rendered_parts.push(serde_json::json!({"type": "audio"}));
+                    }
                     "capability" => {
                         let name = content_part
                             .get("name")
@@ -208,7 +238,13 @@ pub fn build_multimodal_messages(
         }
     }
 
-    Ok((messages, image_buffers, capabilities, content_order))
+    Ok((
+        messages,
+        image_buffers,
+        audio_buffers,
+        capabilities,
+        content_order,
+    ))
 }
 
 /// Build the multimodal layout for PIE.
@@ -217,15 +253,17 @@ pub fn build_multimodal_messages(
 pub fn build_multimodal_layout(
     prompt_text: &str,
     image_buffers: &[Vec<u8>],
+    audio_buffers: &[Vec<u8>],
     capabilities: &[CapabilityInput],
     content_order: &[(ContentType, usize)],
     placeholder_token: &str,
     exclude_image_placeholder: bool,
+    audio_placeholder: Option<&str>,
     capability_placeholder: Option<&str>,
 ) -> Result<Vec<LayoutSegment>> {
     let mut layout = Vec::new();
 
-    if image_buffers.is_empty() && capabilities.is_empty() {
+    if image_buffers.is_empty() && audio_buffers.is_empty() && capabilities.is_empty() {
         let text_bytes = prompt_text.as_bytes();
         if text_bytes.is_empty() {
             return Err(Error::EmptyRequest);
@@ -249,15 +287,32 @@ pub fn build_multimodal_layout(
         ));
     }
 
-    // Preserve legacy behavior for profiles that rely on implicit coord placeholders.
+    let audio_matches: Vec<_> = if let Some(token) = audio_placeholder {
+        let audio_regex = Regex::new(&regex::escape(token)).expect("escaped regex is always valid");
+        audio_regex.find_iter(prompt_text).collect()
+    } else {
+        Vec::new()
+    };
+    if audio_matches.len() != audio_buffers.len() {
+        return Err(Error::Other(format!(
+            "Mismatch between audio placeholders ({}) and audio parts ({})",
+            audio_matches.len(),
+            audio_buffers.len()
+        )));
+    }
+
     let capability_placeholder_token =
         capability_placeholder.unwrap_or(DEFAULT_CAPABILITY_PLACEHOLDER);
     let capability_regex = Regex::new(&regex::escape(capability_placeholder_token))
         .expect("escaped regex is always valid");
-    let capability_matches: Vec<_> = capability_regex.find_iter(prompt_text).collect();
-    let use_capability_placeholders = !capability_matches.is_empty();
+    let capability_matches: Vec<_> = if capabilities.is_empty() {
+        Vec::new()
+    } else {
+        capability_regex.find_iter(prompt_text).collect()
+    };
+    let use_placeholder_positions = !audio_matches.is_empty() || !capability_matches.is_empty();
 
-    if use_capability_placeholders {
+    if use_placeholder_positions {
         if capability_matches.len() != capabilities.len() {
             return Err(Error::Other(format!(
                 "Mismatch between capability placeholders ({}) and capability parts ({})",
@@ -270,6 +325,9 @@ pub fn build_multimodal_layout(
 
         for (idx, m) in image_matches.iter().enumerate() {
             all_placeholders.push((m.start(), m.end(), "image", idx));
+        }
+        for (idx, m) in audio_matches.iter().enumerate() {
+            all_placeholders.push((m.start(), m.end(), "audio", idx));
         }
         for (idx, m) in capability_matches.iter().enumerate() {
             all_placeholders.push((m.start(), m.end(), "capability", idx));
@@ -303,6 +361,12 @@ pub fn build_multimodal_layout(
                     length: image_buffers[idx].len(),
                     name: None,
                 });
+            } else if ptype == "audio" {
+                layout.push(LayoutSegment {
+                    segment_type: "audio".to_string(),
+                    length: audio_buffers[idx].len(),
+                    name: None,
+                });
             } else {
                 let cap = &capabilities[cap_idx];
                 layout.push(LayoutSegment {
@@ -330,6 +394,7 @@ pub fn build_multimodal_layout(
     } else {
         let mut cursor = 0;
         let mut image_idx = 0;
+        let mut audio_idx = 0;
         let mut cap_idx = 0;
 
         for (content_type, _) in content_order {
@@ -369,6 +434,14 @@ pub fn build_multimodal_layout(
                         name: Some(cap.name.clone()),
                     });
                     cap_idx += 1;
+                }
+                ContentType::Audio => {
+                    layout.push(LayoutSegment {
+                        segment_type: "audio".to_string(),
+                        length: audio_buffers[audio_idx].len(),
+                        name: None,
+                    });
+                    audio_idx += 1;
                 }
                 ContentType::Text => {}
             }

@@ -2046,7 +2046,7 @@ impl Client {
         let (reasoning_flag, reasoning_effort, thinking_tokens) =
             native_reasoning_settings(formatter, requested_reasoning, &request_reasoning_effort);
 
-        let (messages_for_template, image_buffers, capabilities, content_order) =
+        let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
                 .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
@@ -2088,15 +2088,18 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        let capability_placeholder = formatter.capability_placeholder_token();
+        let audio_placeholder = formatter.audio_placeholder_token();
+        let capability_placeholder = formatter.coord_placeholder_token();
 
         let layout_segments = build_multimodal_layout(
             &prompt_text,
             &image_buffers,
+            &audio_buffers,
             &capabilities,
             &content_order,
             formatter.image_placeholder_token(),
             formatter.should_clip_image_placeholder(),
+            audio_placeholder,
             capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
@@ -2155,6 +2158,7 @@ impl Client {
         let prompt_payload = PromptPayload {
             prompt: final_prompt,
             image_buffers,
+            audio_buffers,
             capabilities: super::convert_capabilities(&capabilities),
             layout: super::convert_layout(&layout_segments),
             max_generated_tokens: request.max_output_tokens.unwrap_or(0),

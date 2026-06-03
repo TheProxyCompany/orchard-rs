@@ -16,7 +16,6 @@ pub(crate) const GEMMA4_MODEL_ID: &str = "google/gemma-4-E2B-it";
 pub(crate) const QWEN_MODEL_ID: &str = "Qwen/Qwen3.5-4B";
 pub(crate) const MOONDREAM_MODEL_ID: &str = "moondream/moondream3-preview";
 pub(crate) const TRINITY_MODEL_ID: &str = "mlx-community/Trinity-Mini-4bit";
-pub(crate) const LFM2_MODEL_ID: &str = "LiquidAI/LFM2.5-1.2B-Instruct";
 pub(crate) const LFM2_5_MODEL_ID: &str = "LiquidAI/LFM2.5-8B-A1B";
 pub(crate) const OLMO_HYBRID_MODEL_ID: &str = "allenai/Olmo-Hybrid-Instruct-DPO-7B";
 pub(crate) const NEMOTRON_H_MODEL_ID: &str = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16";
@@ -83,13 +82,6 @@ pub(crate) const MODELS: &[Model] = &[
         tools: true,
     },
     Model {
-        template_type: "lfm2",
-        checkpoint: LFM2_MODEL_ID,
-        thinking: Thinking::Off,
-        vision: false,
-        tools: true,
-    },
-    Model {
         template_type: "lfm2_5",
         checkpoint: LFM2_5_MODEL_ID,
         thinking: Thinking::Required,
@@ -132,7 +124,6 @@ pub(crate) const TEXT_MODELS: &[&str] = &[
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
     TRINITY_MODEL_ID,
-    LFM2_MODEL_ID,
     LFM2_5_MODEL_ID,
     OLMO_HYBRID_MODEL_ID,
     NEMOTRON_H_MODEL_ID,
@@ -147,7 +138,6 @@ const PRELOAD_MODELS: &[&str] = &[
     QWEN_MODEL_ID,
     MOONDREAM_MODEL_ID,
     TRINITY_MODEL_ID,
-    LFM2_MODEL_ID,
     LFM2_5_MODEL_ID,
     OLMO_HYBRID_MODEL_ID,
     NEMOTRON_H_MODEL_ID,
