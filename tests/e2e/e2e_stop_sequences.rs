@@ -19,6 +19,7 @@ async fn test_chat_completion_respects_stop_sequence() {
             max_tokens: 32,
             stop: vec!["blue".to_string()],
             top_logprobs: 10,
+            reasoning: Some(false),
             ..Default::default()
         };
 

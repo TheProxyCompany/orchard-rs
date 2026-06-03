@@ -112,6 +112,7 @@ async fn test_responses_non_streaming_message_items() {
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),

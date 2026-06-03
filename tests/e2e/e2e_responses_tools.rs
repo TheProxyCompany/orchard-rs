@@ -47,7 +47,7 @@ fn base_input_items() -> Vec<ResponseInputItem> {
         ResponseInputItem::Message {
             role: "system".to_string(),
             content: serde_json::json!(
-                "You are a helpful assistant with tool calling capabilities. When you receive a tool call response, use the output to format an answer to the original user question."
+                "You are a helpful assistant with tool calling capabilities. When you receive a tool call response, use the output to format an answer to the orginal user question."
             ),
             tool_calls: None,
             tool_call_id: None,
@@ -83,6 +83,7 @@ async fn test_responses_tool_call_non_streaming() {
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
             tool_choice: Some(serde_json::json!("required")),
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),
@@ -118,7 +119,12 @@ async fn test_responses_tool_call_non_streaming() {
                     None
                 }
             })
-            .expect("expected a function_call output item");
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected a function_call output item for {model_id}: {:?}",
+                    response.output
+                )
+            });
 
         assert_eq!(tool_call.name, "get_weather");
         assert!(!tool_call.call_id.is_empty());
@@ -157,6 +163,7 @@ async fn test_responses_tool_call_streaming() {
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
             tool_choice: Some(serde_json::json!("required")),
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),
@@ -264,6 +271,7 @@ async fn test_responses_tool_result_continuation() {
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
             tool_choice: Some(serde_json::json!("required")),
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),
@@ -299,7 +307,12 @@ async fn test_responses_tool_result_continuation() {
                     None
                 }
             })
-            .expect("expected tool call in first response");
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected tool call in first response for {model_id}: {:?}",
+                    first_response.output
+                )
+            });
 
         let mut items = base_input_items();
         items.push(ResponseInputItem::FunctionCall {
@@ -333,6 +346,7 @@ async fn test_responses_tool_result_continuation() {
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
             tool_choice: Some(serde_json::json!("none")),
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),

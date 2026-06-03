@@ -19,6 +19,7 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
             temperature: 0.0,
             deterministic: true,
             n: batch_size,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -130,6 +131,7 @@ async fn run_sequential_request_determinism() {
             max_tokens: 64,
             temperature: 0.0,
             deterministic: true,
+            reasoning: Some(false),
             ..Default::default()
         };
 

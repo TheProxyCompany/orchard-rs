@@ -18,6 +18,7 @@ async fn test_chat_completion_with_logprobs() {
             max_tokens: 3,
             temperature: 1.0,
             top_logprobs: 5,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -74,6 +75,7 @@ async fn test_chat_completion_without_logprobs() {
             max_tokens: 3,
             temperature: 1.0,
             top_logprobs: 0,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -115,6 +117,7 @@ async fn test_chat_completion_logprobs_streaming() {
             max_tokens: 5,
             temperature: 1.0,
             top_logprobs: 3,
+            reasoning: Some(false),
             ..Default::default()
         };
 

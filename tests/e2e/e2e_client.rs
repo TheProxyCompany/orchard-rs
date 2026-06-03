@@ -16,6 +16,7 @@ async fn run_client_chat_non_streaming(prompt: &str) {
         let params = SamplingParams {
             max_tokens: 5,
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -65,6 +66,7 @@ async fn run_client_chat_streaming(prompt: &str) {
         let params = SamplingParams {
             max_tokens: 96,
             temperature: 0.7,
+            reasoning: Some(false),
             ..Default::default()
         };
 

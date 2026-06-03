@@ -21,6 +21,7 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
             max_tokens: 10,
             temperature: 0.0,
             n: candidate_count,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -88,6 +89,7 @@ async fn test_chat_completion_multi_candidate_streaming() {
             max_tokens: 10,
             temperature: 0.0,
             n: candidate_count,
+            reasoning: Some(false),
             ..Default::default()
         };
 

@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use super::{native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
-use crate::ipc::serialization::PromptPayload;
+use crate::ipc::serialization::{PromptPayload, ToolCallingTokens};
 
 const RESPONSE_ID_PREFIX: &str = "resp_";
 const MESSAGE_ID_PREFIX: &str = "msg_";
@@ -97,15 +97,18 @@ fn parse_tool_call_completion_value(value: &Value) -> Option<(String, String)> {
     };
 
     let tool_call: CompletedToolCallValue = serde_json::from_value(structured_value).ok()?;
-    Some((tool_call.name, python_json_dumps(&tool_call.arguments)))
+    Some((
+        tool_call.name,
+        response_arguments_json(&tool_call.arguments),
+    ))
 }
 
-fn python_json_dumps(value: &Value) -> String {
+fn response_arguments_json(value: &Value) -> String {
     match value {
         Value::Array(values) => {
             let values = values
                 .iter()
-                .map(python_json_dumps)
+                .map(response_arguments_json)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{values}]")
@@ -115,7 +118,7 @@ fn python_json_dumps(value: &Value) -> String {
                 .iter()
                 .map(|(key, value)| {
                     let key = serde_json::to_string(key).expect("JSON object key serializes");
-                    format!("{key}: {}", python_json_dumps(value))
+                    format!("{key}: {}", response_arguments_json(value))
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -372,6 +375,8 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub tool_choice: Option<Value>,
     #[serde(default)]
+    pub min_tool_calls: Option<i32>,
+    #[serde(default)]
     pub max_tool_calls: Option<i32>,
     #[serde(default)]
     pub text: Option<Value>,
@@ -410,6 +415,7 @@ impl ResponsesRequest {
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: None,
@@ -585,7 +591,7 @@ pub struct OutputReasoning {
     pub summary: Vec<ReasoningSummaryTextContent>,
     #[serde(default)]
     pub content: Vec<ReasoningContent>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub encrypted_content: Option<String>,
 }
 
@@ -644,16 +650,16 @@ pub struct ResponseObject {
     pub id: String,
     pub object: String,
     pub created_at: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub completed_at: Option<i64>,
     pub status: OutputStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub incomplete_details: Option<IncompleteDetails>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub error: Option<ResponseError>,
     pub model: String,
     pub output: Vec<ResponseOutputItem>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub usage: Option<ResponseUsage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
@@ -683,12 +689,14 @@ pub struct ResponseObject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tool_calls: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_tool_calls: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<Value>,
     /// Model stop/EOS token id that ended generation, if any. Proxy extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub stop_token_id: Option<i32>,
     /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub stop_token: Option<String>,
 }
 
@@ -697,24 +705,25 @@ pub struct ResponseSnapshot {
     pub id: String,
     pub object: String,
     pub created_at: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub completed_at: Option<i64>,
     pub status: OutputStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub incomplete_details: Option<IncompleteDetails>,
     pub model: String,
     pub output: Vec<ResponseOutputItem>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub usage: Option<ResponseUsage>,
     /// Model stop/EOS token id that ended generation, if any. Proxy extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub stop_token_id: Option<i32>,
     /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub stop_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum ResponseContentPart {
     OutputText(OutputTextContent),
     Reasoning(ReasoningContent),
@@ -819,7 +828,7 @@ pub struct FunctionCallArgumentsDeltaEvent {
     pub item_id: String,
     pub output_index: u32,
     pub delta: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub field_path: Option<String>,
 }
 
@@ -1128,6 +1137,37 @@ struct AggregatedOutputItem {
     function_name: String,
 }
 
+fn append_raw_message_output(
+    output_items: &mut BTreeMap<u32, AggregatedOutputItem>,
+    content: &str,
+) {
+    if content.is_empty() {
+        return;
+    }
+
+    let output_index = output_items
+        .iter()
+        .rev()
+        .find_map(|(index, item)| (item.item_type == "message").then_some(*index))
+        .unwrap_or_else(|| {
+            output_items
+                .keys()
+                .next_back()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0)
+        });
+    let item = output_items
+        .entry(output_index)
+        .or_insert_with(|| AggregatedOutputItem {
+            item_type: "message".to_string(),
+            content: String::new(),
+            arguments: String::new(),
+            identifier: "message".to_string(),
+            function_name: String::new(),
+        });
+    item.content.push_str(content);
+}
+
 fn process_state_event_for_output(
     event: &ResponseStateEvent,
     output_items: &mut BTreeMap<u32, AggregatedOutputItem>,
@@ -1190,8 +1230,44 @@ fn process_state_event_for_output(
     }
 }
 
+fn parse_raw_tool_call_message(
+    content: &str,
+    tool_calling_tokens: &ToolCallingTokens,
+) -> Option<(String, String)> {
+    let mut text = content.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    for format in &tool_calling_tokens.formats {
+        let call_end = format.call_end.as_str();
+        if call_end.is_empty() || !text.ends_with(call_end) {
+            continue;
+        }
+        text = text[..text.len() - call_end.len()].trim_end();
+        break;
+    }
+
+    let section_end = tool_calling_tokens.section_end.as_str();
+    if !section_end.is_empty() && text.ends_with(section_end) {
+        text = text[..text.len() - section_end.len()].trim_end();
+    }
+
+    let candidate = Value::String(text.to_string());
+    if let Some(parsed) = parse_tool_call_completion_value(&candidate) {
+        return Some(parsed);
+    }
+
+    if !text.starts_with('{') {
+        return None;
+    }
+    let json_end = text.rfind('}')?;
+    parse_tool_call_completion_value(&Value::String(text[..=json_end].to_string()))
+}
+
 fn build_output_items(
     output_items: &BTreeMap<u32, AggregatedOutputItem>,
+    raw_tool_call_tokens: Option<&ToolCallingTokens>,
 ) -> Vec<ResponseOutputItem> {
     let mut output = Vec::new();
     for item in output_items.values() {
@@ -1222,6 +1298,20 @@ fn build_output_items(
                 }));
             }
             _ => {
+                if let Some((function_name, arguments)) = raw_tool_call_tokens
+                    .and_then(|tokens| parse_raw_tool_call_message(&item.content, tokens))
+                {
+                    output.push(ResponseOutputItem::FunctionCall(OutputFunctionCall {
+                        output_type: "function_call".to_string(),
+                        id: generate_function_call_id(),
+                        call_id: generate_tool_call_id(),
+                        name: function_name,
+                        arguments,
+                        metadata: None,
+                        status: OutputStatus::Completed,
+                    }));
+                    continue;
+                }
                 output.push(ResponseOutputItem::Message(OutputMessage {
                     output_type: "message".to_string(),
                     id: generate_message_id(),
@@ -1271,6 +1361,69 @@ fn update_usage_from_delta(delta: &ResponseDelta, usage: &mut ResponseUsage) {
             .max(generation_len.saturating_sub(reasoning_tokens));
     }
     usage.total_tokens = usage.input_tokens + usage.output_tokens;
+}
+
+fn append_raw_message_stream_delta(
+    stream_state: &mut ResponseStreamState,
+    content: &str,
+    events: &mut Vec<ResponseEvent>,
+) {
+    if content.is_empty() {
+        return;
+    }
+
+    let output_index = stream_state
+        .items
+        .iter()
+        .rev()
+        .find_map(|(index, item)| (item.item_type == "message").then_some(*index))
+        .unwrap_or_else(|| {
+            stream_state
+                .items
+                .keys()
+                .next_back()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0)
+        });
+    let item_is_new = !stream_state.items.contains_key(&output_index);
+    let item_id = {
+        let item = stream_state.get_or_create_item(output_index, "message", "message");
+        item.accumulated_content.push_str(content);
+        item.item_id.clone()
+    };
+
+    if item_is_new {
+        let sequence_number = stream_state.next_sequence_number();
+        let item = stream_state
+            .items
+            .get(&output_index)
+            .expect("message item was just inserted")
+            .to_skeleton();
+        events.push(ResponseEvent::OutputItemAdded(OutputItemAddedEvent {
+            sequence_number,
+            output_index,
+            item,
+        }));
+
+        let sequence_number = stream_state.next_sequence_number();
+        events.push(ResponseEvent::ContentPartAdded(ContentPartAddedEvent {
+            sequence_number,
+            item_id: item_id.clone(),
+            output_index,
+            content_index: 0,
+            part: ResponseContentPart::OutputText(OutputTextContent::new("")),
+        }));
+    }
+
+    let sequence_number = stream_state.next_sequence_number();
+    events.push(ResponseEvent::OutputTextDelta(OutputTextDeltaEvent {
+        sequence_number,
+        item_id,
+        output_index,
+        content_index: 0,
+        delta: content.to_string(),
+        logprobs: Vec::new(),
+    }));
 }
 
 fn process_state_event_for_streaming(
@@ -1593,6 +1746,7 @@ async fn stream_response_events(
     let mut error_detail: Option<String> = None;
     let mut finish_reason: Option<String> = None;
     let mut usage = ResponseUsage::default();
+    let mut pending_raw_content = String::new();
 
     while let Some(delta) = delta_rx.recv().await {
         if let Some(error) = &delta.error {
@@ -1618,8 +1772,22 @@ async fn stream_response_events(
         }
 
         let mut mapped_events = Vec::new();
-        for event in &delta.state_events {
-            process_state_event_for_streaming(event, &mut stream_state, &mut mapped_events);
+        if delta.state_events.is_empty() {
+            if let Some(content) = delta.content.as_deref() {
+                if stream_state
+                    .items
+                    .values()
+                    .any(|item| item.item_type == "message")
+                {
+                    append_raw_message_stream_delta(&mut stream_state, content, &mut mapped_events);
+                } else {
+                    pending_raw_content.push_str(content);
+                }
+            }
+        } else {
+            for event in &delta.state_events {
+                process_state_event_for_streaming(event, &mut stream_state, &mut mapped_events);
+            }
         }
 
         for event in mapped_events {
@@ -1681,6 +1849,13 @@ async fn stream_response_events(
 
         let incomplete_details = finish_reason_to_incomplete(finish_reason.as_deref());
         let mut completion_events = Vec::new();
+        if !pending_raw_content.is_empty() && stream_state.items.is_empty() {
+            append_raw_message_stream_delta(
+                &mut stream_state,
+                &pending_raw_content,
+                &mut completion_events,
+            );
+        }
         emit_stream_fallback_item_done(
             &mut stream_state,
             &mut completion_events,
@@ -1727,6 +1902,7 @@ async fn gather_non_streaming_response(
     mut delta_rx: mpsc::UnboundedReceiver<ResponseDelta>,
     model: &str,
     request: &ResponsesRequest,
+    raw_tool_call_tokens: Option<&ToolCallingTokens>,
 ) -> Result<ResponseObject> {
     let created_at = current_timestamp();
     let mut completed_at: Option<i64> = None;
@@ -1743,12 +1919,18 @@ async fn gather_non_streaming_response(
             error_detail = Some(error.clone());
         }
 
-        if let Some(content) = &delta.content {
-            fallback_content.push_str(content);
-        }
-
-        for event in &delta.state_events {
-            process_state_event_for_output(event, &mut output_items);
+        if delta.state_events.is_empty() {
+            if let Some(content) = &delta.content {
+                if output_items.is_empty() {
+                    fallback_content.push_str(content);
+                } else {
+                    append_raw_message_output(&mut output_items, content);
+                }
+            }
+        } else {
+            for event in &delta.state_events {
+                process_state_event_for_output(event, &mut output_items);
+            }
         }
 
         update_usage_from_delta(&delta, &mut usage);
@@ -1784,7 +1966,7 @@ async fn gather_non_streaming_response(
             content: vec![OutputTextContent::new(fallback_content)],
         })]
     } else {
-        build_output_items(&output_items)
+        build_output_items(&output_items, raw_tool_call_tokens)
     };
 
     Ok(ResponseObject {
@@ -1816,6 +1998,7 @@ async fn gather_non_streaming_response(
         tool_choice: request.tool_choice.clone(),
         tools: request.core_tools.clone(),
         max_tool_calls: request.max_tool_calls,
+        min_tool_calls: request.min_tool_calls,
         text: request.text.clone(),
         stop_token_id,
         stop_token,
@@ -1935,7 +2118,7 @@ impl Client {
             .as_ref()
             .map(|text| text.get("format").cloned().unwrap_or_else(|| text.clone()))
             .map(normalize_response_format)
-            .map(|response_format| python_json_dumps(&response_format))
+            .map(|response_format| serde_json::to_string(&response_format).unwrap_or_default())
             .unwrap_or_default();
 
         let rng_seed = rand::thread_rng().gen::<u64>();
@@ -2001,6 +2184,7 @@ impl Client {
             output_frame_tokens: formatter.get_output_frame_tokens().clone(),
             thinking_tokens,
             tool_choice: tool_choice_to_string(request.tool_choice.as_ref()),
+            min_tool_calls: request.min_tool_calls.unwrap_or(1).max(1),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
             response_format_json,
             task_name: None,
@@ -2031,7 +2215,16 @@ impl Client {
             ));
             Ok(ResponsesResult::Stream(event_rx))
         } else {
-            let response = gather_non_streaming_response(stream, model_id, &request).await?;
+            let raw_tool_call_tokens = if request.core_tools.is_empty()
+                || tool_choice_to_string(request.tool_choice.as_ref()) == "none"
+            {
+                None
+            } else {
+                Some(formatter.get_tool_calling_tokens())
+            };
+            let response =
+                gather_non_streaming_response(stream, model_id, &request, raw_tool_call_tokens)
+                    .await?;
             Ok(ResponsesResult::Complete(Box::new(response)))
         }
     }
@@ -2100,7 +2293,22 @@ mod tests {
         let (core_tools, active_tools) =
             response_tool_schemas(std::slice::from_ref(&weather_tool), &[]);
 
-        assert_eq!(core_tools, vec![weather_tool]);
+        assert_eq!(
+            core_tools,
+            vec![serde_json::json!({
+                "name": "get_weather",
+                "type": "function",
+                "description": "Get the current weather for a location.",
+                "strict": true,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"}
+                    },
+                    "required": ["location"]
+                }
+            })]
+        );
         assert_eq!(
             active_tools,
             vec![serde_json::json!({
@@ -2162,6 +2370,7 @@ mod tests {
             core_tools: Vec::new(),
             active_tools: Vec::new(),
             tool_choice: None,
+            min_tool_calls: None,
             max_tool_calls: None,
             text: None,
             reasoning: Some(false.into()),
@@ -2241,7 +2450,7 @@ mod tests {
             &mut output_items,
         );
 
-        let output = build_output_items(&output_items);
+        let output = build_output_items(&output_items, None);
         let ResponseOutputItem::FunctionCall(call) = &output[0] else {
             panic!("expected function call output");
         };
@@ -2254,6 +2463,41 @@ mod tests {
                 "verbose": true,
                 "limit": null,
             })
+        );
+    }
+
+    #[test]
+    fn test_build_output_items_promotes_raw_tool_call_message() {
+        let output_items = BTreeMap::from([(
+            0,
+            AggregatedOutputItem {
+                item_type: "message".to_string(),
+                content: r#"{"name":"get_weather","arguments":{"location":"San Francisco"}}"#
+                    .to_string()
+                    + "<|tool_call_end|>",
+                arguments: String::new(),
+                identifier: "message".to_string(),
+                function_name: String::new(),
+            },
+        )]);
+        let tokens = ToolCallingTokens {
+            formats: vec![crate::ipc::serialization::ToolCallFormat {
+                name: "json".to_string(),
+                call_end: "<|tool_call_end|>".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let output = build_output_items(&output_items, Some(&tokens));
+        let ResponseOutputItem::FunctionCall(call) = &output[0] else {
+            panic!("expected raw tool call message to be promoted");
+        };
+
+        assert_eq!(call.name, "get_weather");
+        assert_eq!(
+            serde_json::from_str::<Value>(&call.arguments).expect("valid JSON arguments"),
+            serde_json::json!({"location": "San Francisco"})
         );
     }
 
@@ -2283,7 +2527,7 @@ mod tests {
             );
         }
 
-        let output = build_output_items(&output_items);
+        let output = build_output_items(&output_items, None);
         let calls = output
             .iter()
             .filter_map(|item| match item {

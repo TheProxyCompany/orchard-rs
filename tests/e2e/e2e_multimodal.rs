@@ -65,6 +65,7 @@ async fn test_multimodal_apple_image() {
         let params = SamplingParams {
             max_tokens: 50,
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -113,6 +114,7 @@ async fn test_multimodal_moondream_image() {
         let params = SamplingParams {
             max_tokens: 50,
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 

@@ -20,6 +20,7 @@ async fn test_chat_completion_batched_homogeneous() {
         let params = SamplingParams {
             max_tokens: 10, // max_completion_tokens in Python
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -75,6 +76,7 @@ async fn test_chat_completion_batched_heterogeneous() {
         let params = SamplingParams {
             max_tokens: 4,
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 

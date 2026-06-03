@@ -64,6 +64,8 @@ pub struct PromptPayload {
     pub thinking_tokens: ThinkingTokens,
     #[serde(default = "default_tool_choice")]
     pub tool_choice: String,
+    #[serde(default = "default_min_tool_calls")]
+    pub min_tool_calls: i32,
     #[serde(default)]
     pub max_tool_calls: i32,
     #[serde(default)]
@@ -121,6 +123,10 @@ pub struct ThinkingTokens {
 
 fn default_tool_choice() -> String {
     "auto".to_string()
+}
+
+fn default_min_tool_calls() -> i32 {
+    1
 }
 
 /// Capability entry for multimodal content.
@@ -354,6 +360,7 @@ pub fn build_batch_request_payload(
                 "required": prompt.thinking_tokens.required,
             },
             "tool_choice": prompt.tool_choice,
+            "min_tool_calls": prompt.min_tool_calls,
             "max_tool_calls": prompt.max_tool_calls,
             "response_format_json": prompt.response_format_json,
             "logit_bias": logit_bias,

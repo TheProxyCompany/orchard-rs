@@ -134,15 +134,24 @@ fn tojson_filter(
     indent: Option<Value>,
     kwargs: Kwargs,
 ) -> std::result::Result<Value, minijinja::Error> {
-    if kwargs.has("ensure_ascii") {
-        let _: Option<bool> = kwargs.get("ensure_ascii")?;
+    if indent.is_some() || kwargs.has("separators") || kwargs.has("sort_keys") {
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "Orchard template tojson currently supports only json.dumps defaults plus ensure_ascii=False",
+        ));
     }
-    if indent.is_some() {
-        return minijinja::filters::tojson(value, indent, kwargs);
+    if kwargs.has("ensure_ascii") {
+        let ensure_ascii: bool = kwargs.get("ensure_ascii")?;
+        if ensure_ascii {
+            return Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "tojson(ensure_ascii=True) is not supported by Orchard templates",
+            ));
+        }
     }
 
     let mut bytes = Vec::new();
-    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, PythonJsonFormatter);
+    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, TemplateJsonFormatter);
     serde::Serialize::serialize(value, &mut serializer).map_err(|err| {
         minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -158,9 +167,9 @@ fn tojson_filter(
     Ok(Value::from_safe_string(text))
 }
 
-struct PythonJsonFormatter;
+struct TemplateJsonFormatter;
 
-impl serde_json::ser::Formatter for PythonJsonFormatter {
+impl serde_json::ser::Formatter for TemplateJsonFormatter {
     fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> std::io::Result<()>
     where
         W: ?Sized + std::io::Write,
@@ -1184,10 +1193,10 @@ mod tests {
         assert!(rendered
             .contains("<|start|>assistant<|channel|>analysis<|message|>Need lookup.<|end|>"));
         assert!(rendered.contains(
-            "<|start|>assistant<|channel|>commentary to=functions.lookup <|constrain|>json<|message|>{\"query\":\"orchard\"}<|call|>"
+            "<|start|>assistant<|channel|>commentary to=functions.lookup <|constrain|>json<|message|>{\"query\": \"orchard\"}<|call|>"
         ));
         assert!(rendered.contains(
-            "<|start|>assistant<|channel|>commentary to=functions.rank <|constrain|>json<|message|>{\"target\":\"orchard\"}<|call|>"
+            "<|start|>assistant<|channel|>commentary to=functions.rank <|constrain|>json<|message|>{\"target\": \"orchard\"}<|call|>"
         ));
         assert!(rendered.contains(
             "<|start|>functions.lookup to=assistant<|channel|>commentary<|message|>{\"result\":\"ok\"}<|end|>"
@@ -1323,7 +1332,7 @@ mod tests {
         assert!(rendered.contains("<|im_start|>user\nUse lookup.<|im_end|>\n"));
         assert!(rendered.contains("<|im_start|>assistant\nCalling lookup.\n<tool_call>\n"));
         assert!(rendered.contains("\"name\":\"lookup\""));
-        assert!(rendered.contains("\"arguments\":{\"query\":\"orchard\"}"));
+        assert!(rendered.contains("\"arguments\":{\"query\": \"orchard\"}"));
         assert!(!rendered.contains("<function="));
         assert!(!rendered.contains("<parameter="));
         assert!(rendered.contains("<tool_response>\n{\"result\":\"ok\"}\n</tool_response>"));

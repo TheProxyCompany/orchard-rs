@@ -196,6 +196,9 @@ fn discover_profiles(
 fn discover_templates(profile_dir: &Path) -> io::Result<Vec<(String, String)>> {
     let templates_dir = profile_dir.join("templates");
     let mut templates = Vec::new();
+    if profile_dir.join("chat_template.jinja").is_file() {
+        templates.push(("default".to_string(), "chat_template.jinja".to_string()));
+    }
     if templates_dir.is_dir() {
         for entry in fs::read_dir(&templates_dir)? {
             let entry = entry?;
@@ -206,10 +209,21 @@ fn discover_templates(profile_dir: &Path) -> io::Result<Vec<(String, String)>> {
             let Some(stem) = path.file_stem().and_then(|name| name.to_str()) else {
                 continue;
             };
+            if templates
+                .iter()
+                .any(|(template_type, _)| template_type == stem)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Profile '{}' defines duplicate template '{}'",
+                        profile_dir.display(),
+                        stem
+                    ),
+                ));
+            }
             templates.push((stem.to_string(), format!("templates/{stem}.jinja")));
         }
-    } else if profile_dir.join("chat_template.jinja").is_file() {
-        templates.push(("default".to_string(), "chat_template.jinja".to_string()));
     }
     if templates.is_empty() {
         return Err(io::Error::new(

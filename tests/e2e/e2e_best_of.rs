@@ -23,6 +23,7 @@ async fn test_chat_completion_best_of_selects_top_n() {
             temperature: 0.2,
             n: 1,
             best_of: Some(best_of),
+            reasoning: Some(false),
             ..Default::default()
         };
 

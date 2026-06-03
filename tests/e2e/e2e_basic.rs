@@ -16,6 +16,7 @@ async fn test_chat_completion_first_token() {
         let params = SamplingParams {
             max_tokens: 1,
             temperature: 1.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -68,6 +69,7 @@ async fn test_chat_completion_multi_token() {
         let params = SamplingParams {
             max_tokens: 64, // max_completion_tokens in Python
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 

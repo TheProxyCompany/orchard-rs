@@ -132,6 +132,19 @@ fn native_reasoning_settings(
     (reasoning_flag, reasoning_effort, thinking_tokens)
 }
 
+fn chat_reasoning_requested(
+    formatter: &crate::formatter::ChatFormatter,
+    params: &SamplingParams,
+) -> bool {
+    let default_reasoning = formatter.supports_native_thinking()
+        && params.reasoning.is_none()
+        && params.reasoning_effort.is_none();
+    params.reasoning != Some(false)
+        && (params.reasoning == Some(true)
+            || params.reasoning_effort.is_some()
+            || default_reasoning)
+}
+
 fn sampling_with_profile_defaults(
     formatter: &crate::formatter::ChatFormatter,
     params: &SamplingParams,
@@ -228,7 +241,7 @@ pub struct SamplingParams {
     #[serde(default)]
     pub response_format: Option<serde_json::Value>,
     #[serde(default)]
-    pub reasoning: bool,
+    pub reasoning: Option<bool>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]
@@ -265,7 +278,7 @@ impl Default for SamplingParams {
             tool_choice: None,
             max_tool_calls: None,
             response_format: None,
-            reasoning: false,
+            reasoning: None,
             reasoning_effort: None,
             instructions: None,
             task_name: None,
@@ -428,7 +441,7 @@ impl Client {
 
         let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
             formatter,
-            params.reasoning || params.reasoning_effort.is_some(),
+            chat_reasoning_requested(formatter, &params),
             &params.reasoning_effort,
         );
 
@@ -543,6 +556,7 @@ impl Client {
             output_frame_tokens,
             thinking_tokens,
             tool_choice,
+            min_tool_calls: 1,
             max_tool_calls,
             response_format_json,
             task_name: params.task_name.clone(),
@@ -726,7 +740,7 @@ impl Client {
             let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
             let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
                 formatter,
-                params.reasoning || params.reasoning_effort.is_some(),
+                chat_reasoning_requested(formatter, &params),
                 &params.reasoning_effort,
             );
             let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
@@ -840,6 +854,7 @@ impl Client {
                 output_frame_tokens: output_frame_tokens.clone(),
                 thinking_tokens,
                 tool_choice: tool_choice.clone(),
+                min_tool_calls: 1,
                 max_tool_calls,
                 response_format_json: response_format_json.clone(),
                 task_name: params.task_name.clone(),
@@ -1149,6 +1164,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         output_frame_tokens: Default::default(),
         thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
+        min_tool_calls: 1,
         max_tool_calls: 0,
         response_format_json: String::new(),
         task_name: None,
@@ -1209,6 +1225,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         output_frame_tokens: Default::default(),
         thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
+        min_tool_calls: 1,
         max_tool_calls: 0,
         response_format_json: String::new(),
         task_name: None,
@@ -1424,23 +1441,6 @@ fn value_to_text(value: &Value) -> String {
 }
 
 fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
-    let has_state_events = deltas.iter().any(|delta| !delta.state_events.is_empty());
-    if !has_state_events {
-        return deltas
-            .iter()
-            .filter_map(|delta| delta.content.as_ref())
-            .cloned()
-            .collect();
-    }
-
-    let has_structured_items = deltas
-        .iter()
-        .flat_map(|delta| &delta.state_events)
-        .any(|event| event.item_type != "message");
-    if has_structured_items {
-        return aggregate_message_state_text_with_raw_suffix(deltas);
-    }
-
     let mut text = String::new();
     let mut completed_value = None;
 
@@ -1452,17 +1452,25 @@ fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
             continue;
         }
 
-        let message_delta = delta
+        let has_non_message_event = delta
             .state_events
             .iter()
-            .find(|event| event.item_type == "message" && event.event_type == "content_delta")
-            .map(|event| event.delta.as_str());
-        let delta_content = delta
+            .any(|event| event.item_type != "message");
+        let message_content = delta
+            .state_events
+            .iter()
+            .filter(|event| event.item_type == "message" && event.event_type == "content_delta")
+            .map(|event| event.delta.as_str())
+            .collect::<String>();
+        let raw_content = delta
             .content
             .as_deref()
-            .filter(|content| !content.is_empty())
-            .or(message_delta)
-            .unwrap_or_default();
+            .filter(|content| !content.is_empty());
+        let delta_content = if has_non_message_event {
+            message_content.as_str()
+        } else {
+            raw_content.unwrap_or(message_content.as_str())
+        };
 
         for event in &delta.state_events {
             if event.item_type == "message"
@@ -1484,51 +1492,6 @@ fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
         return text;
     }
     completed_value.unwrap_or_default()
-}
-
-fn aggregate_message_state_text(deltas: &[ClientDelta]) -> String {
-    let mut text = String::new();
-    let mut completed_value = None;
-    for event in deltas.iter().flat_map(|delta| &delta.state_events) {
-        if event.item_type != "message" {
-            continue;
-        }
-        if event.event_type == "content_delta" {
-            text.push_str(&event.delta);
-        } else if event.event_type == "item_completed" {
-            if let Some(value) = &event.value {
-                completed_value = Some(value_to_text(value));
-            }
-        }
-    }
-
-    if !text.is_empty() {
-        return text;
-    }
-    completed_value.unwrap_or_default()
-}
-
-fn aggregate_message_state_text_with_raw_suffix(deltas: &[ClientDelta]) -> String {
-    let state_text = aggregate_message_state_text(deltas);
-    if state_text.is_empty() {
-        return state_text;
-    }
-
-    let raw_text: String = deltas
-        .iter()
-        .filter_map(|delta| delta.content.as_ref())
-        .cloned()
-        .collect();
-    if raw_text.len() > state_text.len() {
-        if let Some(start) = raw_text.rfind(&state_text) {
-            let suffix_start = start + state_text.len();
-            if suffix_start < raw_text.len() {
-                return format!("{}{}", state_text, &raw_text[suffix_start..]);
-            }
-        }
-    }
-
-    state_text
 }
 
 fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<ClientToolCall>) {
@@ -1675,7 +1638,7 @@ mod tests {
         assert!(params.core_tools.is_empty());
         assert!(params.response_format.is_none());
         assert!(!params.deterministic);
-        assert!(!params.reasoning);
+        assert!(params.reasoning.is_none());
         assert!(params.reasoning_effort.is_none());
         assert!(params.instructions.is_none());
     }

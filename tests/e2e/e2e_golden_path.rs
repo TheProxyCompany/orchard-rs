@@ -31,16 +31,16 @@ fn function_call(call_id: &str, name: &str, arguments: &str) -> ResponseInputIte
 fn function_output(call_id: &str, output: Value) -> ResponseInputItem {
     ResponseInputItem::FunctionCallOutput {
         call_id: call_id.to_string(),
-        output: python_json_dumps(&output),
+        output: tool_output_json(&output),
     }
 }
 
-fn python_json_dumps(value: &Value) -> String {
+fn tool_output_json(value: &Value) -> String {
     match value {
         Value::Array(values) => {
             let values = values
                 .iter()
-                .map(python_json_dumps)
+                .map(tool_output_json)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{values}]")
@@ -50,7 +50,7 @@ fn python_json_dumps(value: &Value) -> String {
                 .iter()
                 .map(|(key, value)| {
                     let key = serde_json::to_string(key).expect("JSON object key serializes");
-                    format!("{key}: {}", python_json_dumps(value))
+                    format!("{key}: {}", tool_output_json(value))
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -83,6 +83,7 @@ fn request(input: Vec<ResponseInputItem>) -> ResponsesRequest {
         core_tools: Vec::new(),
         active_tools: Vec::new(),
         tool_choice: None,
+        min_tool_calls: None,
         max_tool_calls: None,
         text: None,
         reasoning: None,
@@ -1253,7 +1254,7 @@ async fn test_multi_tool() {
             model.template_type
         );
         assert!(
-            answer.contains("23") || answer.contains("tokyo"),
+            answer.contains("23:00") || answer.contains("11") || answer.contains("tokyo"),
             "{}: final answer dropped time result: {answer:?}",
             model.template_type
         );

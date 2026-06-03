@@ -20,6 +20,7 @@ async fn test_unicode_payload_round_trip() {
     let params = SamplingParams {
         temperature: 0.0,
         max_tokens: 10, // max_completion_tokens in Python
+        reasoning: Some(false),
         ..Default::default()
     };
 

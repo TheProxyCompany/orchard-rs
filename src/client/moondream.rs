@@ -273,7 +273,7 @@ impl MoondreamClient {
 
         // Spatial references are only surfaced in Moondream's grounded
         // reasoning path, so enable that path by default when refs are present.
-        params.reasoning = reasoning || !spatial_refs.is_empty();
+        params.reasoning = Some(reasoning || !spatial_refs.is_empty());
 
         // Get streaming response
         let result = self

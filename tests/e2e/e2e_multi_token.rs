@@ -18,6 +18,7 @@ async fn test_chat_completion_multi_token_non_streaming() {
             temperature: 0.0,
             max_tokens: 10,
             top_logprobs: 5,
+            reasoning: Some(false),
             ..Default::default()
         };
 
@@ -87,6 +88,7 @@ async fn test_chat_completion_multi_token_streaming() {
         let params = SamplingParams {
             max_tokens: 10,
             temperature: 0.0,
+            reasoning: Some(false),
             ..Default::default()
         };
 

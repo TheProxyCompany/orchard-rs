@@ -232,9 +232,7 @@ fn canon(
     counts: &mut HashMap<String, usize>,
 ) -> Value {
     match value {
-        Value::Object(mut object) => {
-            fill_python_defaults(&mut object);
-            normalize_rust_wrappers(&mut object);
+        Value::Object(object) => {
             let mapped = object
                 .into_iter()
                 .map(|(key, value)| {
@@ -281,55 +279,6 @@ fn token(
     *count += 1;
     ids.insert(value.to_string(), token.clone());
     token
-}
-
-fn fill_python_defaults(object: &mut Map<String, Value>) {
-    if object.get("object").and_then(Value::as_str) == Some("response") {
-        for key in [
-            "completed_at",
-            "incomplete_details",
-            "stop_token_id",
-            "stop_token",
-            "usage",
-        ] {
-            object.entry(key.to_string()).or_insert(Value::Null);
-        }
-    }
-
-    if object.get("type").and_then(Value::as_str) == Some("reasoning") {
-        object
-            .entry("encrypted_content".to_string())
-            .or_insert(Value::Null);
-    }
-
-    if object.get("type").and_then(Value::as_str) == Some("response.function_call_arguments.delta")
-    {
-        object
-            .entry("field_path".to_string())
-            .or_insert(Value::Null);
-    }
-}
-
-fn normalize_rust_wrappers(object: &mut Map<String, Value>) {
-    if let Some(part) = object.get_mut("part") {
-        flatten_single_variant(part, &["OutputText", "Reasoning"]);
-    }
-}
-
-fn flatten_single_variant(value: &mut Value, variants: &[&str]) {
-    let Value::Object(object) = value else {
-        return;
-    };
-    if object.len() != 1 {
-        return;
-    }
-    let Some((key, inner)) = object.iter().next() else {
-        return;
-    };
-    if !variants.contains(&key.as_str()) {
-        return;
-    }
-    *value = inner.clone();
 }
 
 #[allow(dead_code)]

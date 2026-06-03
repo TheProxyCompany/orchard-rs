@@ -50,6 +50,7 @@ async fn test_chat_completion_structured_json_response() {
             "strict": true,
             "json_schema": schema,
         })),
+        reasoning: Some(false),
         ..Default::default()
     };
 
