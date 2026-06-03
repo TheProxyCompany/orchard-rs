@@ -251,15 +251,12 @@ pub fn build_multimodal_messages(
 ///
 /// Creates layout segments that describe the binary data structure.
 pub fn build_multimodal_layout(
+    formatter: &ChatFormatter,
     prompt_text: &str,
     image_buffers: &[Vec<u8>],
     audio_buffers: &[Vec<u8>],
     capabilities: &[CapabilityInput],
     content_order: &[(ContentType, usize)],
-    placeholder_token: &str,
-    exclude_image_placeholder: bool,
-    audio_placeholder: Option<&str>,
-    capability_placeholder: Option<&str>,
 ) -> Result<Vec<LayoutSegment>> {
     let mut layout = Vec::new();
 
@@ -276,8 +273,13 @@ pub fn build_multimodal_layout(
         return Ok(layout);
     }
 
+    let image_placeholder = formatter.image_placeholder_token();
+    let exclude_image_placeholder = formatter.should_clip_image_placeholder();
+    let audio_placeholder = formatter.audio_placeholder_token();
+    let capability_placeholder = formatter.coord_placeholder_token();
+
     let image_regex =
-        Regex::new(&regex::escape(placeholder_token)).expect("escaped regex is always valid");
+        Regex::new(&regex::escape(image_placeholder)).expect("escaped regex is always valid");
     let image_matches: Vec<_> = image_regex.find_iter(prompt_text).collect();
 
     if image_matches.len() != image_buffers.len() {

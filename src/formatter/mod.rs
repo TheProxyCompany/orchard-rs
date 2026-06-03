@@ -1070,15 +1070,12 @@ mod tests {
             .apply_template(&messages, true, false, None, None)
             .unwrap();
         let layout = build_multimodal_layout(
+            &formatter,
             &rendered,
             &image_buffers,
             &audio_buffers,
             &capabilities,
             &content_order,
-            formatter.image_placeholder_token(),
-            formatter.should_clip_image_placeholder(),
-            formatter.audio_placeholder_token(),
-            formatter.coord_placeholder_token(),
         )
         .unwrap();
 
@@ -1116,15 +1113,12 @@ mod tests {
             .apply_template(&messages, true, false, None, None)
             .unwrap();
         let layout = build_multimodal_layout(
+            &formatter,
             &rendered,
             &image_buffers,
             &audio_buffers,
             &capabilities,
             &content_order,
-            formatter.image_placeholder_token(),
-            formatter.should_clip_image_placeholder(),
-            formatter.audio_placeholder_token(),
-            formatter.coord_placeholder_token(),
         )
         .unwrap();
 

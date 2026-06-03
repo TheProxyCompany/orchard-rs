@@ -477,20 +477,14 @@ impl Client {
             )
             .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-        let audio_placeholder = formatter.audio_placeholder_token();
-        let capability_placeholder = formatter.coord_placeholder_token();
-
         // Build layout for multimodal content
         let layout_segments = build_multimodal_layout(
+            formatter,
             &prompt_text,
             &image_buffers,
             &audio_buffers,
             &capabilities,
             &content_order,
-            formatter.image_placeholder_token(),
-            formatter.should_clip_image_placeholder(),
-            audio_placeholder,
-            capability_placeholder,
         )
         .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
@@ -791,20 +785,14 @@ impl Client {
                 )
                 .map_err(|e| ClientError::Formatter(e.to_string()))?;
 
-            let audio_placeholder = formatter.audio_placeholder_token();
-            let capability_placeholder = formatter.coord_placeholder_token();
-
             // Build layout for multimodal content
             let layout_segments = build_multimodal_layout(
+                formatter,
                 &prompt_text,
                 &image_buffers,
                 &audio_buffers,
                 &capabilities,
                 &content_order,
-                formatter.image_placeholder_token(),
-                formatter.should_clip_image_placeholder(),
-                audio_placeholder,
-                capability_placeholder,
             )
             .map_err(|e| ClientError::Multimodal(e.to_string()))?;
 
