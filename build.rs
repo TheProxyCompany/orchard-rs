@@ -10,6 +10,9 @@ const REQUIRED_PROFILE_FILES: &[&str] = &[
 ];
 const SHARED_TEMPLATE_FILES: &[&str] = &["tool_macros.jinja"];
 
+type EmbeddedTemplate = (String, String);
+type EmbeddedProfileSource = (String, Vec<String>, Vec<EmbeddedTemplate>);
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=build.rs");
     println!("cargo::rerun-if-changed=profiles");
@@ -132,9 +135,7 @@ fn build_embedded_profiles_source(
     Ok(generated)
 }
 
-fn discover_profiles(
-    profiles_dir: &Path,
-) -> io::Result<Vec<(String, Vec<String>, Vec<(String, String)>)>> {
+fn discover_profiles(profiles_dir: &Path) -> io::Result<Vec<EmbeddedProfileSource>> {
     let mut profile_names = Vec::new();
 
     for entry in fs::read_dir(profiles_dir)? {
