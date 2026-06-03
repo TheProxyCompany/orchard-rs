@@ -108,17 +108,14 @@ fn determine_template_type(config: &serde_json::Value) -> Result<&str> {
         return Ok(template_type);
     }
 
+    let _ = determine_model_type(config)?;
+
+    Ok("default")
+}
+
+/// Determine Pantheon profile from config.
+fn determine_pantheon_profile(config: &serde_json::Value) -> Result<&str> {
     let model_type = determine_model_type(config)?;
-    let model_name = config
-        .get("_name_or_path")
-        .or_else(|| config.get("model_id"))
-        .or_else(|| config.get("original_repo"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if model_type == "phi3" && model_name.contains("phi-4-reasoning") {
-        return Ok("phi4_reasoning");
-    }
 
     Ok(match model_type {
         "llama" | "llama3" => "llama3",
@@ -127,6 +124,7 @@ fn determine_template_type(config: &serde_json::Value) -> Result<&str> {
         "gemma4" | "gemma4_text" => "gemma4",
         "qwen3_5" | "qwen3_5_text" | "qwen3_5_moe" => "qwen3_5",
         "qwen2" | "qwen" => "qwen2",
+        "lfm2_moe" => "lfm2_5",
         other => other,
     })
 }
@@ -139,7 +137,58 @@ fn tojson_filter(
     if kwargs.has("ensure_ascii") {
         let _: Option<bool> = kwargs.get("ensure_ascii")?;
     }
-    minijinja::filters::tojson(value, indent, kwargs)
+    if indent.is_some() {
+        return minijinja::filters::tojson(value, indent, kwargs);
+    }
+
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, PythonJsonFormatter);
+    serde::Serialize::serialize(value, &mut serializer).map_err(|err| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!("failed to serialize JSON value: {err}"),
+        )
+    })?;
+    let text = String::from_utf8(bytes).map_err(|err| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!("failed to encode JSON value: {err}"),
+        )
+    })?;
+    Ok(Value::from_safe_string(text))
+}
+
+struct PythonJsonFormatter;
+
+impl serde_json::ser::Formatter for PythonJsonFormatter {
+    fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_key<W>(&mut self, writer: &mut W, first: bool) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        if first {
+            Ok(())
+        } else {
+            writer.write_all(b", ")
+        }
+    }
+
+    fn begin_object_value<W>(&mut self, writer: &mut W) -> std::io::Result<()>
+    where
+        W: ?Sized + std::io::Write,
+    {
+        writer.write_all(b": ")
+    }
 }
 
 /// Chat formatter using Jinja2-compatible templates.
@@ -151,7 +200,7 @@ pub struct ChatFormatter {
     model_path: String,
     /// Model type (e.g., "llama3", "moondream3")
     model_type: String,
-    /// Prompt template type (e.g., "llama3", "phi4_reasoning")
+    /// Prompt template variant (e.g., "default", "reasoning")
     template_type: String,
     /// Control tokens
     pub control_tokens: ControlTokens,
@@ -195,9 +244,11 @@ impl ChatFormatter {
     pub fn from_config(model_path: &Path, config: serde_json::Value) -> Result<Self> {
         let model_type = determine_model_type(&config)?.to_string();
         let template_type = determine_template_type(&config)?.to_string();
-        let profile = Self::find_profile(&template_type)?;
-        let control_tokens = ControlTokens::from_json_str(profile.control_tokens, &template_type)?;
-        let template_source = profile.chat_template.to_string();
+        let pantheon_profile = determine_pantheon_profile(&config)?.to_string();
+        let profile = Self::find_profile(&pantheon_profile)?;
+        let control_tokens =
+            ControlTokens::from_json_str(profile.control_tokens, profile.profile_name)?;
+        let template_source = Self::load_profile_template(profile.profile_name, &template_type)?;
         let shared_tool_macros_source = Self::load_shared_template("tool_macros.jinja")?;
         let capabilities = Self::load_capabilities(&profile)?;
         let generation = Self::load_generation(&profile)?;
@@ -374,14 +425,6 @@ impl ChatFormatter {
         self.capabilities["thinking"]["native"]
             .as_bool()
             .unwrap_or(false)
-    }
-
-    /// Whether this profile should enter native thinking unless the caller overrides it.
-    pub fn defaults_to_native_thinking(&self) -> bool {
-        self.supports_native_thinking()
-            && self.capabilities["thinking"]["default"]
-                .as_bool()
-                .unwrap_or(false)
     }
 
     /// Numeric f64 value from generation.yaml's default lane.
@@ -650,12 +693,25 @@ impl ChatFormatter {
         ThinkingTokens {
             start: token("start"),
             end: token("end"),
+            required: capabilities
+                .get("thinking")
+                .and_then(|cap| cap.get("required"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
         }
     }
 
     fn find_profile(model_type: &str) -> Result<embedded_profiles::EmbeddedProfile> {
         embedded_profiles::find_embedded_profile(model_type)
             .ok_or_else(|| Error::FormatterProfileNotFound(model_type.to_string()))
+    }
+
+    fn load_profile_template(profile_name: &str, template_type: &str) -> Result<String> {
+        embedded_profiles::load_profile_template(profile_name, template_type)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Error::FormatterProfileNotFound(format!("{profile_name}/{template_type}"))
+            })
     }
 
     fn load_shared_template(template_name: &str) -> Result<Option<String>> {
@@ -791,47 +847,31 @@ mod tests {
     #[test]
     fn test_determine_template_type_prefers_explicit_template_type() {
         let config = serde_json::json!({
-            "model_type": "phi3",
-            "template_type": "phi4_reasoning"
+            "model_type": "qwen3_5",
+            "template_type": "custom"
         });
-        assert_eq!(determine_model_type(&config).unwrap(), "phi3");
-        assert_eq!(determine_template_type(&config).unwrap(), "phi4_reasoning");
+        assert_eq!(determine_model_type(&config).unwrap(), "qwen3_5");
+        assert_eq!(determine_template_type(&config).unwrap(), "custom");
 
         let config = serde_json::json!({"model_type": "qwen3_5_moe"});
-        assert_eq!(determine_template_type(&config).unwrap(), "qwen3_5");
-    }
-
-    #[test]
-    fn test_determine_template_type_detects_phi4_reasoning_repo() {
-        let config = serde_json::json!({
-            "model_type": "phi3",
-            "_name_or_path": "microsoft/Phi-4-reasoning-plus"
-        });
-
-        assert_eq!(determine_model_type(&config).unwrap(), "phi3");
-        assert_eq!(determine_template_type(&config).unwrap(), "phi4_reasoning");
+        assert_eq!(determine_template_type(&config).unwrap(), "default");
     }
 
     #[test]
     fn test_new_text_model_profiles_render_generation_prompt() {
         let cases = [
-            ("lfm2", "lfm2", "<|im_start|>assistant\n"),
-            ("lfm2_moe", "lfm2_moe", "<|im_start|>assistant\n"),
-            ("phi3", "phi3", "<|im_start|>assistant<|im_sep|>"),
-            ("olmo_hybrid", "olmo_hybrid", "<|im_start|>assistant\n"),
-            (
-                "nemotron_h",
-                "nemotron_h",
-                "<|im_start|>assistant\n<think>\n",
-            ),
+            ("lfm2", "default", "<|im_start|>assistant\n"),
+            ("lfm2_moe", "default", "<|im_start|>assistant\n"),
+            ("olmo_hybrid", "default", "<|im_start|>assistant\n"),
+            ("nemotron_h", "default", "<|im_start|>assistant\n<think>\n"),
             (
                 "granite",
-                "granite",
+                "default",
                 "<|start_of_role|>assistant<|end_of_role|>",
             ),
             (
                 "granite_switch",
-                "granite_switch",
+                "default",
                 "<|start_of_role|>assistant<|end_of_role|>",
             ),
         ];
@@ -852,7 +892,7 @@ mod tests {
                         ("content".to_string(), serde_json::json!("hello")),
                     ])],
                     true,
-                    formatter.defaults_to_native_thinking(),
+                    formatter.supports_native_thinking(),
                     None,
                     None,
                 )
@@ -905,7 +945,7 @@ mod tests {
         let formatter = ChatFormatter::new(model_dir.path()).unwrap();
 
         assert_eq!(formatter.model_type, "gemma3_text");
-        assert_eq!(formatter.template_type, "gemma3");
+        assert_eq!(formatter.template_type, "default");
         assert!(!formatter.template_source.is_empty());
         assert!(formatter.shared_tool_macros_source.is_some());
     }
@@ -1271,7 +1311,7 @@ mod tests {
         let thinking_tokens = formatter.get_thinking_tokens();
         assert_eq!(thinking_tokens.start, "<think>\n");
         assert_eq!(thinking_tokens.end, "\n</think>");
-        assert!(formatter.defaults_to_native_thinking());
+        assert!(formatter.supports_native_thinking());
 
         let format = formatter.get_tool_calling_tokens().formats.first().unwrap();
         assert_eq!(format.name, "json");
@@ -1302,127 +1342,6 @@ mod tests {
             )
             .unwrap();
         assert!(non_reasoning.ends_with("<|im_start|>assistant\n"));
-    }
-
-    #[test]
-    fn test_phi_profile_preserves_system_messages_and_gates_thinking() {
-        let model_dir = tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "phi3"}).to_string(),
-        )
-        .unwrap();
-
-        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
-        let rendered = formatter
-            .apply_template(
-                &[
-                    HashMap::from([
-                        ("role".to_string(), serde_json::json!("system")),
-                        (
-                            "content".to_string(),
-                            serde_json::json!("End every response with 7-4-7."),
-                        ),
-                    ]),
-                    HashMap::from([
-                        ("role".to_string(), serde_json::json!("user")),
-                        (
-                            "content".to_string(),
-                            serde_json::json!("What is your name?"),
-                        ),
-                    ]),
-                ],
-                true,
-                false,
-                None,
-                None,
-            )
-            .unwrap();
-
-        assert!(rendered.contains("You are Phi, a language model trained by Microsoft"));
-        assert!(rendered.contains("End every response with 7-4-7."));
-        assert!(!rendered.contains("Structure responses with <think>"));
-        assert!(rendered.contains("<|im_start|>user<|im_sep|>What is your name?<|im_end|>"));
-
-        let reasoning_rendered = formatter
-            .apply_template(
-                &[HashMap::from([
-                    ("role".to_string(), serde_json::json!("user")),
-                    ("content".to_string(), serde_json::json!("Think.")),
-                ])],
-                true,
-                true,
-                None,
-                None,
-            )
-            .unwrap();
-        assert!(reasoning_rendered.contains("Structure responses with <think>"));
-    }
-
-    #[test]
-    fn test_phi4_reasoning_profile_keeps_phi3_architecture_type() {
-        let model_dir = tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({
-                "model_type": "phi3",
-                "template_type": "phi4_reasoning"
-            })
-            .to_string(),
-        )
-        .unwrap();
-
-        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
-        let rendered = formatter
-            .apply_template(
-                &[
-                    HashMap::from([
-                        ("role".to_string(), serde_json::json!("system")),
-                        (
-                            "content".to_string(),
-                            serde_json::json!("End every response with 7-4-7."),
-                        ),
-                    ]),
-                    HashMap::from([
-                        ("role".to_string(), serde_json::json!("user")),
-                        (
-                            "content".to_string(),
-                            serde_json::json!("What is your name?"),
-                        ),
-                    ]),
-                ],
-                true,
-                false,
-                None,
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(formatter.model_type, "phi3");
-        assert_eq!(formatter.template_type, "phi4_reasoning");
-        assert!(formatter.supports_native_thinking());
-        assert!(!formatter.defaults_to_native_thinking());
-        assert!(!rendered.contains("<think> {Thought section} </think> {Solution section}"));
-        assert!(rendered.contains("End every response with 7-4-7."));
-        assert!(!rendered.contains("Structure responses with <think>"));
-        assert!(rendered.contains("<|im_start|>user<|im_sep|>What is your name?<|im_end|>"));
-        assert!(rendered.ends_with("<|im_start|>assistant<|im_sep|>"));
-
-        let reasoning_rendered = formatter
-            .apply_template(
-                &[HashMap::from([
-                    ("role".to_string(), serde_json::json!("user")),
-                    ("content".to_string(), serde_json::json!("Think first.")),
-                ])],
-                true,
-                true,
-                None,
-                None,
-            )
-            .unwrap();
-        assert!(
-            reasoning_rendered.contains("<think> {Thought section} </think> {Solution section}")
-        );
     }
 
     #[test]
@@ -1502,7 +1421,7 @@ mod tests {
         let thinking_tokens = formatter.get_thinking_tokens();
         assert_eq!(thinking_tokens.start, "<think>");
         assert_eq!(thinking_tokens.end, "</think>");
-        assert!(formatter.defaults_to_native_thinking());
+        assert!(formatter.supports_native_thinking());
 
         let format = formatter.get_tool_calling_tokens().formats.first().unwrap();
         assert_eq!(format.name, "xml");
@@ -1674,7 +1593,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(formatter.model_type, "llama");
-        assert_eq!(formatter.template_type, "llama3");
+        assert_eq!(formatter.template_type, "default");
         let conversation = vec![HashMap::from([
             ("role".to_string(), serde_json::json!("user")),
             ("content".to_string(), serde_json::json!("hello")),

@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test generation with JSON schema response format.
 /// Mirrors: test_e2e_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_structured_json_response() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test chat completion with logprobs enabled.
 /// Mirrors: test_e2e_logprobs.py::test_chat_completion_with_logprobs
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_with_logprobs() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -67,7 +66,6 @@ async fn test_chat_completion_with_logprobs() {
 /// Test that when logprobs is not requested, they are not included.
 /// Mirrors: test_e2e_logprobs.py::test_chat_completion_without_logprobs
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_without_logprobs() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -109,7 +107,6 @@ async fn test_chat_completion_without_logprobs() {
 /// Test that logprobs work correctly with streaming responses.
 /// Mirrors: test_e2e_logprobs.py::test_chat_completion_logprobs_streaming
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_logprobs_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

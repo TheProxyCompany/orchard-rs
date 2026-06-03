@@ -116,7 +116,6 @@ async fn run_client_chat_streaming(prompt: &str) {
 /// Test non-streaming chat with exact token count.
 /// Mirrors: test_e2e_client.py::test_client_chat_non_streaming
 #[tokio::test]
-#[ignore]
 async fn test_client_chat_non_streaming_continuation() {
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with exactly five words: alpha beta gamma delta epsilon.",
@@ -127,7 +126,6 @@ async fn test_client_chat_non_streaming_continuation() {
 /// Test non-streaming chat with exact token count.
 /// Mirrors: test_e2e_client.py::test_client_chat_non_streaming
 #[tokio::test]
-#[ignore]
 async fn test_client_chat_non_streaming_plea() {
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with a 5 token plea for more tokens.",
@@ -138,7 +136,6 @@ async fn test_client_chat_non_streaming_plea() {
 /// Test streaming chat.
 /// Mirrors: test_e2e_client.py::test_client_chat_streaming
 #[tokio::test]
-#[ignore]
 async fn test_client_chat_streaming_artist() {
     run_client_chat_streaming("Respond with your favorite musical artist of the last 10 years.")
         .await;
@@ -147,7 +144,6 @@ async fn test_client_chat_streaming_artist() {
 /// Test streaming chat.
 /// Mirrors: test_e2e_client.py::test_client_chat_streaming
 #[tokio::test]
-#[ignore]
 async fn test_client_chat_streaming_movie() {
     run_client_chat_streaming("Respond with your favorite movie of the last 10 years.").await;
 }

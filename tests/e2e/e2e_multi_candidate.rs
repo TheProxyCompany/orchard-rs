@@ -12,7 +12,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test non-streaming multi-candidate responses return the expected number of choices.
 /// Mirrors: test_e2e_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_multi_candidate_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -80,7 +79,6 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
 /// Test streaming multi-candidate responses can be reconstructed per candidate index.
 /// Mirrors: test_e2e_multi_candidate.py::test_chat_completion_multi_candidate_streaming
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_multi_candidate_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

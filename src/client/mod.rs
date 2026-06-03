@@ -52,12 +52,12 @@ pub use responses::{
     FunctionCallArgumentsDoneEvent, IncompleteDetails, InputTokensDetails, OutputFunctionCall,
     OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,
     OutputTextContent, OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails,
-    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
-    ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
-    ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
-    ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
-    ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
-    ResponsesResult, StreamErrorDetail, StreamErrorEvent,
+    ReasoningConfig, ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent,
+    ReasoningSummaryTextContent, ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent,
+    ResponseCompletedEvent, ResponseCreatedEvent, ResponseError, ResponseEvent,
+    ResponseFailedEvent, ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem,
+    ResponseObject, ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput,
+    ResponsesRequest, ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
 
 /// Errors that can occur during client operations.
@@ -108,7 +108,6 @@ impl From<crate::error::Error> for ClientError {
 pub type Result<T> = std::result::Result<T, ClientError>;
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
-const DEFAULT_NATIVE_REASONING_MIN_TOKENS: i32 = 256;
 
 fn native_reasoning_settings(
     formatter: &crate::formatter::ChatFormatter,
@@ -236,6 +235,9 @@ pub struct SamplingParams {
     pub instructions: Option<String>,
     #[serde(default)]
     pub task_name: Option<String>,
+    /// None => use the shared prefix cache (default). Some(false) => skip read+write.
+    #[serde(default)]
+    pub prefix_cache: Option<bool>,
 }
 
 impl Default for SamplingParams {
@@ -267,6 +269,7 @@ impl Default for SamplingParams {
             reasoning_effort: None,
             instructions: None,
             task_name: None,
+            prefix_cache: None,
         }
     }
 }
@@ -423,11 +426,9 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let default_reasoning = formatter.defaults_to_native_thinking()
-            && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
         let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
             formatter,
-            params.reasoning || params.reasoning_effort.is_some() || default_reasoning,
+            params.reasoning || params.reasoning_effort.is_some(),
             &params.reasoning_effort,
         );
 
@@ -546,6 +547,7 @@ impl Client {
             response_format_json,
             task_name: params.task_name.clone(),
             reasoning_effort,
+            prefix_cache: params.prefix_cache,
         };
 
         // Use unified batch request path (even for single prompts)
@@ -592,6 +594,9 @@ impl Client {
                         if let Some(count) = delta.prompt_token_count {
                             state.prompt_tokens = state.prompt_tokens.max(count);
                         }
+                        if let Some(reasoning_tokens) = delta.reasoning_tokens {
+                            state.reasoning_tokens = state.reasoning_tokens.max(reasoning_tokens);
+                        }
 
                         let client_delta = ClientDelta::from(delta.clone());
                         state.deltas.push(client_delta);
@@ -603,7 +608,7 @@ impl Client {
                             state.generation_len = delta.generation_len;
                             if let Some(generation_len) = delta.generation_len {
                                 state.completion_tokens =
-                                    state.completion_tokens.max(generation_len);
+                                    generation_len.saturating_sub(state.reasoning_tokens);
                             }
                             remaining_sequences -= 1;
                         }
@@ -719,11 +724,9 @@ impl Client {
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
             let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
-            let default_reasoning = formatter.defaults_to_native_thinking()
-                && params.max_tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS;
             let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
                 formatter,
-                params.reasoning || params.reasoning_effort.is_some() || default_reasoning,
+                params.reasoning || params.reasoning_effort.is_some(),
                 &params.reasoning_effort,
             );
             let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
@@ -841,6 +844,7 @@ impl Client {
                 response_format_json: response_format_json.clone(),
                 task_name: params.task_name.clone(),
                 reasoning_effort,
+                prefix_cache: params.prefix_cache,
             });
         }
 
@@ -1149,6 +1153,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         response_format_json: String::new(),
         task_name: None,
         reasoning_effort: None,
+        prefix_cache: None,
     }
 }
 
@@ -1208,6 +1213,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         response_format_json: String::new(),
         task_name: None,
         reasoning_effort: None,
+        prefix_cache: None,
     }
 }
 
@@ -1328,6 +1334,7 @@ struct CandidateState {
     content: String,
     finish_reason: Option<String>,
     completion_tokens: u32,
+    reasoning_tokens: u32,
     prompt_tokens: u32,
     cumulative_logprob: Option<f64>,
     generation_len: Option<u32>,
@@ -1387,16 +1394,7 @@ fn build_response_from_candidates(
     let mut finish_reason = None;
 
     for candidate in candidates {
-        let has_structured_items = candidate
-            .deltas
-            .iter()
-            .flat_map(|delta| &delta.state_events)
-            .any(|event| event.item_type != "message");
-        if has_structured_items {
-            text.push_str(&aggregate_message_text(&candidate.deltas));
-        } else {
-            text.push_str(&candidate.content);
-        }
+        text.push_str(&aggregate_message_text(&candidate.deltas));
         if candidate.finish_reason.is_some() {
             finish_reason = candidate.finish_reason;
         }
@@ -1426,7 +1424,8 @@ fn value_to_text(value: &Value) -> String {
 }
 
 fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
-    if !deltas.iter().any(|delta| !delta.state_events.is_empty()) {
+    let has_state_events = deltas.iter().any(|delta| !delta.state_events.is_empty());
+    if !has_state_events {
         return deltas
             .iter()
             .filter_map(|delta| delta.content.as_ref())
@@ -1434,6 +1433,60 @@ fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
             .collect();
     }
 
+    let has_structured_items = deltas
+        .iter()
+        .flat_map(|delta| &delta.state_events)
+        .any(|event| event.item_type != "message");
+    if has_structured_items {
+        return aggregate_message_state_text_with_raw_suffix(deltas);
+    }
+
+    let mut text = String::new();
+    let mut completed_value = None;
+
+    for delta in deltas {
+        if delta.state_events.is_empty() {
+            if let Some(content) = &delta.content {
+                text.push_str(content);
+            }
+            continue;
+        }
+
+        let message_delta = delta
+            .state_events
+            .iter()
+            .find(|event| event.item_type == "message" && event.event_type == "content_delta")
+            .map(|event| event.delta.as_str());
+        let delta_content = delta
+            .content
+            .as_deref()
+            .filter(|content| !content.is_empty())
+            .or(message_delta)
+            .unwrap_or_default();
+
+        for event in &delta.state_events {
+            if event.item_type == "message"
+                && event.event_type == "item_completed"
+                && event.value.is_some()
+                && text.is_empty()
+                && delta_content.is_empty()
+            {
+                completed_value = event.value.as_ref().map(value_to_text);
+            }
+        }
+
+        if !delta_content.is_empty() {
+            text.push_str(delta_content);
+        }
+    }
+
+    if !text.is_empty() {
+        return text;
+    }
+    completed_value.unwrap_or_default()
+}
+
+fn aggregate_message_state_text(deltas: &[ClientDelta]) -> String {
     let mut text = String::new();
     let mut completed_value = None;
     for event in deltas.iter().flat_map(|delta| &delta.state_events) {
@@ -1453,6 +1506,29 @@ fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
         return text;
     }
     completed_value.unwrap_or_default()
+}
+
+fn aggregate_message_state_text_with_raw_suffix(deltas: &[ClientDelta]) -> String {
+    let state_text = aggregate_message_state_text(deltas);
+    if state_text.is_empty() {
+        return state_text;
+    }
+
+    let raw_text: String = deltas
+        .iter()
+        .filter_map(|delta| delta.content.as_ref())
+        .cloned()
+        .collect();
+    if raw_text.len() > state_text.len() {
+        if let Some(start) = raw_text.rfind(&state_text) {
+            let suffix_start = start + state_text.len();
+            if suffix_start < raw_text.len() {
+                return format!("{}{}", state_text, &raw_text[suffix_start..]);
+            }
+        }
+    }
+
+    state_text
 }
 
 fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<ClientToolCall>) {
@@ -1562,13 +1638,19 @@ fn aggregate_response(deltas: Vec<ClientDelta>) -> ClientResponse {
 
 fn extract_usage(deltas: &[ClientDelta]) -> UsageStats {
     let mut usage = UsageStats::default();
+    let mut reasoning_tokens = 0;
 
     for delta in deltas {
         if let Some(count) = delta.prompt_token_count {
             usage.prompt_tokens = usage.prompt_tokens.max(count);
         }
+        if let Some(count) = delta.reasoning_tokens {
+            reasoning_tokens = reasoning_tokens.max(count);
+        }
         if let Some(len) = delta.generation_len {
-            usage.completion_tokens = usage.completion_tokens.max(len);
+            usage.completion_tokens = usage
+                .completion_tokens
+                .max(len.saturating_sub(reasoning_tokens));
         }
     }
 
@@ -1656,7 +1738,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_reasoning_settings_keep_gemma4_tokens_when_reasoning_disabled() {
+    fn test_native_reasoning_settings_default_enables_gemma4_reasoning() {
         let model_dir = tempfile::tempdir().unwrap();
         std::fs::write(
             model_dir.path().join("config.json"),
@@ -1666,10 +1748,10 @@ mod tests {
         let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
 
         let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, formatter.defaults_to_native_thinking(), &None);
+            native_reasoning_settings(&formatter, formatter.supports_native_thinking(), &None);
 
-        assert!(!reasoning_flag);
-        assert!(reasoning_effort.is_none());
+        assert!(reasoning_flag);
+        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
         assert_eq!(thinking_tokens.start, "<|channel>thought\n");
         assert_eq!(thinking_tokens.end, "<channel|>");
     }
@@ -1694,7 +1776,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_reasoning_settings_profile_default_enables_afmoe_reasoning() {
+    fn test_native_reasoning_settings_native_thinking_enables_afmoe_reasoning() {
         let model_dir = tempfile::tempdir().unwrap();
         std::fs::write(
             model_dir.path().join("config.json"),
@@ -1704,7 +1786,7 @@ mod tests {
         let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
 
         let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, formatter.defaults_to_native_thinking(), &None);
+            native_reasoning_settings(&formatter, formatter.supports_native_thinking(), &None);
 
         assert!(reasoning_flag);
         assert_eq!(reasoning_effort.as_deref(), Some("medium"));
@@ -1966,5 +2048,79 @@ mod tests {
         );
 
         assert_eq!(response.text, "red, white, blue");
+    }
+
+    #[test]
+    fn test_build_response_from_candidates_uses_message_delta_when_raw_content_empty() {
+        let response = build_response_from_candidates(
+            vec![CandidateState {
+                content: "red, white, ".to_string(),
+                finish_reason: Some("stop".to_string()),
+                prompt_tokens: 5,
+                deltas: vec![
+                    ClientDelta {
+                        content: Some("red, white, ".to_string()),
+                        ..Default::default()
+                    },
+                    ClientDelta {
+                        content: Some(String::new()),
+                        state_events: vec![crate::ipc::client::ResponseStateEvent {
+                            event_type: "content_delta".to_string(),
+                            item_type: "message".to_string(),
+                            identifier: "message".to_string(),
+                            delta: "blue".to_string(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            3,
+        );
+
+        assert_eq!(response.text, "red, white, blue");
+    }
+
+    #[test]
+    fn test_build_response_from_candidates_preserves_raw_suffix_after_state_text() {
+        let response = build_response_from_candidates(
+            vec![CandidateState {
+                content: "red, white, blue".to_string(),
+                finish_reason: Some("stop".to_string()),
+                prompt_tokens: 5,
+                deltas: vec![
+                    ClientDelta {
+                        content: Some("<think>hidden</think>red, white, ".to_string()),
+                        state_events: vec![
+                            crate::ipc::client::ResponseStateEvent {
+                                event_type: "content_delta".to_string(),
+                                item_type: "reasoning".to_string(),
+                                identifier: "reasoning".to_string(),
+                                delta: "hidden".to_string(),
+                                ..Default::default()
+                            },
+                            crate::ipc::client::ResponseStateEvent {
+                                event_type: "content_delta".to_string(),
+                                item_type: "message".to_string(),
+                                identifier: "message".to_string(),
+                                delta: "red, white, ".to_string(),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    ClientDelta {
+                        content: Some("blue".to_string()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            3,
+        );
+
+        assert_eq!(response.text, "red, white, blue");
+        assert_eq!(response.reasoning, vec!["hidden".to_string()]);
     }
 }

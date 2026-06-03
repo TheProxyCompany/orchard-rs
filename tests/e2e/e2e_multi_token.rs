@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test multi-token non-streaming - "What is the capital of France?" should produce "Paris".
 /// Mirrors: test_e2e_multi_token.py::test_chat_completion_multi_token_non_streaming
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_multi_token_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -81,7 +80,6 @@ async fn test_chat_completion_multi_token_non_streaming() {
 /// Test multi-token streaming chat completion.
 /// Mirrors: test_e2e_multi_token.py::test_chat_completion_multi_token_streaming
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_multi_token_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

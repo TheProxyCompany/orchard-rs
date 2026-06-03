@@ -8,7 +8,6 @@ use orchard::{OutputStatus, ResponseOutputItem, ResponsesRequest, ResponsesResul
 use crate::fixture::{get_fixture, TEXT_MODELS};
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_structured_json_schema() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

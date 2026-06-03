@@ -13,7 +13,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test that best_of fan-out returns only the top-n candidates while reflecting total work in usage.
 /// Mirrors: test_e2e_best_of.py::test_chat_completion_best_of_selects_top_n
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_best_of_selects_top_n() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

@@ -13,7 +13,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test homogeneous batched chat completion with identical parameters.
 /// Mirrors: test_e2e_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_batched_homogeneous() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -69,7 +68,6 @@ async fn test_chat_completion_batched_homogeneous() {
 /// Note: Python test uses per-prompt parameter arrays. The IPC client takes uniform
 /// params, so we use uniform parameters but the same prompts.
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_batched_heterogeneous() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

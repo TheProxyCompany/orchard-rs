@@ -72,6 +72,9 @@ pub struct PromptPayload {
     pub task_name: Option<String>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    /// None => use the shared prefix cache (default). Some(false) => skip read+write.
+    #[serde(default)]
+    pub prefix_cache: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -112,6 +115,8 @@ pub struct ThinkingTokens {
     pub start: String,
     #[serde(default)]
     pub end: String,
+    #[serde(default)]
+    pub required: bool,
 }
 
 fn default_tool_choice() -> String {
@@ -346,6 +351,7 @@ pub fn build_batch_request_payload(
             "thinking_tokens": {
                 "start": prompt.thinking_tokens.start,
                 "end": prompt.thinking_tokens.end,
+                "required": prompt.thinking_tokens.required,
             },
             "tool_choice": prompt.tool_choice,
             "max_tool_calls": prompt.max_tool_calls,
@@ -353,6 +359,7 @@ pub fn build_batch_request_payload(
             "logit_bias": logit_bias,
             "task_name": prompt.task_name,
             "reasoning_effort": prompt.reasoning_effort,
+            "prefix_cache": prompt.prefix_cache.unwrap_or(true),
         });
 
         prompt_metadata_list.push(prompt_meta);
@@ -585,6 +592,7 @@ mod tests {
             thinking_tokens: ThinkingTokens {
                 start: "<|channel>thought\n".to_string(),
                 end: "<channel|>".to_string(),
+                required: true,
             },
             ..Default::default()
         };
@@ -604,6 +612,7 @@ mod tests {
         let prompt = &metadata["prompts"][0];
         assert_eq!(prompt["thinking_tokens"]["start"], "<|channel>thought\n");
         assert_eq!(prompt["thinking_tokens"]["end"], "<channel|>");
+        assert_eq!(prompt["thinking_tokens"]["required"], true);
     }
 
     #[test]

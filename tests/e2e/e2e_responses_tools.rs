@@ -62,7 +62,6 @@ fn base_input_items() -> Vec<ResponseInputItem> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_tool_call_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -86,10 +85,12 @@ async fn test_responses_tool_call_non_streaming() {
             tool_choice: Some(serde_json::json!("required")),
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let result = client.aresponses(model_id, request).await;
@@ -135,7 +136,6 @@ async fn test_responses_tool_call_non_streaming() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_tool_call_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -159,10 +159,12 @@ async fn test_responses_tool_call_streaming() {
             tool_choice: Some(serde_json::json!("required")),
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let result = client.aresponses(model_id, request).await;
@@ -241,7 +243,6 @@ async fn test_responses_tool_call_streaming() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_tool_result_continuation() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -265,10 +266,12 @@ async fn test_responses_tool_result_continuation() {
             tool_choice: Some(serde_json::json!("required")),
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let first_result = client.aresponses(model_id, first_request).await;
@@ -332,10 +335,12 @@ async fn test_responses_tool_result_continuation() {
             tool_choice: Some(serde_json::json!("none")),
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let second_result = client.aresponses(model_id, second_request).await;

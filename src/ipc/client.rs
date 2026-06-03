@@ -105,6 +105,12 @@ pub struct ResponseDelta {
     pub is_final_delta: bool,
     /// Finish reason (e.g., "stop", "length")
     pub finish_reason: Option<String>,
+    /// Matched stop/EOS token id that ended generation, present only on the
+    /// final delta when a sampled eos token triggered completion.
+    pub matched_stop_token_id: Option<i32>,
+    /// Decoded text of that stop token (e.g. "<|eom_id|>"), decoded engine-side.
+    #[serde(default)]
+    pub matched_stop_token: Option<String>,
     /// Error message if request failed
     #[serde(alias = "error_message")]
     pub error: Option<String>,

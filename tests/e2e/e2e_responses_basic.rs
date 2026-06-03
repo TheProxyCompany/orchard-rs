@@ -39,7 +39,6 @@ async fn collect_stream_events(
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_non_streaming_string_input() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -48,6 +47,7 @@ async fn test_responses_non_streaming_string_input() {
         let mut request = ResponsesRequest::from_text("Say hello in one sentence.");
         request.max_output_tokens = Some(32);
         request.temperature = Some(0.0);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -86,7 +86,6 @@ async fn test_responses_non_streaming_string_input() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_non_streaming_message_items() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -115,10 +114,12 @@ async fn test_responses_non_streaming_message_items() {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let result = client.aresponses(model_id, request).await;
@@ -149,7 +150,6 @@ async fn test_responses_non_streaming_message_items() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_echo_fields() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -159,6 +159,7 @@ async fn test_responses_echo_fields() {
         request.temperature = Some(0.5);
         request.top_p = Some(0.9);
         request.max_output_tokens = Some(4);
+        request.reasoning = Some(false.into());
         request.metadata = Some(
             [("test_key".to_string(), "test_value".to_string())]
                 .into_iter()
@@ -194,7 +195,6 @@ async fn test_responses_echo_fields() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_streaming_event_sequence() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -204,6 +204,7 @@ async fn test_responses_streaming_event_sequence() {
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(32);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -251,6 +252,7 @@ async fn test_responses_streaming_event_sequence() {
                 ResponseEvent::ContentPartDone(e) => sequence_numbers.push(e.sequence_number),
                 ResponseEvent::OutputTextDelta(e) => sequence_numbers.push(e.sequence_number),
                 ResponseEvent::OutputTextDone(e) => sequence_numbers.push(e.sequence_number),
+                ResponseEvent::OutputToken(e) => sequence_numbers.push(e.sequence_number),
                 ResponseEvent::FunctionCallArgumentsDelta(e) => {
                     sequence_numbers.push(e.sequence_number)
                 }
@@ -286,7 +288,6 @@ async fn test_responses_streaming_event_sequence() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_streaming_delta_accumulation() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -296,6 +297,7 @@ async fn test_responses_streaming_delta_accumulation() {
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -335,7 +337,6 @@ async fn test_responses_streaming_delta_accumulation() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_streaming_completed_snapshot() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -345,6 +346,7 @@ async fn test_responses_streaming_completed_snapshot() {
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -385,7 +387,6 @@ async fn test_responses_streaming_completed_snapshot() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_incomplete_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -396,6 +397,7 @@ async fn test_responses_incomplete_non_streaming() {
         );
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(1);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -421,7 +423,6 @@ async fn test_responses_incomplete_non_streaming() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_incomplete_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -433,6 +434,7 @@ async fn test_responses_incomplete_streaming() {
         request.stream = true;
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(1);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(
@@ -482,7 +484,6 @@ async fn test_responses_incomplete_streaming() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_responses_instructions() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -492,6 +493,7 @@ async fn test_responses_instructions() {
         request.instructions = Some(SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS.to_string());
         request.temperature = Some(0.0);
         request.max_output_tokens = Some(64);
+        request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
         assert!(

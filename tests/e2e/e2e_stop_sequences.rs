@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test stop sequence on "blue" - should output red, white, blue and stop at blue.
 /// Mirrors: test_e2e_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_respects_stop_sequence() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

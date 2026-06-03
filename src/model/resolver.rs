@@ -355,11 +355,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_hf_resolved_model_passes_repo_hint_to_formatter_config() {
-        let repo_id = "microsoft/Phi-4-reasoning-plus";
+        let repo_id = "meta-llama/Llama-3.1-8B-Instruct";
         let dir = tempdir().unwrap();
         std::fs::write(
             dir.path().join("config.json"),
-            serde_json::json!({"model_type": "phi3"}).to_string(),
+            serde_json::json!({"model_type": "llama"}).to_string(),
         )
         .unwrap();
         std::fs::write(dir.path().join("tokenizer.json"), "{}").unwrap();
@@ -376,7 +376,7 @@ mod tests {
             .unwrap();
         let config = resolved.formatter_config.as_ref().unwrap();
 
-        assert_eq!(config["model_type"], "phi3");
+        assert_eq!(config["model_type"], "llama");
         assert_eq!(config["_name_or_path"], repo_id);
     }
 }

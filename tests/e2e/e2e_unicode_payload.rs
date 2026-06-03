@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test that unicode (emoji) payloads round-trip correctly without corruption.
 /// Mirrors: test_e2e_unicode_payload.py::test_unicode_payload_round_trip
 #[tokio::test]
-#[ignore]
 async fn test_unicode_payload_round_trip() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

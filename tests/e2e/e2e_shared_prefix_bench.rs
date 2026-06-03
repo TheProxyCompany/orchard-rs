@@ -178,7 +178,6 @@ async fn run_turn(
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_shared_prefix_turn_by_turn_benchmark() {
     let turns = env_usize("ORCHARD_SHARED_PREFIX_BENCH_TURNS", DEFAULT_TURNS);
     let context_paragraphs = env_usize(

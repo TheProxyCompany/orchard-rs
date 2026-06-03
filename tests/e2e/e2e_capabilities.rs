@@ -39,7 +39,6 @@ async fn create_moondream_client(registry: Arc<ModelRegistry>) -> MoondreamClien
 /// Test moondream reasoning with grounding on bottles image.
 /// Mirrors: test_e2e_capabilities.py::test_moondream_reasoning_grounding
 #[tokio::test]
-#[ignore]
 async fn test_moondream_reasoning_grounding() {
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
@@ -100,19 +99,16 @@ async fn test_moondream_reasoning_grounding() {
 /// Test moondream caption generation.
 /// Mirrors: test_e2e_capabilities.py::test_moondream_caption
 #[tokio::test]
-#[ignore]
 async fn test_moondream_caption_normal() {
     run_moondream_caption("normal").await;
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_moondream_caption_short() {
     run_moondream_caption("short").await;
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_moondream_caption_long() {
     run_moondream_caption("long").await;
 }
@@ -142,7 +138,6 @@ async fn run_moondream_caption(length: &str) {
 /// Test moondream object detection.
 /// Mirrors: test_e2e_capabilities.py::test_moondream_detect
 #[tokio::test]
-#[ignore]
 async fn test_moondream_detect() {
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
@@ -166,7 +161,6 @@ async fn test_moondream_detect() {
 /// Test moondream query with spatial reference (point).
 /// Mirrors: test_e2e_capabilities.py::test_moondream_query_with_spatial_refs
 #[tokio::test]
-#[ignore]
 async fn test_moondream_query_with_spatial_refs() {
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
@@ -201,7 +195,6 @@ async fn test_moondream_query_with_spatial_refs() {
 /// Test moondream pointing to objects.
 /// Mirrors: test_e2e_capabilities.py::test_moondream_point
 #[tokio::test]
-#[ignore]
 async fn test_moondream_point() {
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
@@ -225,7 +218,6 @@ async fn test_moondream_point() {
 /// Test moondream gaze detection.
 /// Mirrors: test_e2e_capabilities.py::test_moondream_detect_gaze
 #[tokio::test]
-#[ignore]
 async fn test_moondream_detect_gaze() {
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;

@@ -4,6 +4,8 @@
 
 #[path = "e2e/fixture.rs"]
 mod fixture;
+#[path = "e2e/golden_io.rs"]
+mod golden_io;
 
 #[path = "e2e/e2e_basic.rs"]
 mod e2e_basic;
@@ -17,6 +19,8 @@ mod e2e_capabilities;
 mod e2e_client;
 #[path = "e2e/e2e_determinism.rs"]
 mod e2e_determinism;
+#[path = "e2e/e2e_golden_path.rs"]
+mod e2e_golden_path;
 #[path = "e2e/e2e_logprobs.rs"]
 mod e2e_logprobs;
 #[path = "e2e/e2e_multi_candidate.rs"]

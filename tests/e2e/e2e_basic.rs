@@ -10,7 +10,6 @@ use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_e2e_basic.py::test_chat_completion_first_token
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_first_token() {
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {
@@ -63,7 +62,6 @@ async fn test_chat_completion_first_token() {
 /// Test multi-token generation with deterministic sampling.
 /// Mirrors: test_e2e_basic.py::test_chat_completion_multi_token
 #[tokio::test]
-#[ignore]
 async fn test_chat_completion_multi_token() {
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {

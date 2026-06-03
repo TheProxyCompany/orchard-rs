@@ -4,7 +4,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 const REQUIRED_PROFILE_FILES: &[&str] = &[
-    "chat_template.jinja",
     "capabilities.yaml",
     "control_tokens.json",
     "generation.yaml",
@@ -35,13 +34,13 @@ fn build_embedded_profiles_source(
     generated.push_str("#[derive(Clone, Copy)]\n");
     generated.push_str("pub struct EmbeddedProfile {\n");
     generated.push_str("    pub model_type: &'static str,\n");
-    generated.push_str("    pub chat_template: &'static str,\n");
+    generated.push_str("    pub profile_name: &'static str,\n");
     generated.push_str("    pub capabilities: &'static str,\n");
     generated.push_str("    pub control_tokens: &'static str,\n");
     generated.push_str("    pub generation: &'static str,\n");
     generated.push_str("}\n\n");
 
-    for (profile_name, _) in &profile_names {
+    for (profile_name, _, templates) in &profile_names {
         let profile_dir = profiles_dir.join(profile_name);
         let const_prefix = profile_const_prefix(profile_name);
 
@@ -51,6 +50,15 @@ fn build_embedded_profiles_source(
             generated.push_str(&format!(
                 "static {}: &str = {};\n",
                 profile_file_const_name(&const_prefix, required_file),
+                rust_string_literal(&content)
+            ));
+        }
+        for (_, template_file) in templates {
+            let file_path = profile_dir.join(template_file);
+            let content = fs::read_to_string(&file_path)?;
+            generated.push_str(&format!(
+                "static {}: &str = {};\n",
+                profile_file_const_name(&const_prefix, template_file),
                 rust_string_literal(&content)
             ));
         }
@@ -71,17 +79,36 @@ fn build_embedded_profiles_source(
         "\npub fn find_embedded_profile(model_type: &str) -> Option<EmbeddedProfile> {\n",
     );
     generated.push_str("    match model_type {\n");
-    for (profile_name, model_types) in &profile_names {
+    for (profile_name, model_types, _) in &profile_names {
         let const_prefix = profile_const_prefix(profile_name);
         for model_type in model_types {
             generated.push_str(&format!(
-                "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, chat_template: {}, capabilities: {}, control_tokens: {}, generation: {} }}),\n",
+                "        {:?} => Some(EmbeddedProfile {{ model_type: {:?}, profile_name: {:?}, capabilities: {}, control_tokens: {}, generation: {} }}),\n",
                 model_type,
                 model_type,
-                profile_file_const_name(&const_prefix, "chat_template.jinja"),
+                profile_name,
                 profile_file_const_name(&const_prefix, "capabilities.yaml"),
                 profile_file_const_name(&const_prefix, "control_tokens.json"),
                 profile_file_const_name(&const_prefix, "generation.yaml"),
+            ));
+        }
+    }
+    generated.push_str("        _ => None,\n");
+    generated.push_str("    }\n");
+    generated.push_str("}\n\n");
+
+    generated.push_str(
+        "pub fn load_profile_template(profile_name: &str, template_type: &str) -> Option<&'static str> {\n",
+    );
+    generated.push_str("    match (profile_name, template_type) {\n");
+    for (profile_name, _, templates) in &profile_names {
+        let const_prefix = profile_const_prefix(profile_name);
+        for (template_type, template_file) in templates {
+            generated.push_str(&format!(
+                "        ({:?}, {:?}) => Some({}),\n",
+                profile_name,
+                template_type,
+                profile_file_const_name(&const_prefix, template_file)
             ));
         }
     }
@@ -105,7 +132,9 @@ fn build_embedded_profiles_source(
     Ok(generated)
 }
 
-fn discover_profiles(profiles_dir: &Path) -> io::Result<Vec<(String, Vec<String>)>> {
+fn discover_profiles(
+    profiles_dir: &Path,
+) -> io::Result<Vec<(String, Vec<String>, Vec<(String, String)>)>> {
     let mut profile_names = Vec::new();
 
     for entry in fs::read_dir(profiles_dir)? {
@@ -134,6 +163,7 @@ fn discover_profiles(profiles_dir: &Path) -> io::Result<Vec<(String, Vec<String>
                 ));
             }
         }
+        let templates = discover_templates(&path)?;
 
         let control_tokens_path = path.join("control_tokens.json");
         let control_tokens_text = fs::read_to_string(control_tokens_path)?;
@@ -156,11 +186,39 @@ fn discover_profiles(profiles_dir: &Path) -> io::Result<Vec<(String, Vec<String>
         }
         model_types.sort();
         model_types.dedup();
-        profile_names.push((file_name.to_string(), model_types));
+        profile_names.push((file_name.to_string(), model_types, templates));
     }
 
     profile_names.sort();
     Ok(profile_names)
+}
+
+fn discover_templates(profile_dir: &Path) -> io::Result<Vec<(String, String)>> {
+    let templates_dir = profile_dir.join("templates");
+    let mut templates = Vec::new();
+    if templates_dir.is_dir() {
+        for entry in fs::read_dir(&templates_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|name| name.to_str()) != Some("jinja") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            templates.push((stem.to_string(), format!("templates/{stem}.jinja")));
+        }
+    } else if profile_dir.join("chat_template.jinja").is_file() {
+        templates.push(("default".to_string(), "chat_template.jinja".to_string()));
+    }
+    if templates.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Profile '{}' has no templates", profile_dir.display()),
+        ));
+    }
+    templates.sort();
+    Ok(templates)
 }
 
 fn profile_const_prefix(profile_name: &str) -> String {

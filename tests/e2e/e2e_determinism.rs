@@ -195,25 +195,21 @@ async fn run_sequential_request_determinism() {
 /// Test multi-candidate determinism - all candidates should be identical with temp=0.
 /// Mirrors: test_e2e_determinism.py::test_multi_candidate_determinism
 #[tokio::test]
-#[ignore]
 async fn test_multi_candidate_determinism_n2() {
     run_multi_candidate_determinism(2).await;
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_multi_candidate_determinism_n4() {
     run_multi_candidate_determinism(4).await;
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_multi_candidate_determinism_n8() {
     run_multi_candidate_determinism(8).await;
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_multi_candidate_determinism_n16() {
     run_multi_candidate_determinism(16).await;
 }
@@ -221,7 +217,6 @@ async fn test_multi_candidate_determinism_n16() {
 /// Test sequential request determinism - same request multiple times should yield identical results.
 /// Mirrors: test_e2e_determinism.py::test_sequential_request_determinism
 #[tokio::test]
-#[ignore]
 async fn test_sequential_request_determinism() {
     run_sequential_request_determinism().await;
 }

@@ -58,7 +58,6 @@ fn make_image_message(
 /// Test image captioning with apple.jpg - should identify "apple"
 /// Mirrors: test_e2e_multimodal.py::test_multimodal_e2e_apple_image
 #[tokio::test]
-#[ignore]
 async fn test_multimodal_apple_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
@@ -107,7 +106,6 @@ async fn test_multimodal_apple_image() {
 /// Test image captioning with moondream.jpg - should identify "burger"
 /// Mirrors: test_e2e_multimodal.py::test_multimodal_e2e_moondream_image
 #[tokio::test]
-#[ignore]
 async fn test_multimodal_moondream_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;

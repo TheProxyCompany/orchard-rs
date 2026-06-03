@@ -10,10 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::{
-    native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result,
-    DEFAULT_NATIVE_REASONING_MIN_TOKENS,
-};
+use super::{native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 use crate::ipc::serialization::PromptPayload;
@@ -22,6 +19,7 @@ const RESPONSE_ID_PREFIX: &str = "resp_";
 const MESSAGE_ID_PREFIX: &str = "msg_";
 const FUNCTION_CALL_ID_PREFIX: &str = "fc_";
 const TOOL_CALL_ID_PREFIX: &str = "call_";
+const DEFAULT_REASONING_EFFORT: &str = "medium";
 
 fn current_timestamp() -> i64 {
     SystemTime::now()
@@ -99,7 +97,32 @@ fn parse_tool_call_completion_value(value: &Value) -> Option<(String, String)> {
     };
 
     let tool_call: CompletedToolCallValue = serde_json::from_value(structured_value).ok()?;
-    Some((tool_call.name, tool_call.arguments.to_string()))
+    Some((tool_call.name, python_json_dumps(&tool_call.arguments)))
+}
+
+fn python_json_dumps(value: &Value) -> String {
+    match value {
+        Value::Array(values) => {
+            let values = values
+                .iter()
+                .map(python_json_dumps)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{values}]")
+        }
+        Value::Object(object) => {
+            let fields = object
+                .iter()
+                .map(|(key, value)| {
+                    let key = serde_json::to_string(key).expect("JSON object key serializes");
+                    format!("{key}: {}", python_json_dumps(value))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{fields}}}")
+        }
+        other => serde_json::to_string(other).expect("JSON value serializes"),
+    }
 }
 
 fn normalize_response_tool_schema(tool: &Value) -> Value {
@@ -138,15 +161,89 @@ fn normalize_response_tool_schema(tool: &Value) -> Value {
     })
 }
 
+fn response_tool_prompt_payload(tool: &Value) -> Value {
+    let Some(obj) = tool.as_object() else {
+        return tool.clone();
+    };
+
+    let type_name = obj.get("type").and_then(Value::as_str);
+    let Some(name) = obj.get("name").and_then(Value::as_str) else {
+        return tool.clone();
+    };
+    let parameters = obj.get("parameters");
+    if type_name != Some("function") || parameters.is_none() {
+        return tool.clone();
+    }
+
+    let description = obj
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or(name);
+    let strict = obj.get("strict").and_then(Value::as_bool).unwrap_or(true);
+    let mut payload = serde_json::Map::new();
+    payload.insert("name".to_string(), Value::String(name.to_string()));
+    payload.insert("type".to_string(), Value::String("function".to_string()));
+    payload.insert(
+        "description".to_string(),
+        Value::String(description.to_string()),
+    );
+    payload.insert("strict".to_string(), Value::Bool(strict));
+    payload.insert(
+        "parameters".to_string(),
+        parameters
+            .cloned()
+            .unwrap_or(Value::Object(Default::default())),
+    );
+    Value::Object(payload)
+}
+
 fn response_tool_schema_name(tool: &Value) -> &str {
     tool.get("name").and_then(Value::as_str).unwrap_or_default()
+}
+
+fn normalize_response_format(value: Value) -> Value {
+    let Value::Object(object) = value else {
+        return value;
+    };
+    if object.get("type").and_then(Value::as_str) != Some("json_schema") {
+        return Value::Object(object);
+    }
+
+    let schema = object
+        .get("json_schema")
+        .or_else(|| object.get("schema"))
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
+    let name = object
+        .get("name")
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()));
+    let description = object
+        .get("description")
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()));
+    let strict = object
+        .get("strict")
+        .cloned()
+        .unwrap_or_else(|| Value::Bool(false));
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("type".to_string(), Value::String("json_schema".to_string()));
+    payload.insert("json_schema".to_string(), schema);
+    payload.insert("name".to_string(), name);
+    payload.insert("description".to_string(), description);
+    payload.insert("strict".to_string(), strict);
+    Value::Object(payload)
 }
 
 fn response_tool_schemas(
     core_source: &[Value],
     active_source: &[Value],
 ) -> (Vec<Value>, Vec<Value>) {
-    let mut tool_schemas = core_source.to_vec();
+    let mut tool_schemas = core_source
+        .iter()
+        .map(response_tool_prompt_payload)
+        .collect::<Vec<_>>();
     tool_schemas.sort_by(|a, b| response_tool_schema_name(a).cmp(response_tool_schema_name(b)));
 
     let active_source = if active_source.is_empty() {
@@ -200,6 +297,50 @@ pub enum ResponseInputItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ReasoningConfig {
+    Bool(bool),
+    Effort(String),
+    Object { effort: String },
+}
+
+impl ReasoningConfig {
+    fn effort(&self) -> Option<String> {
+        match self {
+            Self::Bool(true) => Some(DEFAULT_REASONING_EFFORT.to_string()),
+            Self::Bool(false) => None,
+            Self::Effort(effort) => Some(effort.clone()),
+            Self::Object { effort } => Some(effort.clone()),
+        }
+    }
+
+    fn explicit_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
+impl From<bool> for ReasoningConfig {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<&str> for ReasoningConfig {
+    fn from(value: &str) -> Self {
+        Self::Effort(value.to_string())
+    }
+}
+
+impl From<String> for ReasoningConfig {
+    fn from(value: String) -> Self {
+        Self::Effort(value)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponsesRequest {
     pub input: ResponsesInput,
     #[serde(default)]
@@ -235,13 +376,20 @@ pub struct ResponsesRequest {
     #[serde(default)]
     pub text: Option<Value>,
     #[serde(default)]
-    pub reasoning: bool,
+    pub reasoning: Option<ReasoningConfig>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub metadata: Option<HashMap<String, String>>,
     #[serde(default)]
     pub parallel_tool_calls: bool,
+    /// None => use the shared prefix cache (default). Some(false) => skip read+write.
+    #[serde(default)]
+    pub prefix_cache: Option<bool>,
+    /// Client-side only: emit one OutputToken event per raw generated token id.
+    /// Deliberately never placed on the wire / PromptPayload.
+    #[serde(default)]
+    pub stream_tokens: bool,
 }
 
 impl ResponsesRequest {
@@ -264,10 +412,12 @@ impl ResponsesRequest {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: None,
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         }
     }
 
@@ -534,6 +684,12 @@ pub struct ResponseObject {
     pub max_tool_calls: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<Value>,
+    /// Model stop/EOS token id that ended generation, if any. Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_token_id: Option<i32>,
+    /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -550,6 +706,12 @@ pub struct ResponseSnapshot {
     pub output: Vec<ResponseOutputItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<ResponseUsage>,
+    /// Model stop/EOS token id that ended generation, if any. Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_token_id: Option<i32>,
+    /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -642,6 +804,15 @@ pub struct OutputTextDoneEvent {
     pub logprobs: Vec<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutputTokenEvent {
+    pub sequence_number: u64,
+    pub token_id: i32,
+    /// Engine run-decoded text for the delta (faithful decode PIE already
+    /// computed); None/empty when the token does not yet complete a UTF-8 run.
+    pub content: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FunctionCallArgumentsDeltaEvent {
     pub sequence_number: u64,
@@ -722,6 +893,7 @@ pub enum ResponseEvent {
     ContentPartDone(ContentPartDoneEvent),
     OutputTextDelta(OutputTextDeltaEvent),
     OutputTextDone(OutputTextDoneEvent),
+    OutputToken(OutputTokenEvent),
     FunctionCallArgumentsDelta(FunctionCallArgumentsDeltaEvent),
     FunctionCallArgumentsDone(FunctionCallArgumentsDoneEvent),
     ReasoningDelta(ReasoningDeltaEvent),
@@ -746,6 +918,7 @@ impl ResponseEvent {
             Self::ContentPartDone(_) => "response.content_part.done",
             Self::OutputTextDelta(_) => "response.output_text.delta",
             Self::OutputTextDone(_) => "response.output_text.done",
+            Self::OutputToken(_) => "response.output_token",
             Self::FunctionCallArgumentsDelta(_) => "response.function_call_arguments.delta",
             Self::FunctionCallArgumentsDone(_) => "response.function_call_arguments.done",
             Self::ReasoningDelta(_) => "response.reasoning.delta",
@@ -871,6 +1044,8 @@ struct ResponseStreamState {
     status: OutputStatus,
     incomplete_details: Option<IncompleteDetails>,
     usage: Option<ResponseUsage>,
+    stop_token_id: Option<i32>,
+    stop_token: Option<String>,
 }
 
 impl ResponseStreamState {
@@ -885,6 +1060,8 @@ impl ResponseStreamState {
             status: OutputStatus::InProgress,
             incomplete_details: None,
             usage: None,
+            stop_token_id: None,
+            stop_token: None,
         }
     }
 
@@ -936,6 +1113,8 @@ impl ResponseStreamState {
             model: self.model.clone(),
             output,
             usage: self.usage.clone(),
+            stop_token_id: self.stop_token_id,
+            stop_token: self.stop_token.clone(),
         }
     }
 }
@@ -1075,14 +1254,21 @@ fn update_usage_from_delta(delta: &ResponseDelta, usage: &mut ResponseUsage) {
     if let Some(prompt_tokens) = delta.prompt_token_count {
         usage.input_tokens = usage.input_tokens.max(prompt_tokens);
     }
-    if let Some(generation_len) = delta.generation_len {
-        usage.output_tokens = usage.output_tokens.max(generation_len);
-    }
     if let Some(cached_tokens) = delta.cached_token_count {
         usage.input_tokens_details = Some(InputTokensDetails { cached_tokens });
     }
     if let Some(reasoning_tokens) = delta.reasoning_tokens {
         usage.output_tokens_details = Some(OutputTokensDetails { reasoning_tokens });
+    }
+    if let Some(generation_len) = delta.generation_len {
+        let reasoning_tokens = usage
+            .output_tokens_details
+            .as_ref()
+            .map(|details| details.reasoning_tokens)
+            .unwrap_or(0);
+        usage.output_tokens = usage
+            .output_tokens
+            .max(generation_len.saturating_sub(reasoning_tokens));
     }
     usage.total_tokens = usage.input_tokens + usage.output_tokens;
 }
@@ -1174,15 +1360,6 @@ fn process_state_event_for_streaming(
                 content_index: 0,
                 part: ResponseContentPart::OutputText(OutputTextContent::new("")),
             }));
-        } else if item_type == "reasoning" {
-            let sequence_number = stream_state.next_sequence_number();
-            events.push(ResponseEvent::ContentPartAdded(ContentPartAddedEvent {
-                sequence_number,
-                item_id,
-                output_index,
-                content_index: 0,
-                part: ResponseContentPart::Reasoning(ReasoningContent::new("")),
-            }));
         }
         return;
     }
@@ -1230,6 +1407,9 @@ fn process_state_event_for_streaming(
                 } else {
                     item.accumulated_content = value_to_string(value);
                 }
+            }
+            if item_type == "reasoning" {
+                item.accumulated_content = item.accumulated_content.trim().to_string();
             }
             item.status = OutputStatus::Completed;
             if item_type == "tool_call" && item.function_name.is_none() {
@@ -1318,8 +1498,11 @@ fn emit_stream_fallback_item_done(
                 continue;
             }
 
-            item.status = OutputStatus::Completed;
             let item_type = item.item_type.clone();
+            if item_type == "reasoning" {
+                item.accumulated_content = item.accumulated_content.trim().to_string();
+            }
+            item.status = OutputStatus::Completed;
             let item_id = item.item_id.clone();
             let accumulated_content = item.accumulated_content.clone();
             let accumulated_arguments = item.accumulated_arguments.clone();
@@ -1381,6 +1564,7 @@ async fn stream_response_events(
     event_tx: mpsc::Sender<ResponseEvent>,
     response_id: String,
     model: String,
+    stream_tokens: bool,
 ) {
     let mut stream_state = ResponseStreamState::new(response_id, model);
 
@@ -1416,6 +1600,23 @@ async fn stream_response_events(
             break;
         }
 
+        if stream_tokens {
+            for token_id in &delta.tokens {
+                let sequence_number = stream_state.next_sequence_number();
+                if event_tx
+                    .send(ResponseEvent::OutputToken(OutputTokenEvent {
+                        sequence_number,
+                        token_id: *token_id,
+                        content: delta.content.clone(),
+                    }))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+
         let mut mapped_events = Vec::new();
         for event in &delta.state_events {
             process_state_event_for_streaming(event, &mut stream_state, &mut mapped_events);
@@ -1434,6 +1635,13 @@ async fn stream_response_events(
 
         if let Some(reason) = &delta.finish_reason {
             finish_reason = Some(reason.to_lowercase());
+        }
+
+        if let Some(id) = delta.matched_stop_token_id {
+            stream_state.stop_token_id = Some(id);
+        }
+        if let Some(tok) = &delta.matched_stop_token {
+            stream_state.stop_token = Some(tok.clone());
         }
 
         if delta.is_final_delta {
@@ -1527,6 +1735,8 @@ async fn gather_non_streaming_response(
     let mut usage = ResponseUsage::default();
     let mut error_detail: Option<String> = None;
     let mut finish_reason: Option<String> = None;
+    let mut stop_token_id: Option<i32> = None;
+    let mut stop_token: Option<String> = None;
 
     while let Some(delta) = delta_rx.recv().await {
         if let Some(error) = &delta.error {
@@ -1545,6 +1755,13 @@ async fn gather_non_streaming_response(
 
         if let Some(reason) = &delta.finish_reason {
             finish_reason = Some(reason.to_lowercase());
+        }
+
+        if let Some(id) = delta.matched_stop_token_id {
+            stop_token_id = Some(id);
+        }
+        if let Some(tok) = &delta.matched_stop_token {
+            stop_token = Some(tok.clone());
         }
 
         if delta.is_final_delta {
@@ -1600,6 +1817,8 @@ async fn gather_non_streaming_response(
         tools: request.core_tools.clone(),
         max_tool_calls: request.max_tool_calls,
         text: request.text.clone(),
+        stop_token_id,
+        stop_token,
     })
 }
 
@@ -1627,15 +1846,22 @@ impl Client {
             messages = ?messages,
             "Responses messages before multimodal expansion"
         );
-        let default_reasoning = formatter.defaults_to_native_thinking()
-            && request
-                .max_output_tokens
-                .is_none_or(|tokens| tokens >= DEFAULT_NATIVE_REASONING_MIN_TOKENS);
-        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-            formatter,
-            request.reasoning || default_reasoning,
-            &request.reasoning_effort,
-        );
+        let request_reasoning_effort = request
+            .reasoning_effort
+            .clone()
+            .or_else(|| request.reasoning.as_ref().and_then(ReasoningConfig::effort));
+        let explicit_reasoning_false = request
+            .reasoning
+            .as_ref()
+            .and_then(ReasoningConfig::explicit_bool)
+            == Some(false);
+        let default_reasoning = formatter.supports_native_thinking()
+            && request.reasoning.is_none()
+            && request_reasoning_effort.is_none();
+        let requested_reasoning =
+            !explicit_reasoning_false && (request_reasoning_effort.is_some() || default_reasoning);
+        let (reasoning_flag, reasoning_effort, thinking_tokens) =
+            native_reasoning_settings(formatter, requested_reasoning, &request_reasoning_effort);
 
         let (messages_for_template, image_buffers, capabilities, content_order) =
             build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
@@ -1708,7 +1934,8 @@ impl Client {
             .text
             .as_ref()
             .map(|text| text.get("format").cloned().unwrap_or_else(|| text.clone()))
-            .map(|response_format| serde_json::to_string(&response_format).unwrap_or_default())
+            .map(normalize_response_format)
+            .map(|response_format| python_json_dumps(&response_format))
             .unwrap_or_default();
 
         let rng_seed = rand::thread_rng().gen::<u64>();
@@ -1778,6 +2005,7 @@ impl Client {
             response_format_json,
             task_name: None,
             reasoning_effort,
+            prefix_cache: request.prefix_cache,
         };
         tracing::debug!(
             request_id,
@@ -1799,6 +2027,7 @@ impl Client {
                 event_tx,
                 generate_response_id(),
                 model_id.to_string(),
+                request.stream_tokens,
             ));
             Ok(ResponsesResult::Stream(event_rx))
         } else {
@@ -1824,6 +2053,8 @@ mod tests {
             model: "model".to_string(),
             output: Vec::new(),
             usage: None,
+            stop_token_id: None,
+            stop_token: None,
         };
 
         let event = ResponseEvent::ResponseCreated(ResponseCreatedEvent {
@@ -1933,10 +2164,12 @@ mod tests {
             tool_choice: None,
             max_tool_calls: None,
             text: None,
-            reasoning: false,
+            reasoning: Some(false.into()),
             reasoning_effort: None,
             metadata: None,
             parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
         };
 
         let messages = request.to_messages();
