@@ -1,14 +1,14 @@
 //! End-to-end structured generation tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_structured_generation.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_structured_generation.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::SamplingParams;
 
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test generation with JSON schema response format.
-/// Mirrors: test_e2e_structured_generation.py::test_chat_completion_structured_json_response
+/// Mirrors: test_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
 async fn test_chat_completion_structured_json_response() {
     let fixture = get_fixture().await;

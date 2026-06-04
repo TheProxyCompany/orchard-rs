@@ -2,7 +2,7 @@
 //!
 //! Run with:
 //! PIE_LOCAL_BUILD=/path/to/pie/release \
-//!   cargo test --test e2e test_shared_prefix_turn_by_turn_benchmark -- --ignored --nocapture --test-threads=1
+//!   cargo test --test prefix_bench test_shared_prefix_turn_by_turn_benchmark -- --nocapture --test-threads=1
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -241,7 +241,12 @@ async fn test_shared_prefix_turn_by_turn_benchmark() {
             top_p: 1.0,
             top_k: 1,
             rng_seed: 42 + turn as u64,
-            tools: if tool_mode == ToolMode::Grammar {
+            core_tools: if tool_mode == ToolMode::Grammar {
+                tools.clone()
+            } else {
+                Vec::new()
+            },
+            active_tools: if tool_mode == ToolMode::Grammar {
                 tools.clone()
             } else {
                 Vec::new()

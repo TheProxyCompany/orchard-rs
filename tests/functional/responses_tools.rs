@@ -1,7 +1,7 @@
 //! End-to-end Responses API tool-calling tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_responses_tools.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_responses_tools.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::{
     ResponseEvent, ResponseInputItem, ResponseOutputItem, ResponsesInput, ResponsesRequest,

@@ -1,14 +1,14 @@
 //! End-to-end unicode payload tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_unicode_payload.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_unicode_payload.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::SamplingParams;
 
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test that unicode (emoji) payloads round-trip correctly without corruption.
-/// Mirrors: test_e2e_unicode_payload.py::test_unicode_payload_round_trip
+/// Mirrors: test_unicode_payload.py::test_unicode_payload_round_trip
 #[tokio::test]
 async fn test_unicode_payload_round_trip() {
     let fixture = get_fixture().await;

@@ -1,14 +1,14 @@
 //! End-to-end basic chat completion tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_basic.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_basic.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::SamplingParams;
 
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test basic non-streaming chat completion with a single token.
-/// Mirrors: test_e2e_basic.py::test_chat_completion_first_token
+/// Mirrors: test_basic.py::test_chat_completion_first_token
 #[tokio::test]
 async fn test_chat_completion_first_token() {
     let fixture = get_fixture().await;
@@ -61,7 +61,7 @@ async fn test_chat_completion_first_token() {
 }
 
 /// Test multi-token generation with deterministic sampling.
-/// Mirrors: test_e2e_basic.py::test_chat_completion_multi_token
+/// Mirrors: test_basic.py::test_chat_completion_multi_token
 #[tokio::test]
 async fn test_chat_completion_multi_token() {
     let fixture = get_fixture().await;

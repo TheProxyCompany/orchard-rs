@@ -1,7 +1,7 @@
 //! End-to-end batching tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_batching.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_batching.py
+//! Run with: cargo test --test functional -- --test-threads=1
 //!
 //! Note: test_chat_completion_batch_length_mismatch_returns_422 is HTTP-specific
 //! (validates 422 response code) and is not ported.
@@ -11,7 +11,7 @@ use orchard::{BatchChatResult, SamplingParams};
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test homogeneous batched chat completion with identical parameters.
-/// Mirrors: test_e2e_batching.py::test_chat_completion_batched_homogeneous
+/// Mirrors: test_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
 async fn test_chat_completion_batched_homogeneous() {
     let fixture = get_fixture().await;
@@ -64,7 +64,7 @@ async fn test_chat_completion_batched_homogeneous() {
 }
 
 /// Test batched requests with different content and parameters per conversation.
-/// Mirrors: test_e2e_batching.py::test_chat_completion_batched_heterogeneous
+/// Mirrors: test_batching.py::test_chat_completion_batched_heterogeneous
 ///
 /// Note: Python test uses per-prompt parameter arrays. The IPC client takes uniform
 /// params, so we use uniform parameters but the same prompts.

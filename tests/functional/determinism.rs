@@ -1,7 +1,7 @@
 //! End-to-end determinism tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_determinism.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_determinism.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::SamplingParams;
 
@@ -195,7 +195,7 @@ async fn run_sequential_request_determinism() {
 }
 
 /// Test multi-candidate determinism - all candidates should be identical with temp=0.
-/// Mirrors: test_e2e_determinism.py::test_multi_candidate_determinism
+/// Mirrors: test_determinism.py::test_multi_candidate_determinism
 #[tokio::test]
 async fn test_multi_candidate_determinism_n2() {
     run_multi_candidate_determinism(2).await;
@@ -217,7 +217,7 @@ async fn test_multi_candidate_determinism_n16() {
 }
 
 /// Test sequential request determinism - same request multiple times should yield identical results.
-/// Mirrors: test_e2e_determinism.py::test_sequential_request_determinism
+/// Mirrors: test_determinism.py::test_sequential_request_determinism
 #[tokio::test]
 async fn test_sequential_request_determinism() {
     run_sequential_request_determinism().await;

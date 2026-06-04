@@ -52,8 +52,20 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Run tests
+      - name: Run unit tests
         run: cargo test --release --lib
+
+      - name: Clone and build PIE
+        run: |
+          rm -rf ../proxy-inference-engine
+          git clone --depth 1 --recurse-submodules "https://${{ secrets.GH_PAT }}@github.com/TheProxyCompany/proxy-inference-engine.git" ../proxy-inference-engine
+          cd ../proxy-inference-engine
+          ./scripts/build.sh -t Release
+
+      - name: Run full Orchard RS suite
+        run: |
+          PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test functional -- --test-threads=1
+          PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test golden -- --test-threads=1
 
       - name: Publish to crates.io
         env:

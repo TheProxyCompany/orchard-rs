@@ -1,8 +1,8 @@
 //! End-to-end embedded client tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_client.py
+//! Mirrors orchard-py/tests/functional/test_client.py
 //! Tests the embedded IPC client with both streaming and non-streaming.
-//! Run with: cargo test --test e2e -- --ignored
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use orchard::SamplingParams;
 
@@ -116,7 +116,7 @@ async fn run_client_chat_streaming(prompt: &str) {
 }
 
 /// Test non-streaming chat with exact token count.
-/// Mirrors: test_e2e_client.py::test_client_chat_non_streaming
+/// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_continuation() {
     run_client_chat_non_streaming(
@@ -126,7 +126,7 @@ async fn test_client_chat_non_streaming_continuation() {
 }
 
 /// Test non-streaming chat with exact token count.
-/// Mirrors: test_e2e_client.py::test_client_chat_non_streaming
+/// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_plea() {
     run_client_chat_non_streaming(
@@ -136,7 +136,7 @@ async fn test_client_chat_non_streaming_plea() {
 }
 
 /// Test streaming chat.
-/// Mirrors: test_e2e_client.py::test_client_chat_streaming
+/// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_artist() {
     run_client_chat_streaming("Respond with your favorite musical artist of the last 10 years.")
@@ -144,7 +144,7 @@ async fn test_client_chat_streaming_artist() {
 }
 
 /// Test streaming chat.
-/// Mirrors: test_e2e_client.py::test_client_chat_streaming
+/// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_movie() {
     run_client_chat_streaming("Respond with your favorite movie of the last 10 years.").await;

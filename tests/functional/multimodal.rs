@@ -1,8 +1,8 @@
 //! End-to-end multimodal tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_multimodal.py
+//! Mirrors orchard-py/tests/functional/test_multimodal.py
 //! Tests image-based inference with vision-capable models using real test images.
-//! Run with: cargo test --test e2e -- --ignored
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,7 +56,7 @@ fn make_image_message(
 }
 
 /// Test image captioning with apple.jpg - should identify "apple"
-/// Mirrors: test_e2e_multimodal.py::test_multimodal_e2e_apple_image
+/// Mirrors: test_multimodal.py::test_multimodal_e2e_apple_image
 #[tokio::test]
 async fn test_multimodal_apple_image() {
     let fixture = get_fixture().await;
@@ -105,7 +105,7 @@ async fn test_multimodal_apple_image() {
 }
 
 /// Test image captioning with moondream.jpg - should identify "burger"
-/// Mirrors: test_e2e_multimodal.py::test_multimodal_e2e_moondream_image
+/// Mirrors: test_multimodal.py::test_multimodal_e2e_moondream_image
 #[tokio::test]
 async fn test_multimodal_moondream_image() {
     let fixture = get_fixture().await;

@@ -1,7 +1,7 @@
 //! End-to-end multi-candidate generation tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_multi_candidate.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_multi_candidate.py
+//! Run with: cargo test --test functional -- --test-threads=1
 
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use orchard::SamplingParams;
 use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
 
 /// Test non-streaming multi-candidate responses return the expected number of choices.
-/// Mirrors: test_e2e_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
+/// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_non_streaming() {
     let fixture = get_fixture().await;
@@ -78,7 +78,7 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
 }
 
 /// Test streaming multi-candidate responses can be reconstructed per candidate index.
-/// Mirrors: test_e2e_multi_candidate.py::test_chat_completion_multi_candidate_streaming
+/// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_streaming() {
     let fixture = get_fixture().await;

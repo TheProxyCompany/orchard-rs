@@ -1,7 +1,7 @@
 //! End-to-end moondream capabilities tests.
 //!
-//! Mirrors orchard-py/tests/test_e2e_capabilities.py
-//! Run with: cargo test --test e2e -- --ignored
+//! Mirrors orchard-py/tests/functional/test_capabilities.py
+//! Run with: cargo test --test functional -- --test-threads=1
 //!
 //! Note: MoondreamClient takes ownership of Client, so we create a new IPC connection
 //! per test. This mirrors Python's behavior where each test gets a fresh client.
@@ -37,7 +37,7 @@ async fn create_moondream_client(registry: Arc<ModelRegistry>) -> MoondreamClien
 }
 
 /// Test moondream reasoning with grounding on bottles image.
-/// Mirrors: test_e2e_capabilities.py::test_moondream_reasoning_grounding
+/// Mirrors: test_capabilities.py::test_moondream_reasoning_grounding
 #[tokio::test]
 async fn test_moondream_reasoning_grounding() {
     let fixture = get_fixture().await;
@@ -97,7 +97,7 @@ async fn test_moondream_reasoning_grounding() {
 }
 
 /// Test moondream caption generation.
-/// Mirrors: test_e2e_capabilities.py::test_moondream_caption
+/// Mirrors: test_capabilities.py::test_moondream_caption
 #[tokio::test]
 async fn test_moondream_caption_normal() {
     run_moondream_caption("normal").await;
@@ -136,7 +136,7 @@ async fn run_moondream_caption(length: &str) {
 }
 
 /// Test moondream object detection.
-/// Mirrors: test_e2e_capabilities.py::test_moondream_detect
+/// Mirrors: test_capabilities.py::test_moondream_detect
 #[tokio::test]
 async fn test_moondream_detect() {
     let fixture = get_fixture().await;
@@ -159,7 +159,7 @@ async fn test_moondream_detect() {
 }
 
 /// Test moondream query with spatial reference (point).
-/// Mirrors: test_e2e_capabilities.py::test_moondream_query_with_spatial_refs
+/// Mirrors: test_capabilities.py::test_moondream_query_with_spatial_refs
 #[tokio::test]
 async fn test_moondream_query_with_spatial_refs() {
     let fixture = get_fixture().await;
@@ -193,7 +193,7 @@ async fn test_moondream_query_with_spatial_refs() {
 }
 
 /// Test moondream pointing to objects.
-/// Mirrors: test_e2e_capabilities.py::test_moondream_point
+/// Mirrors: test_capabilities.py::test_moondream_point
 #[tokio::test]
 async fn test_moondream_point() {
     let fixture = get_fixture().await;
@@ -216,7 +216,7 @@ async fn test_moondream_point() {
 }
 
 /// Test moondream gaze detection.
-/// Mirrors: test_e2e_capabilities.py::test_moondream_detect_gaze
+/// Mirrors: test_capabilities.py::test_moondream_detect_gaze
 #[tokio::test]
 async fn test_moondream_detect_gaze() {
     let fixture = get_fixture().await;
