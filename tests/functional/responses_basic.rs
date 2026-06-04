@@ -59,7 +59,7 @@ async fn test_responses_non_streaming_string_input() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -133,7 +133,7 @@ async fn test_responses_non_streaming_message_items() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -177,7 +177,7 @@ async fn test_responses_echo_fields() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -216,7 +216,7 @@ async fn test_responses_streaming_event_sequence() {
         );
 
         let stream = match result.unwrap() {
-            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Stream { events, .. } => events,
             ResponsesResult::Complete(_) => {
                 panic!("expected stream, got complete response for {}", model_id)
             }
@@ -309,7 +309,7 @@ async fn test_responses_streaming_delta_accumulation() {
         );
 
         let stream = match result.unwrap() {
-            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Stream { events, .. } => events,
             ResponsesResult::Complete(_) => {
                 panic!("expected stream, got complete response for {}", model_id)
             }
@@ -358,7 +358,7 @@ async fn test_responses_streaming_completed_snapshot() {
         );
 
         let stream = match result.unwrap() {
-            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Stream { events, .. } => events,
             ResponsesResult::Complete(_) => {
                 panic!("expected stream, got complete response for {}", model_id)
             }
@@ -410,7 +410,7 @@ async fn test_responses_incomplete_non_streaming() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -446,7 +446,7 @@ async fn test_responses_incomplete_streaming() {
         );
 
         let stream = match result.unwrap() {
-            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Stream { events, .. } => events,
             ResponsesResult::Complete(_) => {
                 panic!("expected stream, got complete response for {}", model_id)
             }
@@ -506,7 +506,7 @@ async fn test_responses_instructions() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };

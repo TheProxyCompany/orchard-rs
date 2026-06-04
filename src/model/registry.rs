@@ -404,7 +404,9 @@ impl ModelRegistry {
             if let Ok(canonical_id) = self.canonicalize(requested_model_id).await {
                 let entries = self.entries.read().await;
                 if let Some(entry) = entries.get(&canonical_id) {
-                    if entry.state != ModelLoadState::Idle {
+                    let retryable_cancel = entry.state == ModelLoadState::Failed
+                        && entry.error.as_deref() == Some("Cancelled");
+                    if entry.state != ModelLoadState::Idle && !retryable_cancel {
                         return Ok((entry.state, canonical_id));
                     }
                 }
@@ -451,7 +453,10 @@ impl ModelRegistry {
             return Ok((entry.state, canonical_id));
         }
 
-        if entry.state == ModelLoadState::Failed && !force_reload {
+        if entry.state == ModelLoadState::Failed
+            && entry.error.as_deref() != Some("Cancelled")
+            && !force_reload
+        {
             return Ok((ModelLoadState::Failed, canonical_id));
         }
 
@@ -765,6 +770,67 @@ impl ModelRegistry {
         entry.error = Some("Cancelled".to_string());
         entry.notify.notify_waiters();
         Ok(())
+    }
+
+    /// Cancel an in-progress PIE model activation/load.
+    pub async fn cancel_activation(&self, model_id: &str) -> Result<(), String> {
+        let canonical_id = self
+            .canonicalize(model_id)
+            .await
+            .unwrap_or_else(|_| model_id.to_string());
+
+        let state = {
+            let entries = self.entries.read().await;
+            entries.get(&canonical_id).map(|entry| entry.state)
+        };
+
+        match state {
+            Some(ModelLoadState::Downloading) => {
+                return self.cancel_download(&canonical_id).await;
+            }
+            Some(ModelLoadState::Loading | ModelLoadState::Activating) => {}
+            Some(_) | None => return Ok(()),
+        }
+
+        let ipc = {
+            let guard = self.ipc_client.read().await;
+            guard.clone()
+        };
+
+        let response = match ipc {
+            Some(ipc) => {
+                let command = json!({
+                    "type": "cancel_model_load",
+                    "requested_id": model_id,
+                    "canonical_id": canonical_id,
+                });
+                ipc.send_management_command_async(command, Duration::from_secs(2))
+                    .await
+                    .map_err(|e| format!("Failed to send cancel_model_load command: {}", e))
+            }
+            None => Err("IPC client not set".to_string()),
+        };
+
+        self.fail_activation(&canonical_id, "Cancelled").await;
+
+        let response = response?;
+        let status = response
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if matches!(status, "ok" | "accepted") {
+            Ok(())
+        } else {
+            let message = response
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            Err(format!(
+                "Engine rejected cancel_model_load for '{}': {}",
+                model_id, message
+            ))
+        }
     }
 
     /// Wait for a model to finish loading.
@@ -1103,6 +1169,36 @@ mod tests {
         let entry = entries.get(&canonical_id).unwrap();
         assert_eq!(entry.state, ModelLoadState::Failed);
         assert_eq!(entry.error.as_deref(), Some(error.as_str()));
+        assert!(entry.activation_waiters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_activation_fails_activation_waiters_locally() {
+        let registry = ModelRegistry::new().unwrap();
+        let canonical_id = "google/gemma-4-26B-A4B-it".to_string();
+        let requested_id = "gemma4".to_string();
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut alias_cache = registry.alias_cache.write().await;
+            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
+        }
+
+        {
+            let mut entries = registry.entries.write().await;
+            let entry = entries.entry(canonical_id.clone()).or_default();
+            entry.state = ModelLoadState::Activating;
+            entry.activation_waiters.push(tx);
+        }
+
+        let result = registry.cancel_activation(&requested_id).await;
+        assert!(matches!(result, Err(message) if message == "IPC client not set"));
+        assert_eq!(rx.await.unwrap(), Err("Cancelled".to_string()));
+
+        let entries = registry.entries.read().await;
+        let entry = entries.get(&canonical_id).unwrap();
+        assert_eq!(entry.state, ModelLoadState::Failed);
+        assert_eq!(entry.error.as_deref(), Some("Cancelled"));
         assert!(entry.activation_waiters.is_empty());
     }
 

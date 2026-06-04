@@ -104,7 +104,7 @@ async fn test_responses_tool_call_non_streaming() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -183,7 +183,7 @@ async fn test_responses_tool_call_streaming() {
         );
 
         let stream = match result.unwrap() {
-            ResponsesResult::Stream(stream) => stream,
+            ResponsesResult::Stream { events, .. } => events,
             ResponsesResult::Complete(_) => {
                 panic!("expected stream, got complete response for {}", model_id)
             }
@@ -292,7 +292,7 @@ async fn test_responses_tool_result_continuation() {
 
         let first_response = match first_result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };
@@ -367,7 +367,7 @@ async fn test_responses_tool_result_continuation() {
 
         let second_response = match second_result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => {
+            ResponsesResult::Stream { .. } => {
                 panic!("expected complete response, got stream for {}", model_id)
             }
         };

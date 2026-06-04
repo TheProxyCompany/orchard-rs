@@ -46,7 +46,7 @@ async fn test_responses_structured_json_schema() {
 
         let response = match result.unwrap() {
             ResponsesResult::Complete(response) => *response,
-            ResponsesResult::Stream(_) => panic!("expected complete response, got stream"),
+            ResponsesResult::Stream { .. } => panic!("expected complete response, got stream"),
         };
 
         assert_eq!(response.status, OutputStatus::Completed);

@@ -9,6 +9,7 @@ mod responses;
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -403,6 +404,41 @@ impl Client {
         }
 
         Ok(resolved)
+    }
+
+    /// Cancel an in-flight PIE request by request id.
+    pub async fn cancel_request(&self, request_id: u64) -> Result<()> {
+        let response = self
+            .ipc
+            .send_management_command_async(
+                serde_json::json!({
+                    "type": "cancel_request",
+                    "request_id": request_id,
+                }),
+                Duration::from_secs(2),
+            )
+            .await?;
+
+        let status = response
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if matches!(status, "ok" | "accepted") {
+            Ok(())
+        } else {
+            Err(ClientError::Ipc(format!(
+                "Cancel request {} failed: {}",
+                request_id, response
+            )))
+        }
+    }
+
+    /// Cancel an in-progress PIE model load or activation.
+    pub async fn cancel_model_load(&self, model_id: &str) -> Result<()> {
+        self.registry
+            .cancel_activation(model_id)
+            .await
+            .map_err(ClientError::Ipc)
     }
 
     /// Perform asynchronous chat completion.

@@ -66,6 +66,10 @@ fn finish_reason_to_incomplete(reason: Option<&str>) -> Option<IncompleteDetails
         Some(IncompleteDetails {
             reason: "content_filter".to_string(),
         })
+    } else if matches!(normalized.as_str(), "user" | "cancelled" | "canceled") {
+        Some(IncompleteDetails {
+            reason: "cancelled".to_string(),
+        })
     } else {
         None
     }
@@ -942,7 +946,10 @@ impl ResponseEvent {
 
 pub enum ResponsesResult {
     Complete(Box<ResponseObject>),
-    Stream(mpsc::Receiver<ResponseEvent>),
+    Stream {
+        request_id: u64,
+        events: mpsc::Receiver<ResponseEvent>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2211,7 +2218,10 @@ impl Client {
                 model_id.to_string(),
                 request.stream_tokens,
             ));
-            Ok(ResponsesResult::Stream(event_rx))
+            Ok(ResponsesResult::Stream {
+                request_id,
+                events: event_rx,
+            })
         } else {
             let raw_tool_call_tokens = if request.core_tools.is_empty()
                 || tool_choice_to_string(request.tool_choice.as_ref()) == "none"
@@ -2268,6 +2278,12 @@ mod tests {
             finish_reason_to_incomplete(Some("content_filter")),
             Some(IncompleteDetails {
                 reason: "content_filter".to_string(),
+            })
+        );
+        assert_eq!(
+            finish_reason_to_incomplete(Some("user")),
+            Some(IncompleteDetails {
+                reason: "cancelled".to_string(),
             })
         );
         assert_eq!(finish_reason_to_incomplete(Some("stop")), None);

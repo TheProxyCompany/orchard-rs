@@ -143,7 +143,7 @@ async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
                 model.template_type
             )
         });
-    let ResponsesResult::Stream(stream) = result else {
+    let ResponsesResult::Stream { events: stream, .. } = result else {
         panic!("expected stream for {}", model.template_type);
     };
     drain_stream(stream).await
