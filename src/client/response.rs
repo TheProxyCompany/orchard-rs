@@ -1,6 +1,7 @@
 //! Response types for the client API.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
@@ -42,6 +43,10 @@ pub struct ClientDelta {
     pub top_logprobs: Vec<crate::ipc::client::TokenLogProb>,
     pub cumulative_logprob: Option<f64>,
     pub modal_decoder_id: Option<String>,
+    pub modal_type: Option<String>,
+    pub modal_event: Option<String>,
+    pub modal_mime_type: Option<String>,
+    pub modal_metadata_json: Option<String>,
     pub modal_bytes_b64: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub state_events: Vec<ResponseStateEvent>,
@@ -68,6 +73,10 @@ impl From<ResponseDelta> for ClientDelta {
             top_logprobs: delta.top_logprobs,
             cumulative_logprob: delta.cumulative_logprob,
             modal_decoder_id: delta.modal_decoder_id,
+            modal_type: delta.modal_type,
+            modal_event: delta.modal_event,
+            modal_mime_type: delta.modal_mime_type,
+            modal_metadata_json: delta.modal_metadata_json,
             modal_bytes_b64: delta.modal_bytes_b64,
             state_events: delta.state_events,
         }
@@ -92,6 +101,16 @@ pub struct ClientResponse {
     pub tool_calls: Vec<ClientToolCall>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deltas: Vec<ClientDelta>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModalArtifact {
+    pub modal_type: String,
+    pub event: String,
+    pub mime_type: String,
+    pub decoder_id: String,
+    pub metadata: Option<Value>,
+    pub data: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -128,6 +147,10 @@ mod tests {
             top_logprobs: vec![],
             cumulative_logprob: Some(-1.5),
             modal_decoder_id: Some("moondream3.coord".to_string()),
+            modal_type: Some("image".to_string()),
+            modal_event: Some("artifact.done".to_string()),
+            modal_mime_type: Some("image/png".to_string()),
+            modal_metadata_json: Some("{\"width\":64,\"height\":64}".to_string()),
             modal_bytes_b64: Some("AAAA".to_string()),
             embedding_bytes: None,
             state_events: vec![],
@@ -147,6 +170,13 @@ mod tests {
         assert_eq!(delta.tokens, vec![1, 2, 3]);
         assert_eq!(delta.cumulative_logprob, Some(-1.5));
         assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
+        assert_eq!(delta.modal_type, Some("image".to_string()));
+        assert_eq!(delta.modal_event, Some("artifact.done".to_string()));
+        assert_eq!(delta.modal_mime_type, Some("image/png".to_string()));
+        assert_eq!(
+            delta.modal_metadata_json,
+            Some("{\"width\":64,\"height\":64}".to_string())
+        );
         assert!(delta.state_events.is_empty());
     }
 }

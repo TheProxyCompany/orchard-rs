@@ -26,6 +26,16 @@ pub struct ModelResolver {
     hf_api: Api,
 }
 
+#[derive(Debug, Deserialize)]
+struct HubRepoFile {
+    rfilename: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HubRepoInfo {
+    siblings: Vec<HubRepoFile>,
+}
+
 impl ModelResolver {
     /// Create a new model resolver.
     pub fn new() -> Result<Self> {
@@ -77,7 +87,9 @@ impl ModelResolver {
         let path = PathBuf::from(identifier);
 
         if path.is_absolute() && path.exists() {
-            if path.is_dir() && path.join("config.json").exists() {
+            if path.is_dir()
+                && (path.join("config.json").exists() || path.join("model_index.json").exists())
+            {
                 return Ok(Some(
                     self.build_resolved_model(path, "local", None, None).await?,
                 ));
@@ -89,7 +101,10 @@ impl ModelResolver {
 
         if path.exists() {
             let resolved = std::fs::canonicalize(&path)?;
-            if resolved.is_dir() && resolved.join("config.json").exists() {
+            if resolved.is_dir()
+                && (resolved.join("config.json").exists()
+                    || resolved.join("model_index.json").exists())
+            {
                 return Ok(Some(
                     self.build_resolved_model(resolved, "local", None, None)
                         .await?,
@@ -104,17 +119,7 @@ impl ModelResolver {
     }
 
     async fn resolve_huggingface(&self, repo_id: &str) -> Result<ResolvedModel> {
-        let repo = self.hf_api.model(repo_id.to_string());
-
-        // Try to get from cache first, then download if needed
-        let config_path = repo
-            .get("config.json")
-            .await
-            .map_err(|e| Error::DownloadFailed(repo_id.to_string(), e.to_string()))?;
-        let path = config_path
-            .parent()
-            .map(|path| path.to_path_buf())
-            .unwrap_or_else(|| config_path.clone());
+        let path = self.resolve_hf_snapshot_root(repo_id).await?;
 
         let source = if path.to_string_lossy().contains("cache") {
             "hf_cache"
@@ -124,6 +129,79 @@ impl ModelResolver {
 
         self.build_resolved_model(path, source, Some(repo_id), Some(repo_id))
             .await
+    }
+
+    async fn resolve_hf_snapshot_root(&self, repo_id: &str) -> Result<PathBuf> {
+        let repo = self.hf_api.model(repo_id.to_string());
+        let mut repo_info: HubRepoInfo = repo
+            .info_request()
+            .query(&[("blobs", "true")])
+            .send()
+            .await
+            .map_err(|e| Error::DownloadFailed(repo_id.to_string(), e.to_string()))?
+            .json()
+            .await
+            .map_err(|e| Error::DownloadFailed(repo_id.to_string(), e.to_string()))?;
+
+        repo_info
+            .siblings
+            .retain(|file| Self::should_download_hf_file(file.rfilename.as_str()));
+        repo_info.siblings.sort_by(|left, right| {
+            Self::hf_file_priority(left.rfilename.as_str())
+                .cmp(&Self::hf_file_priority(right.rfilename.as_str()))
+                .then_with(|| left.rfilename.cmp(&right.rfilename))
+        });
+
+        let mut config_path = None;
+        let mut model_index_path = None;
+        for file in repo_info.siblings {
+            let path = repo
+                .get(file.rfilename.as_str())
+                .await
+                .map_err(|e| Error::DownloadFailed(repo_id.to_string(), e.to_string()))?;
+            match file.rfilename.as_str() {
+                "config.json" => config_path = Some(path),
+                "model_index.json" => model_index_path = Some(path),
+                _ => {}
+            }
+        }
+
+        let root_file = config_path.or(model_index_path).ok_or_else(|| {
+            Error::DownloadFailed(
+                repo_id.to_string(),
+                "repository is missing config.json or model_index.json".to_string(),
+            )
+        })?;
+        root_file
+            .parent()
+            .map(|path| path.to_path_buf())
+            .ok_or_else(|| {
+                Error::DownloadFailed(
+                    repo_id.to_string(),
+                    "resolved root has no parent".to_string(),
+                )
+            })
+    }
+
+    fn should_download_hf_file(path: &str) -> bool {
+        let file_name = path.rsplit('/').next().unwrap_or(path);
+        path.ends_with(".json")
+            || path.ends_with(".safetensors")
+            || path.ends_with(".py")
+            || path.ends_with(".tiktoken")
+            || path.ends_with(".txt")
+            || path.ends_with(".jsonl")
+            || path.ends_with(".jinja")
+            || file_name == "tokenizer.model"
+            || file_name == "tiktoken.model"
+    }
+
+    fn hf_file_priority(path: &str) -> u8 {
+        match path {
+            "config.json" => 0,
+            "model_index.json" => 1,
+            _ => 2,
+        }
     }
 
     async fn build_resolved_model(
@@ -140,7 +218,7 @@ impl ModelResolver {
         };
 
         // Load and parse config
-        let config = self.load_config(&model_path)?;
+        let config = Self::normalize_config(self.load_config(&model_path)?);
         let metadata = Self::collect_metadata(&config);
 
         // Determine canonical ID
@@ -207,11 +285,52 @@ impl ModelResolver {
     fn load_config(&self, model_dir: &Path) -> Result<serde_json::Value> {
         let config_file = model_dir.join("config.json");
         if !config_file.exists() {
+            let model_index_file = model_dir.join("model_index.json");
+            if model_index_file.exists() {
+                let content = std::fs::read_to_string(&model_index_file)?;
+                let mut model_index: serde_json::Value =
+                    serde_json::from_str(&content).map_err(Error::from)?;
+                if model_index
+                    .get("_class_name")
+                    .and_then(|value| value.as_str())
+                    == Some("Ideogram4Pipeline")
+                {
+                    if model_index.get("model_type").is_none() {
+                        model_index["model_type"] =
+                            serde_json::Value::String("ideogram4".to_string());
+                    }
+                    if model_index.get("source_format").is_none() {
+                        model_index["source_format"] =
+                            serde_json::Value::String("diffusers_directory".to_string());
+                    }
+                    return Ok(model_index);
+                }
+            }
             return Err(Error::MissingConfig(model_dir.to_path_buf()));
         }
 
         let content = std::fs::read_to_string(&config_file)?;
         serde_json::from_str(&content).map_err(Error::from)
+    }
+
+    fn normalize_config(mut config: serde_json::Value) -> serde_json::Value {
+        if Self::is_parakeet_tdt_config(&config) {
+            config["model_type"] = serde_json::Value::String("parakeet_tdt".to_string());
+        }
+        config
+    }
+
+    fn is_parakeet_tdt_config(config: &serde_json::Value) -> bool {
+        let target_matches = config
+            .get("target")
+            .and_then(|value| value.as_str())
+            .is_some_and(|target| target.ends_with("EncDecRNNTBPEModel"));
+        let has_tdt_durations = config
+            .get("model_defaults")
+            .and_then(|defaults| defaults.get("tdt_durations"))
+            .and_then(|durations| durations.as_array())
+            .is_some();
+        target_matches && has_tdt_durations
     }
 
     fn determine_canonical_id(config: &serde_json::Value, model_dir: &Path) -> Option<String> {
@@ -377,6 +496,68 @@ mod tests {
         let config = resolved.formatter_config.as_ref().unwrap();
 
         assert_eq!(config["model_type"], "llama");
+        assert_eq!(config["_name_or_path"], repo_id);
+    }
+
+    #[tokio::test]
+    async fn test_resolves_local_ideogram_model_index_directory() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("model_index.json"),
+            serde_json::json!({"_class_name": "Ideogram4Pipeline"}).to_string(),
+        )
+        .unwrap();
+
+        let mut resolver = ModelResolver::new().unwrap();
+        let resolved = resolver
+            .resolve(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.source, "local");
+        assert_eq!(
+            resolved.metadata.get("model_type"),
+            Some(&"ideogram4".to_string())
+        );
+        assert_eq!(resolved.formatter_config, None);
+    }
+
+    #[tokio::test]
+    async fn test_resolves_parakeet_tdt_config_with_audio_profile() {
+        let repo_id = "mlx-community/parakeet-tdt-0.6b-v3";
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.json"),
+            serde_json::json!({
+                "_name_or_path": repo_id,
+                "target": "nemo.collections.asr.models.rnnt_bpe_models.EncDecRNNTBPEModel",
+                "model_defaults": {
+                    "tdt_durations": [0, 1, 2, 3, 4]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("tokenizer.json"), "{}").unwrap();
+
+        let resolver = ModelResolver::new().unwrap();
+        let resolved = resolver
+            .build_resolved_model(
+                dir.path().to_path_buf(),
+                "hf_cache",
+                Some(repo_id),
+                Some(repo_id),
+            )
+            .await
+            .unwrap();
+        let config = resolved.formatter_config.as_ref().unwrap();
+
+        assert_eq!(
+            resolved.metadata.get("model_type"),
+            Some(&"parakeet_tdt".to_string())
+        );
+        assert_eq!(config["model_type"], "parakeet_tdt");
+        assert!(config.get("template_type").is_none());
         assert_eq!(config["_name_or_path"], repo_id);
     }
 }

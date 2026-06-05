@@ -73,6 +73,8 @@ pub struct PromptPayload {
     #[serde(default)]
     pub response_format_json: String,
     #[serde(default)]
+    pub modal_options_json: String,
+    #[serde(default)]
     pub task_name: Option<String>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
@@ -175,6 +177,8 @@ pub enum RequestType {
     Agent = 5,
     Omni = 6,
     PrefillTask = 7,
+    Audio = 8,
+    Image = 9,
 }
 
 /// Align offset to payload alignment boundary
@@ -388,6 +392,10 @@ pub fn build_batch_request_payload(
         });
 
         if let Some(prompt_meta_obj) = prompt_meta.as_object_mut() {
+            prompt_meta_obj.insert(
+                "modal_options_json".to_string(),
+                json!(prompt.modal_options_json),
+            );
             prompt_meta_obj.insert("audio_data_offset".to_string(), json!(audio_data_offset));
             prompt_meta_obj.insert("audio_data_size".to_string(), json!(audio_data_size));
             prompt_meta_obj.insert("audio_sizes_offset".to_string(), json!(audio_sizes_offset));

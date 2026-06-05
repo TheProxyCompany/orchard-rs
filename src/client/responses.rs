@@ -293,7 +293,7 @@ pub enum ResponseInputItem {
     },
     FunctionCallOutput {
         call_id: String,
-        output: String,
+        output: FunctionCallOutputContent,
     },
     Reasoning {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -301,6 +301,34 @@ pub enum ResponseInputItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         encrypted_content: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FunctionCallOutputContent {
+    Text(String),
+    Content(Vec<Value>),
+}
+
+impl FunctionCallOutputContent {
+    fn to_message_content(&self) -> Value {
+        match self {
+            Self::Text(text) => Value::String(text.clone()),
+            Self::Content(parts) => Value::Array(parts.clone()),
+        }
+    }
+}
+
+impl From<String> for FunctionCallOutputContent {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl From<&str> for FunctionCallOutputContent {
+    fn from(value: &str) -> Self {
+        Self::Text(value.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -489,7 +517,7 @@ impl ResponsesRequest {
                         ResponseInputItem::FunctionCallOutput { call_id, output } => {
                             let mut message = HashMap::new();
                             message.insert("role".to_string(), Value::String("tool".to_string()));
-                            message.insert("content".to_string(), Value::String(output.clone()));
+                            message.insert("content".to_string(), output.to_message_content());
                             message
                                 .insert("tool_call_id".to_string(), Value::String(call_id.clone()));
                             messages.push(message);
@@ -2192,6 +2220,7 @@ impl Client {
             min_tool_calls: request.min_tool_calls.unwrap_or(1).max(1),
             max_tool_calls: request.max_tool_calls.unwrap_or(0).max(0),
             response_format_json,
+            modal_options_json: String::new(),
             task_name: None,
             reasoning_effort,
             prefix_cache: request.prefix_cache,
@@ -2367,7 +2396,7 @@ mod tests {
                 },
                 ResponseInputItem::FunctionCallOutput {
                     call_id: "call_1".to_string(),
-                    output: "{\"temperature\":65}".to_string(),
+                    output: "{\"temperature\":65}".into(),
                 },
             ]),
             stream: false,
@@ -2404,6 +2433,62 @@ mod tests {
         assert_eq!(
             messages[1].get("role").and_then(Value::as_str),
             Some("tool")
+        );
+    }
+
+    #[test]
+    fn test_request_input_conversion_multimodal_tool_output() {
+        let request = ResponsesRequest {
+            input: ResponsesInput::Items(vec![ResponseInputItem::FunctionCallOutput {
+                call_id: "call_image".to_string(),
+                output: FunctionCallOutputContent::Content(vec![serde_json::json!({
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,AA==",
+                    "detail": "auto"
+                })]),
+            }]),
+            stream: false,
+            instructions: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            deterministic: false,
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_output_tokens: None,
+            top_logprobs: None,
+            core_tools: Vec::new(),
+            active_tools: Vec::new(),
+            tool_choice: None,
+            min_tool_calls: None,
+            max_tool_calls: None,
+            text: None,
+            reasoning: Some(false.into()),
+            reasoning_effort: None,
+            metadata: None,
+            parallel_tool_calls: false,
+            prefix_cache: None,
+            stream_tokens: false,
+        };
+
+        let messages = request.to_messages();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0].get("role").and_then(Value::as_str),
+            Some("tool")
+        );
+        assert_eq!(
+            messages[0].get("content"),
+            Some(&serde_json::json!([{
+                "type": "input_image",
+                "image_url": "data:image/png;base64,AA==",
+                "detail": "auto"
+            }]))
+        );
+        assert_eq!(
+            messages[0].get("tool_call_id").and_then(Value::as_str),
+            Some("call_image")
         );
     }
 

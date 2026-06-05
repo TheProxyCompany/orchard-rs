@@ -327,7 +327,8 @@ async fn test_responses_tool_result_continuation() {
                 "unit": "fahrenheit",
                 "condition": "foggy"
             })
-            .to_string(),
+            .to_string()
+            .into(),
         });
 
         let second_request = ResponsesRequest {

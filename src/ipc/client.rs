@@ -128,6 +128,14 @@ pub struct ResponseDelta {
     pub cumulative_logprob: Option<f64>,
     /// Modal decoder identifier (e.g., "moondream3.coord")
     pub modal_decoder_id: Option<String>,
+    /// Modal artifact type, such as "audio" or "image".
+    pub modal_type: Option<String>,
+    /// Modal artifact lifecycle event, such as "artifact.delta" or "artifact.done".
+    pub modal_event: Option<String>,
+    /// MIME type for modal artifact bytes.
+    pub modal_mime_type: Option<String>,
+    /// JSON-encoded modal artifact metadata.
+    pub modal_metadata_json: Option<String>,
     /// Base64-encoded modal decoder output bytes
     pub modal_bytes_b64: Option<String>,
     /// Raw embedding bytes from PIE, when request_type is embedding.

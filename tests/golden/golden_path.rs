@@ -1,15 +1,23 @@
 use std::collections::{HashMap, HashSet};
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use orchard::{
-    OutputFunctionCall, OutputMessage, OutputReasoning, OutputStatus, ReasoningConfig,
-    ResponseInputItem, ResponseOutputItem, ResponsesInput, ResponsesRequest, ResponsesResult,
+    FunctionCallOutputContent, ModalArtifact, OutputFunctionCall, OutputMessage, OutputReasoning,
+    OutputStatus, ReasoningConfig, ResponseInputItem, ResponseOutputItem, ResponsesInput,
+    ResponsesRequest, ResponsesResult,
 };
 use serde_json::{json, Value};
 
-use crate::fixture::{get_fixture, Model, Thinking, MODELS};
+use crate::fixture::{get_fixture, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID};
 use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
+const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
+const QWEN3_TTS_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice";
+const PARAKEET_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v3";
+const QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-0.6B";
+const AUDIO_TELEPHONE_PHRASE: &str = "hello this is a test";
+const AUDIO_TELEPHONE_SAMPLE_RATE: usize = 16_000;
 
 fn message(role: &str, content: &str) -> ResponseInputItem {
     ResponseInputItem::Message {
@@ -31,7 +39,7 @@ fn function_call(call_id: &str, name: &str, arguments: &str) -> ResponseInputIte
 fn function_output(call_id: &str, output: Value) -> ResponseInputItem {
     ResponseInputItem::FunctionCallOutput {
         call_id: call_id.to_string(),
-        output: tool_output_json(&output),
+        output: tool_output_json(&output).into(),
     }
 }
 
@@ -58,6 +66,124 @@ fn tool_output_json(value: &Value) -> String {
         }
         other => serde_json::to_string(other).expect("JSON value serializes"),
     }
+}
+
+fn normalize_transcript(text: &str) -> String {
+    text.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch.is_ascii_whitespace() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
+}
+
+fn resample_linear(samples: &[f32], source_rate: usize, target_rate: usize) -> Vec<f32> {
+    if source_rate == target_rate || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let target_count = ((samples.len() * target_rate) + (source_rate / 2)) / source_rate;
+    let target_count = target_count.max(1);
+    if target_count == 1 {
+        return vec![samples[0]];
+    }
+
+    let ratio = source_rate as f64 / target_rate as f64;
+    let last = samples.len() - 1;
+    (0..target_count)
+        .map(|index| {
+            let position = index as f64 * ratio;
+            let left = (position as usize).min(last);
+            let right = (left + 1).min(last);
+            let mix = (position - left as f64) as f32;
+            samples[left] * (1.0 - mix) + samples[right] * mix
+        })
+        .collect()
+}
+
+fn wav_to_float32_pcm(wav_bytes: &[u8], target_rate: usize) -> Vec<f32> {
+    assert!(wav_bytes.starts_with(b"RIFF"), "TTS WAV missing RIFF header");
+    assert_eq!(&wav_bytes[8..12], b"WAVE", "TTS WAV missing WAVE tag");
+
+    let mut offset = 12usize;
+    let mut channels = None;
+    let mut sample_rate = None;
+    let mut sample_width = None;
+    let mut data = None;
+
+    while offset + 8 <= wav_bytes.len() {
+        let chunk_id = &wav_bytes[offset..offset + 4];
+        let chunk_len = read_u32_le(wav_bytes, offset + 4) as usize;
+        let chunk_start = offset + 8;
+        let chunk_end = chunk_start + chunk_len;
+        assert!(
+            chunk_end <= wav_bytes.len(),
+            "TTS WAV chunk extends past file"
+        );
+
+        match chunk_id {
+            b"fmt " => {
+                assert!(chunk_len >= 16, "TTS WAV fmt chunk too small");
+                let format = read_u16_le(wav_bytes, chunk_start);
+                assert_eq!(format, 1, "expected PCM WAV format");
+                channels = Some(read_u16_le(wav_bytes, chunk_start + 2) as usize);
+                sample_rate = Some(read_u32_le(wav_bytes, chunk_start + 4) as usize);
+                sample_width = Some(read_u16_le(wav_bytes, chunk_start + 14) as usize / 8);
+            }
+            b"data" => {
+                data = Some(&wav_bytes[chunk_start..chunk_end]);
+            }
+            _ => {}
+        }
+
+        offset = chunk_end + (chunk_len % 2);
+    }
+
+    let channels = channels.expect("TTS WAV missing channel count");
+    let source_rate = sample_rate.expect("TTS WAV missing sample rate");
+    let sample_width = sample_width.expect("TTS WAV missing sample width");
+    let data = data.expect("TTS WAV missing data chunk");
+    assert!(channels >= 1, "TTS WAV must have at least one channel");
+    assert_eq!(sample_width, 2, "expected 16-bit PCM WAV");
+    assert_eq!(data.len() % (sample_width * channels), 0);
+
+    let mono = if channels == 1 {
+        data.chunks_exact(2)
+            .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as f32 / 32768.0)
+            .collect::<Vec<_>>()
+    } else {
+        data.chunks_exact(sample_width * channels)
+            .map(|frame| {
+                let sum = (0..channels)
+                    .map(|channel| {
+                        let start = channel * sample_width;
+                        i16::from_le_bytes([frame[start], frame[start + 1]]) as f32
+                    })
+                    .sum::<f32>();
+                sum / (channels as f32 * 32768.0)
+            })
+            .collect::<Vec<_>>()
+    };
+
+    resample_linear(&mono, source_rate, target_rate)
 }
 
 fn reasoning_for(model: Model) -> Option<ReasoningConfig> {
@@ -128,6 +254,20 @@ fn get_time_tool() -> Value {
             }
         }),
         &["timezone"],
+    )
+}
+
+fn generate_image_tool() -> Value {
+    tool(
+        "generate_image",
+        "Generate an image from a text prompt.",
+        json!({
+            "prompt": {
+                "type": "string",
+                "description": "A concise visual prompt for the image generator.",
+            }
+        }),
+        &["prompt"],
     )
 }
 
@@ -253,6 +393,25 @@ fn assert_message_lifecycle(turn: &Turn, label: &str) {
 fn parse_arguments(arguments: &str) -> Value {
     serde_json::from_str(arguments)
         .unwrap_or_else(|err| panic!("invalid tool arguments {arguments:?}: {err}"))
+}
+
+fn image_part(artifact: &ModalArtifact) -> Value {
+    json!({
+        "type": "input_image",
+        "image_url": format!(
+            "data:{};base64,{}",
+            artifact.mime_type,
+            BASE64.encode(&artifact.data)
+        ),
+        "detail": "auto",
+    })
+}
+
+fn model_by_checkpoint(checkpoint: &str) -> Model {
+    *MODELS
+        .iter()
+        .find(|model| model.checkpoint == checkpoint)
+        .unwrap_or_else(|| panic!("missing test model {checkpoint}"))
 }
 
 #[tokio::test]
@@ -679,6 +838,237 @@ async fn test_tool_result_grounding() {
                 model.template_type
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn test_image_tool_self_loop_and_blind_verifier() {
+    const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
+    const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
+
+    let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
+    let moondream = model_by_checkpoint(MOONDREAM_MODEL_ID);
+    let mut conversation = vec![message("system", SYSTEM), message("user", USER)];
+
+    let mut generator_request = request(conversation.clone());
+    generator_request.core_tools = vec![generate_image_tool()];
+    generator_request.tool_choice = Some(json!("required"));
+    generator_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let generator = run_stream(gemma, generator_request).await;
+    assert_or_record("gemma4", "image_tool_self_loop", "turn1", &generator.events);
+    assert_or_record(
+        "gemma4",
+        "image_tool_blind_verifier",
+        "generator",
+        &generator.events,
+    );
+
+    assert_response_lifecycle(&generator);
+    assert_optional_reasoning(
+        &generator,
+        gemma,
+        "generator",
+        "expected at most one reasoning block",
+    );
+    assert!(
+        !generator.counts.contains_key("response.output_text.delta"),
+        "generator: leaked message text on a tool turn"
+    );
+    assert_eq!(
+        added(&generator, "function_call"),
+        1,
+        "generator: expected one function_call"
+    );
+    assert_eq!(
+        count(&generator, "response.function_call_arguments.done"),
+        1,
+        "generator: expected one arguments.done"
+    );
+    assert_eq!(generator.function_calls.len(), 1);
+
+    let opened = function_call_items_added(&generator);
+    assert_eq!(
+        opened.len(),
+        1,
+        "generator: expected one function_call opened"
+    );
+    let call = &generator.function_calls[0];
+    assert_eq!(opened[0].name, "generate_image");
+    assert_eq!(opened[0].call_id, call.call_id);
+    assert_eq!(
+        opened[0].arguments, "",
+        "generator: function_call must open with empty arguments"
+    );
+    assert_eq!(opened[0].status, OutputStatus::InProgress);
+    assert_eq!(call.name, "generate_image");
+    assert_eq!(call.status, OutputStatus::Completed);
+    let arguments = parse_arguments(&call.arguments);
+    let prompt = arguments
+        .get("prompt")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("generator: missing prompt argument: {:?}", call.arguments));
+    assert!(
+        prompt.to_lowercase().contains("apple"),
+        "generator prompt lost the requested object: {prompt:?}"
+    );
+
+    let fixture = get_fixture().await;
+    let artifacts = fixture
+        .client
+        .agenerate_image(
+            IDEOGRAM4_MODEL_ID,
+            prompt,
+            Some(json!({
+                "height": 512,
+                "width": 512,
+                "num_steps": 12,
+                "guidance_scale": 7.0,
+                "mu": 0.5,
+                "std": 1.75,
+                "seed": 17,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("ideogram image generation failed: {err:?}"));
+    assert_eq!(artifacts.len(), 1, "ideogram returned unexpected artifacts");
+    let artifact = &artifacts[0];
+    assert_eq!(artifact.mime_type, "image/png");
+    assert!(
+        artifact.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "ideogram did not return a PNG"
+    );
+    assert!(
+        artifact.data.len() > 1024,
+        "ideogram returned a suspiciously small PNG"
+    );
+    let image = image_part(artifact);
+
+    conversation.push(function_call(
+        &call.call_id,
+        &call.name,
+        generator.args_done.as_deref().unwrap_or_default(),
+    ));
+    conversation.push(ResponseInputItem::FunctionCallOutput {
+        call_id: call.call_id.clone(),
+        output: FunctionCallOutputContent::Content(vec![image.clone()]),
+    });
+
+    let mut self_loop_request = request(conversation);
+    self_loop_request.core_tools = vec![generate_image_tool()];
+    self_loop_request.tool_choice = Some(json!("none"));
+    self_loop_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let self_loop = run_stream(gemma, self_loop_request).await;
+    assert_or_record("gemma4", "image_tool_self_loop", "turn2", &self_loop.events);
+
+    assert_response_lifecycle(&self_loop);
+    assert_eq!(
+        count(&self_loop, "response.function_call_arguments.done"),
+        0,
+        "turn2: unexpected tool call"
+    );
+    assert_message_lifecycle(&self_loop, "turn2");
+    let self_loop_answer = self_loop
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    assert!(
+        self_loop_answer.contains("apple"),
+        "gemma4 did not ground on the generated image: {self_loop_answer:?}"
+    );
+
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What is in this image? Answer with the main object.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let verifier = run_stream(moondream, verifier_request).await;
+    assert_or_record(
+        "moondream3",
+        "image_tool_blind_verifier",
+        "verifier",
+        &verifier.events,
+    );
+
+    assert_response_lifecycle(&verifier);
+    assert_message_lifecycle(&verifier, "verifier");
+    let verifier_answer = verifier
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    assert!(
+        verifier_answer.contains("apple"),
+        "moondream3 did not identify the generated image: {verifier_answer:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_audio_telephone_qwen3_tts_to_speech_to_text() {
+    let fixture = get_fixture().await;
+    let artifacts = fixture
+        .client
+        .agenerate_audio(
+            QWEN3_TTS_MODEL_ID,
+            AUDIO_TELEPHONE_PHRASE,
+            Some(json!({
+                "language": "English",
+                "speaker": "Aiden",
+                "sample_rate": 24000,
+                "max_output_tokens": 128,
+                "temperature": 0.9,
+                "top_k": 50,
+                "seed": 1337,
+                "deterministic": true,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("qwen3-tts generation failed: {err:?}"));
+
+    assert_eq!(artifacts.len(), 1, "qwen3-tts returned unexpected artifacts");
+    let artifact = &artifacts[0];
+    assert_eq!(artifact.modal_type, "audio");
+    assert_eq!(artifact.mime_type, "audio/wav");
+    assert!(
+        artifact.data.starts_with(b"RIFF"),
+        "qwen3-tts did not return a WAV"
+    );
+    assert!(
+        artifact.data.len() > 44,
+        "qwen3-tts returned a suspiciously small WAV"
+    );
+
+    let pcm = wav_to_float32_pcm(&artifact.data, AUDIO_TELEPHONE_SAMPLE_RATE);
+    assert!(!pcm.is_empty(), "qwen3-tts produced no audio samples");
+
+    for (label, model_id) in [
+        ("parakeet", PARAKEET_MODEL_ID),
+        ("qwen3_asr", QWEN3_ASR_MODEL_ID),
+    ] {
+        let transcript = fixture
+            .client
+            .atranscribe_audio(model_id, &pcm)
+            .await
+            .unwrap_or_else(|err| panic!("{label} transcription failed: {err:?}"));
+        let normalized = normalize_transcript(&transcript);
+        assert_eq!(
+            normalized, AUDIO_TELEPHONE_PHRASE,
+            "{label} telephone transcript drifted: {transcript:?}"
+        );
     }
 }
 

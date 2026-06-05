@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -47,18 +48,21 @@ pub use moondream::{
     MOONDREAM_MODEL_ID,
 };
 pub use privacy_filter::{OpenAIPrivacyFilterClient, OPENAI_PRIVACY_FILTER_MODEL_ID};
-pub use response::{BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, UsageStats};
+pub use response::{
+    BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, ModalArtifact, UsageStats,
+};
 pub use responses::{
     ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
-    FunctionCallArgumentsDoneEvent, IncompleteDetails, InputTokensDetails, OutputFunctionCall,
-    OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,
-    OutputTextContent, OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails,
-    ReasoningConfig, ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent,
-    ReasoningSummaryTextContent, ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent,
-    ResponseCompletedEvent, ResponseCreatedEvent, ResponseError, ResponseEvent,
-    ResponseFailedEvent, ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem,
-    ResponseObject, ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput,
-    ResponsesRequest, ResponsesResult, StreamErrorDetail, StreamErrorEvent,
+    FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
+    InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent, OutputItemDoneEvent,
+    OutputMessage, OutputReasoning, OutputStatus, OutputTextContent, OutputTextDeltaEvent,
+    OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig, ReasoningContent,
+    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
+    ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
+    ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
+    ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
+    ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
 
 /// Errors that can occur during client operations.
@@ -593,6 +597,7 @@ impl Client {
             min_tool_calls: 1,
             max_tool_calls,
             response_format_json,
+            modal_options_json: String::new(),
             task_name: params.task_name.clone(),
             reasoning_effort,
             prefix_cache: params.prefix_cache,
@@ -889,6 +894,7 @@ impl Client {
                 min_tool_calls: 1,
                 max_tool_calls,
                 response_format_json: response_format_json.clone(),
+                modal_options_json: String::new(),
                 task_name: params.task_name.clone(),
                 reasoning_effort,
                 prefix_cache: params.prefix_cache,
@@ -1019,6 +1025,127 @@ impl Client {
         )?;
 
         collect_embeddings(rx, prompt_payloads.len()).await
+    }
+
+    /// Generate audio artifacts with a native PIE audio-generation model.
+    pub async fn agenerate_audio(
+        &self,
+        model_id: &str,
+        text: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let request_id = self.ipc.next_request_id();
+        let mut options = options;
+        let max_output_tokens = match options.as_mut() {
+            Some(Value::Object(object)) => match object.remove("max_output_tokens") {
+                Some(value) => value.as_i64().filter(|value| *value >= 0).ok_or_else(|| {
+                    ClientError::RequestFailed(
+                        "max_output_tokens must be a non-negative integer".to_string(),
+                    )
+                })? as i32,
+                None => 8192,
+            },
+            Some(_) => {
+                return Err(ClientError::RequestFailed(
+                    "Modal options must be a JSON object".to_string(),
+                ))
+            }
+            None => 8192,
+        };
+        let modal_options = modal_options_json(
+            [
+                ("sample_rate", Value::from(24000)),
+                ("language", Value::from("auto")),
+            ],
+            options,
+        )?;
+        let prompt_payload = build_modal_artifact_prompt_payload(
+            text,
+            Vec::new(),
+            Vec::new(),
+            max_output_tokens,
+            "text_to_speech",
+            modal_options,
+        );
+        let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            info.model_id.as_str(),
+            &info.model_path,
+            RequestType::Audio,
+            &[prompt_payload],
+        )?;
+        collect_modal_artifacts(rx).await
+    }
+
+    /// Synchronous wrapper for native PIE audio generation.
+    pub fn generate_audio(
+        &self,
+        model_id: &str,
+        text: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let model_id = model_id.to_string();
+        let text = text.to_string();
+        let future = async move { self.agenerate_audio(&model_id, &text, options).await };
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            Err(_) => get_sync_runtime().block_on(future),
+        }
+    }
+
+    /// Generate image artifacts with a native PIE image-generation model.
+    pub async fn agenerate_image(
+        &self,
+        model_id: &str,
+        prompt: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let request_id = self.ipc.next_request_id();
+        let modal_options = modal_options_json(
+            [
+                ("height", Value::from(1024)),
+                ("width", Value::from(1024)),
+                ("num_steps", Value::from(48)),
+                ("guidance_scale", Value::from(7.0)),
+            ],
+            options,
+        )?;
+        let prompt_payload = build_modal_artifact_prompt_payload(
+            prompt,
+            Vec::new(),
+            Vec::new(),
+            0,
+            "text_to_image",
+            modal_options,
+        );
+        let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            info.model_id.as_str(),
+            &info.model_path,
+            RequestType::Image,
+            &[prompt_payload],
+        )?;
+        collect_modal_artifacts(rx).await
+    }
+
+    /// Synchronous wrapper for native PIE image generation.
+    pub fn generate_image(
+        &self,
+        model_id: &str,
+        prompt: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let model_id = model_id.to_string();
+        let prompt = prompt.to_string();
+        let future = async move { self.agenerate_image(&model_id, &prompt, options).await };
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            Err(_) => get_sync_runtime().block_on(future),
+        }
     }
 
     /// Transcribe float32 PCM audio with a local speech-to-text model.
@@ -1200,6 +1327,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         min_tool_calls: 1,
         max_tool_calls: 0,
         response_format_json: String::new(),
+        modal_options_json: String::new(),
         task_name: None,
         reasoning_effort: None,
         prefix_cache: None,
@@ -1210,6 +1338,45 @@ fn build_prefill_task_prompt_payload(prompt: &str, task_name: &str) -> PromptPay
     PromptPayload {
         task_name: Some(task_name.to_string()),
         ..build_embedding_prompt_payload(prompt.to_string())
+    }
+}
+
+fn build_modal_artifact_prompt_payload(
+    prompt: &str,
+    image_buffers: Vec<Vec<u8>>,
+    audio_buffers: Vec<Vec<u8>>,
+    max_generated_tokens: i32,
+    task_name: &str,
+    modal_options_json: String,
+) -> PromptPayload {
+    let mut layout = Vec::new();
+    if !prompt.is_empty() || (image_buffers.is_empty() && audio_buffers.is_empty()) {
+        layout.push(LayoutEntry {
+            segment_type: "text".to_string(),
+            length: prompt.len(),
+        });
+    }
+    for image in &image_buffers {
+        layout.push(LayoutEntry {
+            segment_type: "image".to_string(),
+            length: image.len(),
+        });
+    }
+    for audio in &audio_buffers {
+        layout.push(LayoutEntry {
+            segment_type: "audio".to_string(),
+            length: audio.len(),
+        });
+    }
+    PromptPayload {
+        prompt: prompt.to_string(),
+        image_buffers,
+        audio_buffers,
+        layout,
+        max_generated_tokens,
+        task_name: Some(task_name.to_string()),
+        modal_options_json,
+        ..build_embedding_prompt_payload(String::new())
     }
 }
 
@@ -1258,10 +1425,31 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         min_tool_calls: 1,
         max_tool_calls: 0,
         response_format_json: String::new(),
+        modal_options_json: String::new(),
         task_name: None,
         reasoning_effort: None,
         prefix_cache: None,
     }
+}
+
+fn modal_options_json<const N: usize>(
+    defaults: [(&str, Value); N],
+    options: Option<Value>,
+) -> Result<String> {
+    let mut object = Map::new();
+    for (key, value) in defaults {
+        object.insert(key.to_string(), value);
+    }
+    if let Some(options) = options {
+        let Value::Object(options_object) = options else {
+            return Err(ClientError::RequestFailed(
+                "Modal options must be a JSON object".to_string(),
+            ));
+        };
+        object.extend(options_object);
+    }
+    serde_json::to_string(&Value::Object(object))
+        .map_err(|err| ClientError::RequestFailed(err.to_string()))
 }
 
 fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
@@ -1270,6 +1458,42 @@ fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }
     bytes
+}
+
+async fn collect_modal_artifacts(
+    mut rx: mpsc::UnboundedReceiver<ResponseDelta>,
+) -> Result<Vec<ModalArtifact>> {
+    let mut artifacts = Vec::new();
+    while let Some(delta) = rx.recv().await {
+        if let Some(error) = delta.error.clone() {
+            return Err(ClientError::RequestFailed(error));
+        }
+        if let Some(encoded) = delta.modal_bytes_b64.as_deref() {
+            let metadata = match delta.modal_metadata_json.as_deref() {
+                Some(raw) if !raw.is_empty() => Some(
+                    serde_json::from_str(raw)
+                        .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
+                ),
+                _ => None,
+            };
+            artifacts.push(ModalArtifact {
+                modal_type: delta.modal_type.clone().unwrap_or_default(),
+                event: delta.modal_event.clone().unwrap_or_default(),
+                mime_type: delta.modal_mime_type.clone().unwrap_or_default(),
+                decoder_id: delta.modal_decoder_id.clone().unwrap_or_default(),
+                metadata,
+                data: BASE64
+                    .decode(encoded)
+                    .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
+            });
+        }
+        if delta.is_final_delta {
+            return Ok(artifacts);
+        }
+    }
+    Err(ClientError::RequestFailed(
+        "Modal artifact response channel closed before completion".to_string(),
+    ))
 }
 
 async fn collect_embeddings(
