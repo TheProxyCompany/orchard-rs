@@ -220,7 +220,6 @@ impl InferenceEngine {
     pub fn shutdown(timeout: Duration) -> Result<()> {
         let paths = EnginePaths::new()?;
 
-        std::fs::create_dir_all(&paths.cache_dir)?;
         let lock_file = std::fs::File::create(&paths.lock_file)?;
         lock_exclusive_with_timeout(&lock_file)?;
 
