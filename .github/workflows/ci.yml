@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      ORCHARD_CACHE_ROOT: /tmp/orchard-cache-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Checkout
@@ -59,6 +58,8 @@ jobs:
           ./scripts/build.sh -t Release
 
       - name: Run full Orchard RS suite
+        env:
+          ORCHARD_CACHE_ROOT: /tmp/orchard-cache-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test functional -- --test-threads=1
           PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test golden -- --test-threads=1
