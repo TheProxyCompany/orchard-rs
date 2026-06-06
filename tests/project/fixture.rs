@@ -5,7 +5,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use ctor::dtor;
-use futures::future::join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
 
 #[dtor]
@@ -134,18 +133,6 @@ pub(crate) const TEXT_MODELS: &[&str] = &[
 ];
 pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
 pub(crate) const ALL_MODELS: &[&str] = TEXT_MODELS;
-const PRELOAD_MODELS: &[&str] = &[
-    LLAMA_MODEL_ID,
-    GEMMA4_MODEL_ID,
-    QWEN_MODEL_ID,
-    MOONDREAM_MODEL_ID,
-    TRINITY_MODEL_ID,
-    LFM2_5_MODEL_ID,
-    OLMO_HYBRID_MODEL_ID,
-    NEMOTRON_H_MODEL_ID,
-    GRANITE_MODEL_ID,
-    GPT_OSS_MODEL_ID,
-];
 
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
@@ -178,24 +165,6 @@ fn init_fixture() -> TestFixture {
         let client = Client::connect(Arc::clone(&registry))
             .await
             .expect("Failed to connect");
-
-        let preload_results = join_all(PRELOAD_MODELS.iter().map(|&model_id| {
-            let registry = Arc::clone(&registry);
-            async move {
-                registry
-                    .ensure_loaded(model_id)
-                    .await
-                    .map(|_| model_id)
-                    .map_err(|e| (model_id, e))
-            }
-        }))
-        .await;
-
-        for result in preload_results {
-            if let Err((model_id, error)) = result {
-                panic!("Failed to preload model {}: {}", model_id, error);
-            }
-        }
 
         (engine, client, registry)
     });

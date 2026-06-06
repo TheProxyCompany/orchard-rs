@@ -13,11 +13,28 @@ use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
 const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
-const QWEN3_TTS_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice";
+const QWEN_IMAGE_EDIT_MODEL_ID: &str = "Qwen/Qwen-Image-Edit";
 const PARAKEET_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v3";
-const QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-0.6B";
-const AUDIO_TELEPHONE_PHRASE: &str = "hello this is a test";
+const TTS_MODELS: [(&str, &str); 2] = [
+    ("qwen3_tts_0_6b", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"),
+    ("qwen3_tts_1_7b", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"),
+];
+const STT_MODELS: [(&str, &str); 3] = [
+    ("parakeet", PARAKEET_MODEL_ID),
+    ("qwen3_asr_0_6b", "Qwen/Qwen3-ASR-0.6B"),
+    ("qwen3_asr_1_7b", "Qwen/Qwen3-ASR-1.7B"),
+];
+const AUDIO_TELEPHONE_PHRASES: [&str; 6] = [
+    "hello this is a test",
+    "the quick brown fox jumps over the lazy dog",
+    "today we test local speech in a quiet room",
+    "set the kitchen timer for tomorrow morning after breakfast",
+    "proxy orchard handles audio images and text together",
+    "blue square red circle green triangle",
+];
 const AUDIO_TELEPHONE_SAMPLE_RATE: usize = 16_000;
+const SHAPES_IMAGE_USER: &str = "Use generate_image to create a simple flat icon on a plain white background: a red circle on the left and a blue square on the right. No text, no shadows.";
+const SWAP_COLORS_PROMPT: &str = "Make the left circle bright blue. Make the right square bright red. Keep the background white.";
 
 fn message(role: &str, content: &str) -> ResponseInputItem {
     ResponseInputItem::Message {
@@ -83,6 +100,19 @@ fn normalize_transcript(text: &str) -> String {
         .join(" ")
 }
 
+fn tts_options(_tts_label: &str) -> Value {
+    json!({
+        "language": "English",
+        "speaker": "Aiden",
+        "sample_rate": 24000,
+        "max_output_tokens": 128,
+        "temperature": 0.9,
+        "top_k": 50,
+        "seed": 1337,
+        "deterministic": true,
+    })
+}
+
 fn read_u16_le(bytes: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
 }
@@ -120,7 +150,10 @@ fn resample_linear(samples: &[f32], source_rate: usize, target_rate: usize) -> V
 }
 
 fn wav_to_float32_pcm(wav_bytes: &[u8], target_rate: usize) -> Vec<f32> {
-    assert!(wav_bytes.starts_with(b"RIFF"), "TTS WAV missing RIFF header");
+    assert!(
+        wav_bytes.starts_with(b"RIFF"),
+        "TTS WAV missing RIFF header"
+    );
     assert_eq!(&wav_bytes[8..12], b"WAVE", "TTS WAV missing WAVE tag");
 
     let mut offset = 12usize;
@@ -1018,57 +1051,231 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
 }
 
 #[tokio::test]
-async fn test_audio_telephone_qwen3_tts_to_speech_to_text() {
+async fn test_image_edit_tool_blind_verifier() {
+    const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
+
+    let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
+    let moondream = model_by_checkpoint(MOONDREAM_MODEL_ID);
+    let conversation = vec![
+        message("system", SYSTEM),
+        message("user", SHAPES_IMAGE_USER),
+    ];
+
+    let mut generator_request = request(conversation);
+    generator_request.core_tools = vec![generate_image_tool()];
+    generator_request.tool_choice = Some(json!("required"));
+    generator_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let generator = run_stream(gemma, generator_request).await;
+    assert_or_record(
+        "gemma4",
+        "image_edit_tool_blind_verifier",
+        "generator",
+        &generator.events,
+    );
+
+    assert_response_lifecycle(&generator);
+    assert_optional_reasoning(
+        &generator,
+        gemma,
+        "generator",
+        "expected at most one reasoning block",
+    );
+    assert!(
+        !generator.counts.contains_key("response.output_text.delta"),
+        "generator: leaked message text on a tool turn"
+    );
+    assert_eq!(
+        added(&generator, "function_call"),
+        1,
+        "generator: expected one function_call"
+    );
+    assert_eq!(
+        count(&generator, "response.function_call_arguments.done"),
+        1,
+        "generator: expected one arguments.done"
+    );
+    assert_eq!(generator.function_calls.len(), 1);
+
+    let opened = function_call_items_added(&generator);
+    assert_eq!(
+        opened.len(),
+        1,
+        "generator: expected one function_call opened"
+    );
+    let call = &generator.function_calls[0];
+    assert_eq!(opened[0].name, "generate_image");
+    assert_eq!(opened[0].call_id, call.call_id);
+    assert_eq!(
+        opened[0].arguments, "",
+        "generator: function_call must open with empty arguments"
+    );
+    assert_eq!(opened[0].status, OutputStatus::InProgress);
+    assert_eq!(call.name, "generate_image");
+    assert_eq!(call.status, OutputStatus::Completed);
+    let arguments = parse_arguments(&call.arguments);
+    let prompt = arguments
+        .get("prompt")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("generator: missing prompt argument: {:?}", call.arguments));
+    let prompt_lower = prompt.to_lowercase();
+    for term in ["red", "circle", "blue", "square"] {
+        assert!(
+            prompt_lower.contains(term),
+            "generator prompt lost requested term {term:?}: {prompt:?}"
+        );
+    }
+
     let fixture = get_fixture().await;
-    let artifacts = fixture
+    let source = fixture
         .client
-        .agenerate_audio(
-            QWEN3_TTS_MODEL_ID,
-            AUDIO_TELEPHONE_PHRASE,
+        .agenerate_image(
+            IDEOGRAM4_MODEL_ID,
+            prompt,
             Some(json!({
-                "language": "English",
-                "speaker": "Aiden",
-                "sample_rate": 24000,
-                "max_output_tokens": 128,
-                "temperature": 0.9,
-                "top_k": 50,
-                "seed": 1337,
-                "deterministic": true,
+                "height": 512,
+                "width": 512,
+                "num_steps": 12,
+                "guidance_scale": 7.0,
+                "mu": 0.5,
+                "std": 1.75,
+                "seed": 17,
             })),
         )
         .await
-        .unwrap_or_else(|err| panic!("qwen3-tts generation failed: {err:?}"));
-
-    assert_eq!(artifacts.len(), 1, "qwen3-tts returned unexpected artifacts");
-    let artifact = &artifacts[0];
-    assert_eq!(artifact.modal_type, "audio");
-    assert_eq!(artifact.mime_type, "audio/wav");
+        .unwrap_or_else(|err| panic!("ideogram image generation failed: {err:?}"));
+    assert_eq!(source.len(), 1, "ideogram returned unexpected artifacts");
+    let source = &source[0];
+    assert_eq!(source.mime_type, "image/png");
     assert!(
-        artifact.data.starts_with(b"RIFF"),
-        "qwen3-tts did not return a WAV"
+        source.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "ideogram did not return a PNG"
     );
     assert!(
-        artifact.data.len() > 44,
-        "qwen3-tts returned a suspiciously small WAV"
+        source.data.len() > 1024,
+        "ideogram returned a suspiciously small PNG"
     );
 
-    let pcm = wav_to_float32_pcm(&artifact.data, AUDIO_TELEPHONE_SAMPLE_RATE);
-    assert!(!pcm.is_empty(), "qwen3-tts produced no audio samples");
+    let edited = fixture
+        .client
+        .aedit_image(
+            QWEN_IMAGE_EDIT_MODEL_ID,
+            &source.data,
+            SWAP_COLORS_PROMPT,
+            Some(json!({
+                "height": 512,
+                "width": 512,
+                "num_steps": 8,
+                "true_cfg_scale": 1.0,
+                "negative_prompt": "",
+                "seed": 1337,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("qwen image edit failed: {err:?}"));
+    assert_eq!(
+        edited.len(),
+        1,
+        "qwen image edit returned unexpected artifacts"
+    );
+    let edited = &edited[0];
+    assert_eq!(edited.mime_type, "image/png");
+    assert_eq!(edited.decoder_id, "qwen_image_edit");
+    assert!(
+        edited.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "qwen image edit did not return a PNG"
+    );
+    assert!(
+        edited.data.len() > 1024,
+        "qwen image edit returned a suspiciously small PNG"
+    );
+    let image = image_part(edited);
 
-    for (label, model_id) in [
-        ("parakeet", PARAKEET_MODEL_ID),
-        ("qwen3_asr", QWEN3_ASR_MODEL_ID),
-    ] {
-        let transcript = fixture
-            .client
-            .atranscribe_audio(model_id, &pcm)
-            .await
-            .unwrap_or_else(|err| panic!("{label} transcription failed: {err:?}"));
-        let normalized = normalize_transcript(&transcript);
-        assert_eq!(
-            normalized, AUDIO_TELEPHONE_PHRASE,
-            "{label} telephone transcript drifted: {transcript:?}"
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What colors and shapes are in this image? Answer briefly.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let verifier = run_stream(moondream, verifier_request).await;
+    assert_or_record(
+        "moondream3",
+        "image_edit_tool_blind_verifier",
+        "verifier",
+        &verifier.events,
+    );
+
+    assert_response_lifecycle(&verifier);
+    assert_message_lifecycle(&verifier, "verifier");
+    let verifier_answer = verifier
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    for term in ["blue", "circle", "red", "square"] {
+        assert!(
+            verifier_answer.contains(term),
+            "moondream3 did not identify the edited image as blue circle/red square: {verifier_answer:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn test_audio_telephone_tts_to_speech_to_text() {
+    let fixture = get_fixture().await;
+    for (tts_label, tts_model_id) in TTS_MODELS {
+        for phrase in AUDIO_TELEPHONE_PHRASES {
+            let artifacts = fixture
+                .client
+                .agenerate_audio(tts_model_id, phrase, Some(tts_options(tts_label)))
+                .await
+                .unwrap_or_else(|err| panic!("{tts_label} generation failed: {err:?}"));
+
+            assert_eq!(
+                artifacts.len(),
+                1,
+                "{tts_label} returned unexpected artifacts"
+            );
+            let artifact = &artifacts[0];
+            assert_eq!(artifact.modal_type, "audio");
+            assert_eq!(artifact.mime_type, "audio/wav");
+            assert!(
+                artifact.data.starts_with(b"RIFF"),
+                "{tts_label} did not return a WAV"
+            );
+            assert!(
+                artifact.data.len() > 44,
+                "{tts_label} returned a suspiciously small WAV"
+            );
+
+            let pcm = wav_to_float32_pcm(&artifact.data, AUDIO_TELEPHONE_SAMPLE_RATE);
+            assert!(!pcm.is_empty(), "{tts_label} produced no audio samples");
+
+            for (stt_label, stt_model_id) in STT_MODELS {
+                let transcript = fixture
+                    .client
+                    .atranscribe_audio(stt_model_id, &pcm)
+                    .await
+                    .unwrap_or_else(|err| {
+                        panic!("{tts_label} -> {stt_label} transcription failed: {err:?}")
+                    });
+                let normalized = normalize_transcript(&transcript);
+                assert_eq!(
+                    normalized, phrase,
+                    "{tts_label} -> {stt_label} telephone transcript drifted: {transcript:?}"
+                );
+            }
+        }
     }
 }
 

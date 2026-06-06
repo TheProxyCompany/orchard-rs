@@ -1053,13 +1053,15 @@ impl Client {
             }
             None => 8192,
         };
-        let modal_options = modal_options_json(
+        let modal_options = modal_options_object(
             [
                 ("sample_rate", Value::from(24000)),
                 ("language", Value::from("auto")),
             ],
             options,
         )?;
+        let sampling_params = modal_sampling_params(&modal_options)?;
+        let modal_options = modal_options_json(&modal_options)?;
         let prompt_payload = build_modal_artifact_prompt_payload(
             text,
             Vec::new(),
@@ -1067,6 +1069,7 @@ impl Client {
             max_output_tokens,
             "text_to_speech",
             modal_options,
+            sampling_params,
         );
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
@@ -1104,7 +1107,7 @@ impl Client {
     ) -> Result<Vec<ModalArtifact>> {
         let info = self.registry.ensure_loaded(model_id).await?;
         let request_id = self.ipc.next_request_id();
-        let modal_options = modal_options_json(
+        let modal_options = modal_options_object(
             [
                 ("height", Value::from(1024)),
                 ("width", Value::from(1024)),
@@ -1113,6 +1116,8 @@ impl Client {
             ],
             options,
         )?;
+        let sampling_params = modal_sampling_params(&modal_options)?;
+        let modal_options = modal_options_json(&modal_options)?;
         let prompt_payload = build_modal_artifact_prompt_payload(
             prompt,
             Vec::new(),
@@ -1120,6 +1125,7 @@ impl Client {
             0,
             "text_to_image",
             modal_options,
+            sampling_params,
         );
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
@@ -1141,6 +1147,64 @@ impl Client {
         let model_id = model_id.to_string();
         let prompt = prompt.to_string();
         let future = async move { self.agenerate_image(&model_id, &prompt, options).await };
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            Err(_) => get_sync_runtime().block_on(future),
+        }
+    }
+
+    /// Edit an input image with a native PIE image-to-image model.
+    pub async fn aedit_image(
+        &self,
+        model_id: &str,
+        image: &[u8],
+        prompt: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let request_id = self.ipc.next_request_id();
+        let modal_options = modal_options_object(
+            [
+                ("num_steps", Value::from(50)),
+                ("true_cfg_scale", Value::from(4.0)),
+                ("negative_prompt", Value::from(" ")),
+            ],
+            options,
+        )?;
+        let sampling_params = modal_sampling_params(&modal_options)?;
+        let modal_options = modal_options_json(&modal_options)?;
+        let prompt_payload = build_modal_artifact_prompt_payload(
+            prompt,
+            vec![image.to_vec()],
+            Vec::new(),
+            0,
+            "image_to_image",
+            modal_options,
+            sampling_params,
+        );
+        let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            info.model_id.as_str(),
+            &info.model_path,
+            RequestType::Image,
+            &[prompt_payload],
+        )?;
+        collect_modal_artifacts(rx).await
+    }
+
+    /// Synchronous wrapper for native PIE image editing.
+    pub fn edit_image(
+        &self,
+        model_id: &str,
+        image: &[u8],
+        prompt: &str,
+        options: Option<Value>,
+    ) -> Result<Vec<ModalArtifact>> {
+        let model_id = model_id.to_string();
+        let image = image.to_vec();
+        let prompt = prompt.to_string();
+        let future = async move { self.aedit_image(&model_id, &image, &prompt, options).await };
 
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
@@ -1348,6 +1412,7 @@ fn build_modal_artifact_prompt_payload(
     max_generated_tokens: i32,
     task_name: &str,
     modal_options_json: String,
+    sampling_params: SamplingParams,
 ) -> PromptPayload {
     let mut layout = Vec::new();
     if !prompt.is_empty() || (image_buffers.is_empty() && audio_buffers.is_empty()) {
@@ -1374,6 +1439,12 @@ fn build_modal_artifact_prompt_payload(
         audio_buffers,
         layout,
         max_generated_tokens,
+        temperature: sampling_params.temperature,
+        top_p: sampling_params.top_p,
+        top_k: sampling_params.top_k,
+        min_p: sampling_params.min_p,
+        rng_seed: sampling_params.rng_seed,
+        deterministic: sampling_params.deterministic,
         task_name: Some(task_name.to_string()),
         modal_options_json,
         ..build_embedding_prompt_payload(String::new())
@@ -1432,10 +1503,10 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
     }
 }
 
-fn modal_options_json<const N: usize>(
+fn modal_options_object<const N: usize>(
     defaults: [(&str, Value); N],
     options: Option<Value>,
-) -> Result<String> {
+) -> Result<Map<String, Value>> {
     let mut object = Map::new();
     for (key, value) in defaults {
         object.insert(key.to_string(), value);
@@ -1448,8 +1519,75 @@ fn modal_options_json<const N: usize>(
         };
         object.extend(options_object);
     }
-    serde_json::to_string(&Value::Object(object))
-        .map_err(|err| ClientError::RequestFailed(err.to_string()))
+    Ok(object)
+}
+
+fn modal_options_json(object: &Map<String, Value>) -> Result<String> {
+    serde_json::to_string(object).map_err(|err| ClientError::RequestFailed(err.to_string()))
+}
+
+fn modal_option_f64(object: &Map<String, Value>, key: &str) -> Result<Option<f64>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value.as_f64().map(Some).ok_or_else(|| {
+            ClientError::RequestFailed(format!("modal option '{key}' must be a number"))
+        }),
+    }
+}
+
+fn modal_option_i32(object: &Map<String, Value>, key: &str) -> Result<Option<i32>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let value = value.as_i64().ok_or_else(|| {
+                ClientError::RequestFailed(format!("modal option '{key}' must be an integer"))
+            })?;
+            i32::try_from(value).map(Some).map_err(|_| {
+                ClientError::RequestFailed(format!("modal option '{key}' is out of range"))
+            })
+        }
+    }
+}
+
+fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            if let Some(value) = value.as_u64() {
+                Ok(Some(value))
+            } else if let Some(value) = value.as_i64() {
+                u64::try_from(value).map(Some).map_err(|_| {
+                    ClientError::RequestFailed(format!("modal option '{key}' must be non-negative"))
+                })
+            } else {
+                Err(ClientError::RequestFailed(format!(
+                    "modal option '{key}' must be an integer"
+                )))
+            }
+        }
+    }
+}
+
+fn modal_option_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bool>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
+            ClientError::RequestFailed(format!("modal option '{key}' must be a boolean"))
+        }),
+    }
+}
+
+fn modal_sampling_params(object: &Map<String, Value>) -> Result<SamplingParams> {
+    let mut params = SamplingParams::default();
+    params.temperature = modal_option_f64(object, "temperature")?.unwrap_or(defaults::TEMPERATURE);
+    params.top_p = modal_option_f64(object, "top_p")?.unwrap_or(defaults::TOP_P);
+    params.top_k = modal_option_i32(object, "top_k")?.unwrap_or(defaults::TOP_K);
+    params.min_p = modal_option_f64(object, "min_p")?.unwrap_or(0.0);
+    params.rng_seed = modal_option_u64(object, "seed")?
+        .or(modal_option_u64(object, "rng_seed")?)
+        .unwrap_or_else(|| rand::thread_rng().gen::<u64>());
+    params.deterministic = modal_option_bool(object, "deterministic")?.unwrap_or(false);
+    Ok(params)
 }
 
 fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
