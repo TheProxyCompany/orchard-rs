@@ -13,6 +13,7 @@ use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
 const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
+const FLUX2_MODEL_ID: &str = "black-forest-labs/FLUX.2-klein-4B";
 const QWEN_IMAGE_EDIT_MODEL_ID: &str = "Qwen/Qwen-Image-Edit";
 const PARAKEET_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v3";
 const TTS_MODELS: [(&str, &str); 2] = [
@@ -1051,6 +1052,191 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
 }
 
 #[tokio::test]
+async fn test_image_tool_self_loop_and_blind_verifier_flux() {
+    const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
+    const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
+
+    let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
+    let moondream = model_by_checkpoint(MOONDREAM_MODEL_ID);
+    let mut conversation = vec![message("system", SYSTEM), message("user", USER)];
+
+    let mut generator_request = request(conversation.clone());
+    generator_request.core_tools = vec![generate_image_tool()];
+    generator_request.tool_choice = Some(json!("required"));
+    generator_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let generator = run_stream(gemma, generator_request).await;
+    assert_or_record(
+        "gemma4",
+        "image_tool_self_loop_flux",
+        "turn1",
+        &generator.events,
+    );
+    assert_or_record(
+        "gemma4",
+        "image_tool_blind_verifier_flux",
+        "generator",
+        &generator.events,
+    );
+
+    assert_response_lifecycle(&generator);
+    assert_optional_reasoning(
+        &generator,
+        gemma,
+        "generator",
+        "expected at most one reasoning block",
+    );
+    assert!(
+        !generator.counts.contains_key("response.output_text.delta"),
+        "generator: leaked message text on a tool turn"
+    );
+    assert_eq!(
+        added(&generator, "function_call"),
+        1,
+        "generator: expected one function_call"
+    );
+    assert_eq!(
+        count(&generator, "response.function_call_arguments.done"),
+        1,
+        "generator: expected one arguments.done"
+    );
+    assert_eq!(generator.function_calls.len(), 1);
+
+    let opened = function_call_items_added(&generator);
+    assert_eq!(
+        opened.len(),
+        1,
+        "generator: expected one function_call opened"
+    );
+    let call = &generator.function_calls[0];
+    assert_eq!(opened[0].name, "generate_image");
+    assert_eq!(opened[0].call_id, call.call_id);
+    assert_eq!(
+        opened[0].arguments, "",
+        "generator: function_call must open with empty arguments"
+    );
+    assert_eq!(opened[0].status, OutputStatus::InProgress);
+    assert_eq!(call.name, "generate_image");
+    assert_eq!(call.status, OutputStatus::Completed);
+    let arguments = parse_arguments(&call.arguments);
+    let prompt = arguments
+        .get("prompt")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("generator: missing prompt argument: {:?}", call.arguments));
+    assert!(
+        prompt.to_lowercase().contains("apple"),
+        "generator prompt lost the requested object: {prompt:?}"
+    );
+
+    let fixture = get_fixture().await;
+    let artifacts = fixture
+        .client
+        .agenerate_image(
+            FLUX2_MODEL_ID,
+            prompt,
+            Some(json!({
+                "height": 512,
+                "width": 512,
+                "num_steps": 8,
+                "guidance_scale": 3.5,
+                "seed": 17,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("flux image generation failed: {err:?}"));
+    assert_eq!(artifacts.len(), 1, "flux returned unexpected artifacts");
+    let artifact = &artifacts[0];
+    assert_eq!(artifact.mime_type, "image/png");
+    assert_eq!(artifact.decoder_id, "flux");
+    assert!(
+        artifact.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "flux did not return a PNG"
+    );
+    assert!(
+        artifact.data.len() > 1024,
+        "flux returned a suspiciously small PNG"
+    );
+    let image = image_part(artifact);
+
+    conversation.push(function_call(
+        &call.call_id,
+        &call.name,
+        generator.args_done.as_deref().unwrap_or_default(),
+    ));
+    conversation.push(ResponseInputItem::FunctionCallOutput {
+        call_id: call.call_id.clone(),
+        output: FunctionCallOutputContent::Content(vec![image.clone()]),
+    });
+
+    let mut self_loop_request = request(conversation);
+    self_loop_request.core_tools = vec![generate_image_tool()];
+    self_loop_request.tool_choice = Some(json!("none"));
+    self_loop_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let self_loop = run_stream(gemma, self_loop_request).await;
+    assert_or_record(
+        "gemma4",
+        "image_tool_self_loop_flux",
+        "turn2",
+        &self_loop.events,
+    );
+
+    assert_response_lifecycle(&self_loop);
+    assert_eq!(
+        count(&self_loop, "response.function_call_arguments.done"),
+        0,
+        "turn2: unexpected tool call"
+    );
+    assert_message_lifecycle(&self_loop, "turn2");
+    let self_loop_answer = self_loop
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    assert!(
+        self_loop_answer.contains("apple"),
+        "gemma4 did not ground on the Flux-generated image: {self_loop_answer:?}"
+    );
+
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What is in this image? Answer with the main object.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let verifier = run_stream(moondream, verifier_request).await;
+    assert_or_record(
+        "moondream3",
+        "image_tool_blind_verifier_flux",
+        "verifier",
+        &verifier.events,
+    );
+
+    assert_response_lifecycle(&verifier);
+    assert_message_lifecycle(&verifier, "verifier");
+    let verifier_answer = verifier
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    assert!(
+        verifier_answer.contains("apple"),
+        "moondream3 did not identify the Flux-generated image: {verifier_answer:?}"
+    );
+}
+
+#[tokio::test]
 async fn test_image_edit_tool_blind_verifier() {
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
@@ -1226,6 +1412,185 @@ async fn test_image_edit_tool_blind_verifier() {
         assert!(
             verifier_answer.contains(term),
             "moondream3 did not identify the edited image as blue circle/red square: {verifier_answer:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_image_edit_tool_blind_verifier_flux() {
+    const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
+
+    let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
+    let moondream = model_by_checkpoint(MOONDREAM_MODEL_ID);
+    let conversation = vec![
+        message("system", SYSTEM),
+        message("user", SHAPES_IMAGE_USER),
+    ];
+
+    let mut generator_request = request(conversation);
+    generator_request.core_tools = vec![generate_image_tool()];
+    generator_request.tool_choice = Some(json!("required"));
+    generator_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let generator = run_stream(gemma, generator_request).await;
+    assert_or_record(
+        "gemma4",
+        "image_edit_tool_blind_verifier_flux",
+        "generator",
+        &generator.events,
+    );
+
+    assert_response_lifecycle(&generator);
+    assert_optional_reasoning(
+        &generator,
+        gemma,
+        "generator",
+        "expected at most one reasoning block",
+    );
+    assert!(
+        !generator.counts.contains_key("response.output_text.delta"),
+        "generator: leaked message text on a tool turn"
+    );
+    assert_eq!(
+        added(&generator, "function_call"),
+        1,
+        "generator: expected one function_call"
+    );
+    assert_eq!(
+        count(&generator, "response.function_call_arguments.done"),
+        1,
+        "generator: expected one arguments.done"
+    );
+    assert_eq!(generator.function_calls.len(), 1);
+
+    let opened = function_call_items_added(&generator);
+    assert_eq!(
+        opened.len(),
+        1,
+        "generator: expected one function_call opened"
+    );
+    let call = &generator.function_calls[0];
+    assert_eq!(opened[0].name, "generate_image");
+    assert_eq!(opened[0].call_id, call.call_id);
+    assert_eq!(
+        opened[0].arguments, "",
+        "generator: function_call must open with empty arguments"
+    );
+    assert_eq!(opened[0].status, OutputStatus::InProgress);
+    assert_eq!(call.name, "generate_image");
+    assert_eq!(call.status, OutputStatus::Completed);
+    let arguments = parse_arguments(&call.arguments);
+    let prompt = arguments
+        .get("prompt")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("generator: missing prompt argument: {:?}", call.arguments));
+    let prompt_lower = prompt.to_lowercase();
+    for term in ["red", "circle", "blue", "square"] {
+        assert!(
+            prompt_lower.contains(term),
+            "generator prompt lost requested term {term:?}: {prompt:?}"
+        );
+    }
+
+    let fixture = get_fixture().await;
+    let source = fixture
+        .client
+        .agenerate_image(
+            FLUX2_MODEL_ID,
+            prompt,
+            Some(json!({
+                "height": 512,
+                "width": 512,
+                "num_steps": 8,
+                "guidance_scale": 3.5,
+                "seed": 17,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("flux image generation failed: {err:?}"));
+    assert_eq!(source.len(), 1, "flux returned unexpected artifacts");
+    let source = &source[0];
+    assert_eq!(source.mime_type, "image/png");
+    assert_eq!(source.decoder_id, "flux");
+    assert!(
+        source.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "flux did not return a PNG"
+    );
+    assert!(
+        source.data.len() > 1024,
+        "flux returned a suspiciously small PNG"
+    );
+
+    let edited = fixture
+        .client
+        .aedit_image(
+            QWEN_IMAGE_EDIT_MODEL_ID,
+            &source.data,
+            SWAP_COLORS_PROMPT,
+            Some(json!({
+                "height": 512,
+                "width": 512,
+                "num_steps": 8,
+                "true_cfg_scale": 1.0,
+                "negative_prompt": "",
+                "seed": 1337,
+            })),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("qwen image edit failed: {err:?}"));
+    assert_eq!(
+        edited.len(),
+        1,
+        "qwen image edit returned unexpected artifacts"
+    );
+    let edited = &edited[0];
+    assert_eq!(edited.mime_type, "image/png");
+    assert_eq!(edited.decoder_id, "qwen_image_edit");
+    assert!(
+        edited.data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "qwen image edit did not return a PNG"
+    );
+    assert!(
+        edited.data.len() > 1024,
+        "qwen image edit returned a suspiciously small PNG"
+    );
+    let image = image_part(edited);
+
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What colors and shapes are in this image? Answer briefly.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+    let verifier = run_stream(moondream, verifier_request).await;
+    assert_or_record(
+        "moondream3",
+        "image_edit_tool_blind_verifier_flux",
+        "verifier",
+        &verifier.events,
+    );
+
+    assert_response_lifecycle(&verifier);
+    assert_message_lifecycle(&verifier, "verifier");
+    let verifier_answer = verifier
+        .content_done
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    for term in ["blue", "circle", "red", "square"] {
+        assert!(
+            verifier_answer.contains(term),
+            "moondream3 did not identify the edited Flux source image as blue circle/red square: {verifier_answer:?}"
         );
     }
 }

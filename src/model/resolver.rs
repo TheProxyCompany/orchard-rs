@@ -294,19 +294,16 @@ impl ModelResolver {
                     .get("_class_name")
                     .and_then(|value| value.as_str())
                     .unwrap_or_default();
-                if matches!(
-                    pipeline_class,
-                    "Ideogram4Pipeline" | "QwenImageEditPipeline"
-                ) {
+                let model_type = match pipeline_class {
+                    "Ideogram4Pipeline" => Some("ideogram4"),
+                    "QwenImageEditPipeline" => Some("qwen_image_edit"),
+                    "FluxPipeline" | "Flux2KleinPipeline" => Some("flux"),
+                    _ => None,
+                };
+                if let Some(model_type) = model_type {
                     if model_index.get("model_type").is_none() {
-                        model_index["model_type"] = serde_json::Value::String(
-                            if pipeline_class == "Ideogram4Pipeline" {
-                                "ideogram4"
-                            } else {
-                                "qwen_image_edit"
-                            }
-                            .to_string(),
-                        );
+                        model_index["model_type"] =
+                            serde_json::Value::String(model_type.to_string());
                     }
                     if model_index.get("source_format").is_none() {
                         model_index["source_format"] =
@@ -555,6 +552,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolves_local_flux2_model_index_directory() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("model_index.json"),
+            serde_json::json!({"_class_name": "Flux2KleinPipeline"}).to_string(),
+        )
+        .unwrap();
+
+        let mut resolver = ModelResolver::new().unwrap();
+        let resolved = resolver
+            .resolve(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.source, "local");
+        assert_eq!(
+            resolved.metadata.get("model_type"),
+            Some(&"flux".to_string())
+        );
+        assert_eq!(resolved.formatter_config, None);
+    }
+
+    #[tokio::test]
     async fn test_resolves_parakeet_tdt_config_with_audio_profile() {
         let repo_id = "mlx-community/parakeet-tdt-0.6b-v3";
         let dir = tempdir().unwrap();
@@ -592,5 +612,4 @@ mod tests {
         assert!(config.get("template_type").is_none());
         assert_eq!(config["_name_or_path"], repo_id);
     }
-
 }
