@@ -285,19 +285,22 @@ pub fn build_batch_request_payload(
             }
             encode_layout(&segments)
         } else {
-            let segments: Vec<(SegmentType, usize)> = prompt
-                .layout
-                .iter()
-                .map(|e| {
-                    let seg_type = match e.segment_type.as_str() {
-                        "image" => SegmentType::Image,
-                        "audio" => SegmentType::Audio,
-                        "capability" => SegmentType::Capability,
-                        _ => SegmentType::Text,
-                    };
-                    (seg_type, e.length)
-                })
-                .collect();
+            let mut segments = Vec::with_capacity(prompt.layout.len());
+            for entry in &prompt.layout {
+                let seg_type = match entry.segment_type.as_str() {
+                    "text" => SegmentType::Text,
+                    "image" => SegmentType::Image,
+                    "audio" => SegmentType::Audio,
+                    "capability" => SegmentType::Capability,
+                    other => {
+                        return Err(Error::Serialization(format!(
+                            "Prompt {}: Unsupported layout segment type: {}",
+                            index, other
+                        )));
+                    }
+                };
+                segments.push((seg_type, entry.length));
+            }
             encode_layout(&segments)
         };
         let layout_count = if prompt.layout.is_empty() {
@@ -458,7 +461,13 @@ fn validate_layout(
             "text" => layout_text_bytes += entry.length,
             "image" => layout_image_bytes += entry.length,
             "audio" => layout_audio_bytes += entry.length,
-            _ => {}
+            "capability" => {}
+            other => {
+                return Err(Error::Serialization(format!(
+                    "Prompt {}: Unsupported layout segment type: {}",
+                    prompt_index, other
+                )));
+            }
         }
     }
 
@@ -571,6 +580,29 @@ mod tests {
         assert_eq!(metadata["model_id"], "test-model");
         assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
         assert_eq!(metadata["prompts"][0]["deterministic"], true);
+    }
+
+    #[test]
+    fn test_empty_default_prompt_serializes_text_layout_segment() {
+        let prompt = PromptPayload {
+            prompt: String::new(),
+            ..Default::default()
+        };
+
+        let payload = build_batch_request_payload(
+            1,
+            "test-model",
+            "/path/to/model",
+            RequestType::Generation,
+            12345,
+            &[prompt],
+        )
+        .unwrap();
+
+        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+        assert_eq!(metadata["prompts"][0]["text_size"], 0);
+        assert_eq!(metadata["prompts"][0]["layout_count"], 1);
     }
 
     #[test]
@@ -749,6 +781,21 @@ mod tests {
         let result = validate_layout(100, 5000, 0, &layout, 0);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("image"));
+    }
+
+    #[test]
+    fn test_validate_layout_rejects_unknown_segment_type() {
+        let layout = vec![LayoutEntry {
+            segment_type: "video".to_string(),
+            length: 0,
+        }];
+
+        let result = validate_layout(0, 0, 0, &layout, 0);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported layout segment type"));
     }
 
     #[test]

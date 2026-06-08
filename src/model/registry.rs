@@ -427,6 +427,10 @@ impl ModelRegistry {
         }
 
         let canonical_id = resolved.canonical_id.clone();
+        let model_is_local = matches!(
+            resolved.source.as_str(),
+            "local" | "local_source" | "hf_cache" | "hf_hub"
+        ) || resolved.model_path.join("config.json").exists();
 
         {
             let mut alias_cache = self.alias_cache.write().await;
@@ -468,41 +472,48 @@ impl ModelRegistry {
         entry.notify = Arc::new(Notify::new());
         entry.activation_waiters.clear();
 
-        if matches!(
-            resolved.source.as_str(),
-            "local" | "local_source" | "hf_cache" | "hf_hub"
-        ) {
+        let notify = entry.notify.clone();
+
+        if model_is_local {
+            entry.state = ModelLoadState::Loading;
+        } else {
+            entry.state = ModelLoadState::Downloading;
+        }
+
+        drop(entries);
+
+        if model_is_local {
             let formatter = match resolved.formatter_config.clone() {
                 Some(config) => ChatFormatter::from_config(&resolved.model_path, config),
                 None => ChatFormatter::new(&resolved.model_path),
             };
-            let formatter = match formatter {
-                Ok(formatter) => Arc::new(formatter),
+
+            let mut entries = self.entries.write().await;
+            let entry = entries
+                .get_mut(&canonical_id)
+                .ok_or_else(|| format!("Model '{}' not in registry", canonical_id))?;
+
+            match formatter {
+                Ok(formatter) => {
+                    entry.info = Some(ModelInfo {
+                        model_id: canonical_id.clone(),
+                        model_path: resolved.model_path.to_string_lossy().to_string(),
+                        formatter: Some(Arc::new(formatter)),
+                        capabilities: None,
+                        minimum_memory_bytes: None,
+                    });
+                    entry.state = ModelLoadState::Loading;
+                    notify.notify_waiters();
+                    return Ok((ModelLoadState::Loading, canonical_id));
+                }
                 Err(error) => {
                     entry.error = Some(format!("Formatter failed: {}", error));
                     entry.state = ModelLoadState::Failed;
-                    entry.notify.notify_waiters();
+                    notify.notify_waiters();
                     return Ok((ModelLoadState::Failed, canonical_id));
                 }
-            };
-            entry.info = Some(ModelInfo {
-                model_id: canonical_id.clone(),
-                model_path: resolved.model_path.to_string_lossy().to_string(),
-                formatter: Some(formatter),
-                capabilities: None,
-                minimum_memory_bytes: None,
-            });
-            entry.state = ModelLoadState::Loading;
-            entry.notify.notify_waiters();
-            return Ok((ModelLoadState::Loading, canonical_id));
+            }
         }
-
-        // Model needs to be downloaded from HuggingFace
-        entry.state = ModelLoadState::Downloading;
-        let notify = entry.notify.clone();
-
-        // Drop entries lock before spawning to avoid deadlock
-        drop(entries);
 
         // Spawn download task
         let hf_repo = resolved

@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use ctor::dtor;
+use futures::future::try_join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
 
 #[dtor]
@@ -165,6 +166,13 @@ fn init_fixture() -> TestFixture {
         let client = Client::connect(Arc::clone(&registry))
             .await
             .expect("Failed to connect");
+        try_join_all(
+            ALL_MODELS
+                .iter()
+                .map(|model_id| registry.ensure_loaded(model_id)),
+        )
+        .await
+        .expect("Failed to preload test models");
 
         (engine, client, registry)
     });

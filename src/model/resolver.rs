@@ -1,9 +1,10 @@
 //! Model resolution utilities.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use hf_hub::api::tokio::{Api, ApiBuilder};
+use hf_hub::Cache;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -24,6 +25,7 @@ pub struct ResolvedModel {
 pub struct ModelResolver {
     resolved_cache: HashMap<String, ResolvedModel>,
     hf_api: Api,
+    hf_cache: Cache,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,11 +41,26 @@ struct HubRepoInfo {
 impl ModelResolver {
     /// Create a new model resolver.
     pub fn new() -> Result<Self> {
+        let hf_cache = Cache::from_env();
         Ok(Self {
             resolved_cache: HashMap::new(),
             hf_api: ApiBuilder::from_env()
                 .build()
                 .map_err(|e| Error::HfApiInit(e.to_string()))?,
+            hf_cache,
+        })
+    }
+
+    #[cfg(test)]
+    fn new_with_cache_for_tests(cache_dir: PathBuf) -> Result<Self> {
+        let hf_cache = Cache::new(cache_dir);
+        Ok(Self {
+            resolved_cache: HashMap::new(),
+            hf_api: ApiBuilder::from_cache(hf_cache.clone())
+                .with_endpoint("http://127.0.0.1:9".to_string())
+                .build()
+                .map_err(|e| Error::HfApiInit(e.to_string()))?,
+            hf_cache,
         })
     }
 
@@ -119,7 +136,13 @@ impl ModelResolver {
     }
 
     async fn resolve_huggingface(&self, repo_id: &str) -> Result<ResolvedModel> {
-        let path = self.resolve_hf_snapshot_root(repo_id).await?;
+        if let Some(path) = self.resolve_cached_hf_snapshot_root(repo_id)? {
+            return self
+                .build_resolved_model(path, "hf_cache", Some(repo_id), Some(repo_id))
+                .await;
+        }
+
+        let path = self.resolve_remote_hf_snapshot_root(repo_id).await?;
 
         let source = if path.to_string_lossy().contains("cache") {
             "hf_cache"
@@ -131,7 +154,26 @@ impl ModelResolver {
             .await
     }
 
-    async fn resolve_hf_snapshot_root(&self, repo_id: &str) -> Result<PathBuf> {
+    fn resolve_cached_hf_snapshot_root(&self, repo_id: &str) -> Result<Option<PathBuf>> {
+        let repo = self.hf_cache.model(repo_id.to_string());
+        let root_file = repo
+            .get("config.json")
+            .or_else(|| repo.get("model_index.json"));
+        let Some(root_file) = root_file else {
+            return Ok(None);
+        };
+        let Some(root) = root_file.parent().map(Path::to_path_buf) else {
+            return Ok(None);
+        };
+
+        if Self::is_hf_snapshot_complete(&root)? {
+            Ok(Some(root))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn resolve_remote_hf_snapshot_root(&self, repo_id: &str) -> Result<PathBuf> {
         let repo = self.hf_api.model(repo_id.to_string());
         let mut repo_info: HubRepoInfo = repo
             .info_request()
@@ -181,6 +223,98 @@ impl ModelResolver {
                     "resolved root has no parent".to_string(),
                 )
             })
+    }
+
+    fn is_hf_snapshot_complete(model_dir: &Path) -> Result<bool> {
+        let index_files = Self::find_files_with_suffix(model_dir, ".safetensors.index.json")?;
+        if !index_files.is_empty() {
+            for index_file in index_files {
+                let content = std::fs::read_to_string(&index_file)?;
+                let payload: serde_json::Value = serde_json::from_str(&content)?;
+                let Some(weight_map) = payload
+                    .get("weight_map")
+                    .and_then(|value| value.as_object())
+                else {
+                    return Ok(false);
+                };
+                let mut shard_names = BTreeSet::new();
+                for shard in weight_map.values().filter_map(|value| value.as_str()) {
+                    shard_names.insert(shard.to_string());
+                }
+                if shard_names.is_empty() {
+                    return Ok(false);
+                }
+                let Some(index_dir) = index_file.parent() else {
+                    return Ok(false);
+                };
+                for shard_name in shard_names {
+                    if !Self::is_materialized_weight_file(&index_dir.join(shard_name)) {
+                        return Ok(false);
+                    }
+                }
+            }
+            return Ok(true);
+        }
+
+        let single_file = model_dir.join("model.safetensors");
+        if single_file.exists() || single_file.is_symlink() {
+            return Ok(Self::is_materialized_weight_file(&single_file));
+        }
+
+        let safetensors = Self::find_files_with_suffix(model_dir, ".safetensors")?;
+        if safetensors.is_empty() {
+            return Ok(false);
+        }
+        Ok(safetensors
+            .iter()
+            .all(|path| Self::is_materialized_weight_file(path)))
+    }
+
+    fn find_files_with_suffix(root: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
+        let mut files = Vec::new();
+        Self::collect_files_with_suffix(root, suffix, &mut files)?;
+        files.sort();
+        Ok(files)
+    }
+
+    fn collect_files_with_suffix(
+        root: &Path,
+        suffix: &str,
+        files: &mut Vec<PathBuf>,
+    ) -> Result<()> {
+        if !root.is_dir() {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(root)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                Self::collect_files_with_suffix(&path, suffix, files)?;
+            } else if path.to_string_lossy().ends_with(suffix) {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    fn is_materialized_weight_file(path: &Path) -> bool {
+        let candidate = if path.is_symlink() {
+            match std::fs::canonicalize(path) {
+                Ok(path) => path,
+                Err(_) => return false,
+            }
+        } else {
+            path.to_path_buf()
+        };
+
+        candidate.is_file()
+            && !candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".incomplete"))
+            && candidate
+                .metadata()
+                .is_ok_and(|metadata| metadata.len() > 0)
     }
 
     fn should_download_hf_file(path: &str) -> bool {
@@ -415,6 +549,7 @@ impl ModelResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hf_hub::Cache;
     use tempfile::tempdir;
 
     #[test]
@@ -503,6 +638,37 @@ mod tests {
 
         assert_eq!(config["model_type"], "llama");
         assert_eq!(config["_name_or_path"], repo_id);
+    }
+
+    #[tokio::test]
+    async fn test_resolves_cached_hf_snapshot_without_remote_metadata() {
+        let repo_id = "meta-llama/Llama-3.1-8B-Instruct";
+        let cache_dir = tempdir().unwrap();
+        let cache = Cache::new(cache_dir.path().to_path_buf());
+        let cache_repo = cache.model(repo_id.to_string());
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        cache_repo.create_ref(commit).unwrap();
+        let snapshot = cache_repo.pointer_path(commit);
+        std::fs::create_dir_all(&snapshot).unwrap();
+        std::fs::write(
+            snapshot.join("config.json"),
+            serde_json::json!({"model_type": "llama"}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(snapshot.join("tokenizer.json"), "{}").unwrap();
+        std::fs::write(snapshot.join("model.safetensors"), b"weights").unwrap();
+
+        let mut resolver =
+            ModelResolver::new_with_cache_for_tests(cache_dir.path().to_path_buf()).unwrap();
+        let resolved = resolver.resolve(repo_id).await.unwrap();
+
+        assert_eq!(resolved.source, "hf_cache");
+        assert_eq!(resolved.canonical_id, repo_id);
+        assert_eq!(resolved.model_path, snapshot);
+        assert_eq!(
+            resolved.formatter_config.as_ref().unwrap()["_name_or_path"],
+            repo_id
+        );
     }
 
     #[tokio::test]

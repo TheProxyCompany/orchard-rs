@@ -633,6 +633,10 @@ impl Client {
             while remaining_sequences > 0 {
                 match rx.recv().await {
                     Some(delta) => {
+                        if let Some(message) = delta_error_message(&delta) {
+                            return Err(ClientError::RequestFailed(message));
+                        }
+
                         let candidate_index = delta.candidate_index.unwrap_or(0) as usize;
                         if candidate_index >= candidate_states.len() {
                             continue;
@@ -938,6 +942,10 @@ impl Client {
         while finals_received < num_prompts {
             match rx.recv().await {
                 Some(delta) => {
+                    if let Some(message) = delta_error_message(&delta) {
+                        return Err(ClientError::RequestFailed(message));
+                    }
+
                     let prompt_index = delta.prompt_index.unwrap_or(0);
                     let is_final = delta.is_final_delta;
 
@@ -1578,16 +1586,17 @@ fn modal_option_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bo
 }
 
 fn modal_sampling_params(object: &Map<String, Value>) -> Result<SamplingParams> {
-    let mut params = SamplingParams::default();
-    params.temperature = modal_option_f64(object, "temperature")?.unwrap_or(defaults::TEMPERATURE);
-    params.top_p = modal_option_f64(object, "top_p")?.unwrap_or(defaults::TOP_P);
-    params.top_k = modal_option_i32(object, "top_k")?.unwrap_or(defaults::TOP_K);
-    params.min_p = modal_option_f64(object, "min_p")?.unwrap_or(0.0);
-    params.rng_seed = modal_option_u64(object, "seed")?
-        .or(modal_option_u64(object, "rng_seed")?)
-        .unwrap_or_else(|| rand::thread_rng().gen::<u64>());
-    params.deterministic = modal_option_bool(object, "deterministic")?.unwrap_or(false);
-    Ok(params)
+    Ok(SamplingParams {
+        temperature: modal_option_f64(object, "temperature")?.unwrap_or(defaults::TEMPERATURE),
+        top_p: modal_option_f64(object, "top_p")?.unwrap_or(defaults::TOP_P),
+        top_k: modal_option_i32(object, "top_k")?.unwrap_or(defaults::TOP_K),
+        min_p: modal_option_f64(object, "min_p")?.unwrap_or(0.0),
+        rng_seed: modal_option_u64(object, "seed")?
+            .or(modal_option_u64(object, "rng_seed")?)
+            .unwrap_or_else(|| rand::thread_rng().gen::<u64>()),
+        deterministic: modal_option_bool(object, "deterministic")?.unwrap_or(false),
+        ..Default::default()
+    })
 }
 
 fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
@@ -1823,6 +1832,20 @@ fn build_response_from_candidates(
         tool_calls,
         deltas: all_deltas,
     }
+}
+
+fn delta_error_message(delta: &ResponseDelta) -> Option<String> {
+    delta
+        .finish_reason
+        .as_deref()
+        .is_some_and(|reason| reason.eq_ignore_ascii_case("error"))
+        .then(|| {
+            delta
+                .error
+                .clone()
+                .or_else(|| delta.content.clone())
+                .unwrap_or_else(|| "Inference request failed.".to_string())
+        })
 }
 
 fn value_to_text(value: &Value) -> String {
@@ -2168,6 +2191,32 @@ mod tests {
         let response = aggregate_response(deltas);
         assert_eq!(response.text, "Hello World");
         assert_eq!(response.finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_delta_error_message_uses_engine_error_before_content() {
+        let delta = ResponseDelta {
+            finish_reason: Some("error".to_string()),
+            content: Some("fallback content".to_string()),
+            error: Some("Engine process disconnected.".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            delta_error_message(&delta),
+            Some("Engine process disconnected.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_delta_error_message_ignores_non_error_finish_reason() {
+        let delta = ResponseDelta {
+            finish_reason: Some("stop".to_string()),
+            error: Some("not an error".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(delta_error_message(&delta), None);
     }
 
     #[test]
