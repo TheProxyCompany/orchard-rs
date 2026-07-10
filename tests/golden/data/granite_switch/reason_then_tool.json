@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -221,8 +221,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [
           {
@@ -244,7 +242,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -262,11 +262,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -279,11 +279,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -719,8 +719,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 100257,
-        "stop_token": "<|end_of_text|>",
         "model": "mlx-community/granite-4.1-30b-4bit",
         "output": [
           {
@@ -748,7 +746,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": 100257,
+        "stop_token": "<|end_of_text|>"
       }
     },
     {

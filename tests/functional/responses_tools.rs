@@ -1,14 +1,14 @@
 //! End-to-end Responses API tool-calling tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_responses_tools.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::{
     ResponseEvent, ResponseInputItem, ResponseOutputItem, ResponsesInput, ResponsesRequest,
     ResponsesResult,
 };
 
-use crate::fixture::{get_fixture, TEXT_MODELS};
+use crate::fixture::{get_fixture, tool_model_ids, volley_slot};
 
 fn weather_tool() -> serde_json::Value {
     serde_json::json!({
@@ -63,10 +63,11 @@ fn base_input_items() -> Vec<ResponseInputItem> {
 
 #[tokio::test]
 async fn test_responses_tool_call_non_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    for model_id in tool_model_ids() {
         let request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: false,
@@ -143,10 +144,11 @@ async fn test_responses_tool_call_non_streaming() {
 
 #[tokio::test]
 async fn test_responses_tool_call_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    for model_id in tool_model_ids() {
         let request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: true,
@@ -251,10 +253,11 @@ async fn test_responses_tool_call_streaming() {
 
 #[tokio::test]
 async fn test_responses_tool_result_continuation() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    for model_id in tool_model_ids() {
         let first_request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: false,

@@ -1,14 +1,14 @@
 //! End-to-end Responses API basic tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_responses_basic.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::{
     OutputStatus, ResponseEvent, ResponseOutputItem, ResponsesInput, ResponsesRequest,
     ResponsesResult,
 };
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 const SYSTEM_PROMPT_COMPLIANCE_SENTINEL: &str = "7-4-7";
 const SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS: &str =
@@ -40,6 +40,7 @@ async fn collect_stream_events(
 
 #[tokio::test]
 async fn test_responses_non_streaming_string_input() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -87,6 +88,7 @@ async fn test_responses_non_streaming_string_input() {
 
 #[tokio::test]
 async fn test_responses_non_streaming_message_items() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -152,6 +154,7 @@ async fn test_responses_non_streaming_message_items() {
 
 #[tokio::test]
 async fn test_responses_echo_fields() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -197,6 +200,7 @@ async fn test_responses_echo_fields() {
 
 #[tokio::test]
 async fn test_responses_streaming_event_sequence() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -290,6 +294,7 @@ async fn test_responses_streaming_event_sequence() {
 
 #[tokio::test]
 async fn test_responses_streaming_delta_accumulation() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -339,6 +344,7 @@ async fn test_responses_streaming_delta_accumulation() {
 
 #[tokio::test]
 async fn test_responses_streaming_completed_snapshot() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -389,6 +395,7 @@ async fn test_responses_streaming_completed_snapshot() {
 
 #[tokio::test]
 async fn test_responses_incomplete_non_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -425,6 +432,7 @@ async fn test_responses_incomplete_non_streaming() {
 
 #[tokio::test]
 async fn test_responses_incomplete_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -486,6 +494,7 @@ async fn test_responses_incomplete_streaming() {
 
 #[tokio::test]
 async fn test_responses_instructions() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

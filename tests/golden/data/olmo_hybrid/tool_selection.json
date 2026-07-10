@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "allenai/Olmo-Hybrid-Instruct-DPO-7B",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "allenai/Olmo-Hybrid-Instruct-DPO-7B",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -255,8 +255,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "allenai/Olmo-Hybrid-Instruct-DPO-7B",
         "output": [
           {
@@ -278,7 +276,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {

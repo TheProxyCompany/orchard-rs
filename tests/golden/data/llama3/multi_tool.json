@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -157,8 +157,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>",
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [
           {
@@ -180,7 +178,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": 128008,
+        "stop_token": "<|eom_id|>"
       }
     },
     {
@@ -198,11 +198,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -215,11 +215,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -387,8 +387,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>",
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [
           {
@@ -410,7 +408,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": 128008,
+        "stop_token": "<|eom_id|>"
       }
     },
     {
@@ -428,11 +428,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -445,11 +445,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -948,8 +948,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 128009,
-        "stop_token": "<|eot_id|>",
         "model": "meta-llama/Llama-3.1-8B-Instruct",
         "output": [
           {
@@ -977,7 +975,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": 128009,
+        "stop_token": "<|eot_id|>"
       }
     },
     {

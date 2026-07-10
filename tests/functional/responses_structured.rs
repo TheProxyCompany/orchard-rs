@@ -1,14 +1,15 @@
 //! End-to-end Responses API structured output tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_responses_structured.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::{OutputStatus, ResponseOutputItem, ResponsesRequest, ResponsesResult};
 
-use crate::fixture::{get_fixture, TEXT_MODELS};
+use crate::fixture::{get_fixture, volley_slot, TEXT_MODELS};
 
 #[tokio::test]
 async fn test_responses_structured_json_schema() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

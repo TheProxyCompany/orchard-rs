@@ -1,16 +1,17 @@
 //! End-to-end structured generation tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_structured_generation.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test generation with JSON schema response format.
 /// Mirrors: test_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
 async fn test_chat_completion_structured_json_response() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

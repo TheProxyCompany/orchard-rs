@@ -30,8 +30,10 @@ pub struct PromptPayload {
     pub top_k: i32,
     #[serde(default)]
     pub min_p: f64,
+    // Presence-based on the wire: an absent seed lets the engine pin its
+    // deterministic default (rng_seed 11) instead of a caller-rolled value.
     #[serde(default)]
-    pub rng_seed: u64,
+    pub rng_seed: Option<u64>,
     #[serde(default)]
     pub deterministic: bool,
     #[serde(default)]
@@ -363,7 +365,7 @@ pub fn build_batch_request_payload(
             "top_p": prompt.top_p,
             "top_k": prompt.top_k,
             "min_p": prompt.min_p,
-            "rng_seed": (prompt.rng_seed & 0xFFFFFFFF) as u32,
+            "rng_seed": prompt.rng_seed.map(|seed| (seed & 0xFFFFFFFF) as u32),
             "deterministic": prompt.deterministic,
             "top_logprobs": prompt.top_logprobs,
             "frequency_penalty": prompt.frequency_penalty,
@@ -395,6 +397,11 @@ pub fn build_batch_request_payload(
         });
 
         if let Some(prompt_meta_obj) = prompt_meta.as_object_mut() {
+            if prompt.rng_seed.is_none() {
+                // The engine's parse is presence-based; a JSON null would
+                // still count as present, so drop the key entirely.
+                prompt_meta_obj.remove("rng_seed");
+            }
             prompt_meta_obj.insert(
                 "modal_options_json".to_string(),
                 json!(prompt.modal_options_json),

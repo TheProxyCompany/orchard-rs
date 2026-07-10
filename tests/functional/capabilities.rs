@@ -1,7 +1,7 @@
 //! End-to-end moondream capabilities tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_capabilities.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 //!
 //! Note: MoondreamClient takes ownership of Client, so we create a new IPC connection
 //! per test. This mirrors Python's behavior where each test gets a fresh client.
@@ -13,7 +13,7 @@ use base64::Engine;
 use orchard::client::{MoondreamClient, SpatialRef};
 use orchard::{Client, ModelRegistry, SamplingParams};
 
-use crate::fixture::get_fixture;
+use crate::fixture::{get_fixture, volley_slot};
 
 fn get_test_assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -40,6 +40,7 @@ async fn create_moondream_client(registry: Arc<ModelRegistry>) -> MoondreamClien
 /// Mirrors: test_capabilities.py::test_moondream_reasoning_grounding
 #[tokio::test]
 async fn test_moondream_reasoning_grounding() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -100,16 +101,19 @@ async fn test_moondream_reasoning_grounding() {
 /// Mirrors: test_capabilities.py::test_moondream_caption
 #[tokio::test]
 async fn test_moondream_caption_normal() {
+    let _slot = volley_slot().await;
     run_moondream_caption("normal").await;
 }
 
 #[tokio::test]
 async fn test_moondream_caption_short() {
+    let _slot = volley_slot().await;
     run_moondream_caption("short").await;
 }
 
 #[tokio::test]
 async fn test_moondream_caption_long() {
+    let _slot = volley_slot().await;
     run_moondream_caption("long").await;
 }
 
@@ -139,6 +143,7 @@ async fn run_moondream_caption(length: &str) {
 /// Mirrors: test_capabilities.py::test_moondream_detect
 #[tokio::test]
 async fn test_moondream_detect() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -162,6 +167,7 @@ async fn test_moondream_detect() {
 /// Mirrors: test_capabilities.py::test_moondream_query_with_spatial_refs
 #[tokio::test]
 async fn test_moondream_query_with_spatial_refs() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -196,6 +202,7 @@ async fn test_moondream_query_with_spatial_refs() {
 /// Mirrors: test_capabilities.py::test_moondream_point
 #[tokio::test]
 async fn test_moondream_point() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -219,6 +226,7 @@ async fn test_moondream_point() {
 /// Mirrors: test_capabilities.py::test_moondream_detect_gaze
 #[tokio::test]
 async fn test_moondream_detect_gaze() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 

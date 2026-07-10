@@ -1,16 +1,17 @@
 //! End-to-end logprobs tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_logprobs.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test chat completion with logprobs enabled.
 /// Mirrors: test_logprobs.py::test_chat_completion_with_logprobs
 #[tokio::test]
 async fn test_chat_completion_with_logprobs() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -68,6 +69,7 @@ async fn test_chat_completion_with_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_without_logprobs
 #[tokio::test]
 async fn test_chat_completion_without_logprobs() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -110,6 +112,7 @@ async fn test_chat_completion_without_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_logprobs_streaming
 #[tokio::test]
 async fn test_chat_completion_logprobs_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {

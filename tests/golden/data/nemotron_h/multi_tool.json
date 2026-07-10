@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -218,8 +218,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 27,
-      "token_id": 3519,
-      "content": " current"
+      "token_id": 2142,
+      "content": " time"
     },
     {
       "type": "response.reasoning.delta",
@@ -227,13 +227,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " current"
+      "delta": " time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 2142,
-      "content": " time"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -241,13 +241,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " time"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 23286,
+      "content": " Tokyo"
     },
     {
       "type": "response.reasoning.delta",
@@ -255,13 +255,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": " Tokyo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 23286,
-      "content": " Tokyo"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -269,13 +269,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Tokyo"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -283,13 +283,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 7534,
+      "content": "'ll"
     },
     {
       "type": "response.reasoning.delta",
@@ -297,13 +297,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": "'ll"
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 7534,
-      "content": "'ll"
+      "token_id": 2210,
+      "content": " use"
     },
     {
       "type": "response.reasoning.delta",
@@ -311,13 +311,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "'ll"
+      "delta": " use"
     },
     {
       "type": "response.output_token",
       "sequence_number": 41,
-      "token_id": 3690,
-      "content": " call"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -325,13 +325,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " call"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 2960,
-      "content": " both"
+      "token_id": 2012,
+      "content": " get"
     },
     {
       "type": "response.reasoning.delta",
@@ -339,13 +339,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " both"
+      "delta": " get"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 7389,
-      "content": " functions"
+      "token_id": 1095,
+      "content": "_"
     },
     {
       "type": "response.reasoning.delta",
@@ -353,13 +353,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " functions"
+      "delta": "_"
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 45629,
+      "content": "weather"
     },
     {
       "type": "response.reasoning.delta",
@@ -367,13 +367,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": "weather"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 7610,
-      "content": " First"
+      "token_id": 9519,
+      "content": " tool"
     },
     {
       "type": "response.reasoning.delta",
@@ -381,13 +381,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " First"
+      "delta": " tool"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 1394,
+      "content": " for"
     },
     {
       "type": "response.reasoning.delta",
@@ -395,13 +395,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": " for"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 2012,
-      "content": " get"
+      "token_id": 5151,
+      "content": " San"
     },
     {
       "type": "response.reasoning.delta",
@@ -409,13 +409,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " get"
+      "delta": " San"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 1095,
-      "content": "_"
+      "token_id": 12717,
+      "content": " Francisco"
     },
     {
       "type": "response.reasoning.delta",
@@ -423,13 +423,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "_"
+      "delta": " Francisco"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 45629,
-      "content": "weather"
+      "token_id": 1321,
+      "content": " and"
     },
     {
       "type": "response.reasoning.delta",
@@ -437,13 +437,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "weather"
+      "delta": " and"
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 1394,
-      "content": " for"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -451,13 +451,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " for"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 5151,
-      "content": " San"
+      "token_id": 2012,
+      "content": " get"
     },
     {
       "type": "response.reasoning.delta",
@@ -465,13 +465,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " San"
+      "delta": " get"
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 12717,
-      "content": " Francisco"
+      "token_id": 11332,
+      "content": "_time"
     },
     {
       "type": "response.reasoning.delta",
@@ -479,13 +479,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Francisco"
+      "delta": "_time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 9519,
+      "content": " tool"
     },
     {
       "type": "response.reasoning.delta",
@@ -493,13 +493,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " tool"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
-      "token_id": 6830,
-      "content": " Then"
+      "token_id": 1394,
+      "content": " for"
     },
     {
       "type": "response.reasoning.delta",
@@ -507,13 +507,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Then"
+      "delta": " for"
     },
     {
       "type": "response.output_token",
       "sequence_number": 69,
-      "token_id": 2012,
-      "content": " get"
+      "token_id": 23286,
+      "content": " Tokyo"
     },
     {
       "type": "response.reasoning.delta",
@@ -521,13 +521,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " get"
+      "delta": " Tokyo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 71,
-      "token_id": 11332,
-      "content": "_time"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -535,13 +535,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "_time"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 73,
-      "token_id": 1394,
-      "content": " for"
+      "token_id": 9246,
+      "content": " Let"
     },
     {
       "type": "response.reasoning.delta",
@@ -549,13 +549,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " for"
+      "delta": " Let"
     },
     {
       "type": "response.output_token",
       "sequence_number": 75,
-      "token_id": 23286,
-      "content": " Tokyo"
+      "token_id": 1639,
+      "content": " me"
     },
     {
       "type": "response.reasoning.delta",
@@ -563,13 +563,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Tokyo"
+      "delta": " me"
     },
     {
       "type": "response.output_token",
       "sequence_number": 77,
-      "token_id": 81542,
-      "content": " timezone"
+      "token_id": 3690,
+      "content": " call"
     },
     {
       "type": "response.reasoning.delta",
@@ -577,13 +577,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " timezone"
+      "delta": " call"
     },
     {
       "type": "response.output_token",
       "sequence_number": 79,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 2960,
+      "content": " both"
     },
     {
       "type": "response.reasoning.delta",
@@ -591,13 +591,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " both"
     },
     {
       "type": "response.output_token",
       "sequence_number": 81,
-      "token_id": 9246,
-      "content": " Let"
+      "token_id": 7389,
+      "content": " functions"
     },
     {
       "type": "response.reasoning.delta",
@@ -605,13 +605,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Let"
+      "delta": " functions"
     },
     {
       "type": "response.output_token",
       "sequence_number": 83,
-      "token_id": 1681,
-      "content": "'s"
+      "token_id": 1626,
+      "content": ".\n"
     },
     {
       "type": "response.reasoning.delta",
@@ -619,67 +619,25 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "'s"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 85,
-      "token_id": 1653,
-      "content": " do"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 86,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " do"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 87,
-      "token_id": 1455,
-      "content": " that"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 88,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " that"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 89,
-      "token_id": 1626,
-      "content": ".\n"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 90,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
       "delta": ".\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 91,
+      "sequence_number": 85,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 92,
+      "sequence_number": 86,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "I need to get both the weather in San Francisco and the current time in Tokyo. I'll call both functions. First, get_weather for San Francisco. Then get_time for Tokyo timezone. Let's do that."
+      "text": "I need to get both the weather in San Francisco and the time in Tokyo. I'll use the get_weather tool for San Francisco and the get_time tool for Tokyo. Let me call both functions."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 93,
+      "sequence_number": 87,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -689,7 +647,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "I need to get both the weather in San Francisco and the current time in Tokyo. I'll call both functions. First, get_weather for San Francisco. Then get_time for Tokyo timezone. Let's do that."
+            "text": "I need to get both the weather in San Francisco and the time in Tokyo. I'll use the get_weather tool for San Francisco and the get_time tool for Tokyo. Let me call both functions."
           }
         ],
         "encrypted_content": null
@@ -697,55 +655,55 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 94,
+      "sequence_number": 88,
       "token_id": 14,
       "content": "<tool_call>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 95,
+      "sequence_number": 89,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 96,
+      "sequence_number": 90,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 97,
+      "sequence_number": 91,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 98,
+      "sequence_number": 92,
       "token_id": 94314,
       "content": "=get"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 99,
+      "sequence_number": 93,
       "token_id": 1095,
       "content": "_"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 100,
+      "sequence_number": 94,
       "token_id": 45629,
       "content": "weather"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 101,
+      "sequence_number": 95,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 102,
+      "sequence_number": 96,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -758,43 +716,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 103,
+      "sequence_number": 97,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 104,
+      "sequence_number": 98,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 105,
+      "sequence_number": 99,
       "token_id": 1061,
       "content": "="
     },
     {
       "type": "response.output_token",
-      "sequence_number": 106,
+      "sequence_number": 100,
       "token_id": 17611,
       "content": "location"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 107,
+      "sequence_number": 101,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 108,
+      "sequence_number": 102,
       "token_id": 24619,
       "content": "San"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 109,
+      "sequence_number": 103,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "San",
@@ -802,13 +760,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 110,
+      "sequence_number": 104,
       "token_id": 12717,
       "content": " Francisco"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 111,
+      "sequence_number": 105,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " Francisco",
@@ -816,49 +774,49 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 112,
+      "sequence_number": 106,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 113,
+      "sequence_number": 107,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 114,
+      "sequence_number": 108,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 115,
+      "sequence_number": 109,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 116,
+      "sequence_number": 110,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 117,
+      "sequence_number": 111,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 118,
+      "sequence_number": 112,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 119,
+      "sequence_number": 113,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "{\"location\":\"San Francisco\"}",
@@ -866,14 +824,14 @@
     },
     {
       "type": "response.function_call_arguments.done",
-      "sequence_number": 120,
+      "sequence_number": 114,
       "item_id": "fc_0",
       "output_index": 1,
       "arguments": "{\"location\": \"San Francisco\"}"
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 121,
+      "sequence_number": 115,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -886,13 +844,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 122,
+      "sequence_number": 116,
       "token_id": 15,
       "content": "</tool_call>"
     },
     {
       "type": "response.completed",
-      "sequence_number": 123,
+      "sequence_number": 117,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -900,8 +858,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -912,7 +868,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "I need to get both the weather in San Francisco and the current time in Tokyo. I'll call both functions. First, get_weather for San Francisco. Then get_time for Tokyo timezone. Let's do that."
+                "text": "I need to get both the weather in San Francisco and the time in Tokyo. I'll use the get_weather tool for San Francisco and the get_time tool for Tokyo. Let me call both functions."
               }
             ],
             "encrypted_content": null
@@ -934,9 +890,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 45
+            "reasoning_tokens": 42
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -954,11 +912,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -971,18 +929,18 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
       "type": "response.output_token",
       "sequence_number": 2,
-      "token_id": 12082,
-      "content": "Now"
+      "token_id": 1784,
+      "content": "The"
     },
     {
       "type": "response.output_item.added",
@@ -1003,13 +961,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "Now"
+      "delta": "The"
     },
     {
       "type": "response.output_token",
       "sequence_number": 5,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 3330,
+      "content": " user"
     },
     {
       "type": "response.reasoning.delta",
@@ -1017,13 +975,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": " user"
     },
     {
       "type": "response.output_token",
       "sequence_number": 7,
-      "token_id": 2534,
-      "content": " need"
+      "token_id": 1395,
+      "content": " is"
     },
     {
       "type": "response.reasoning.delta",
@@ -1031,13 +989,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " need"
+      "delta": " is"
     },
     {
       "type": "response.output_token",
       "sequence_number": 9,
-      "token_id": 1317,
-      "content": " to"
+      "token_id": 16798,
+      "content": " asking"
     },
     {
       "type": "response.reasoning.delta",
@@ -1045,13 +1003,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " to"
+      "delta": " asking"
     },
     {
       "type": "response.output_token",
       "sequence_number": 11,
-      "token_id": 2012,
-      "content": " get"
+      "token_id": 1394,
+      "content": " for"
     },
     {
       "type": "response.reasoning.delta",
@@ -1059,13 +1017,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " get"
+      "delta": " for"
     },
     {
       "type": "response.output_token",
       "sequence_number": 13,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 2295,
+      "content": " two"
     },
     {
       "type": "response.reasoning.delta",
@@ -1073,13 +1031,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " two"
     },
     {
       "type": "response.output_token",
       "sequence_number": 15,
-      "token_id": 2142,
-      "content": " time"
+      "token_id": 17352,
+      "content": " pieces"
     },
     {
       "type": "response.reasoning.delta",
@@ -1087,13 +1045,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " time"
+      "delta": " pieces"
     },
     {
       "type": "response.output_token",
       "sequence_number": 17,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 1307,
+      "content": " of"
     },
     {
       "type": "response.reasoning.delta",
@@ -1101,13 +1059,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": " of"
     },
     {
       "type": "response.output_token",
       "sequence_number": 19,
-      "token_id": 23286,
-      "content": " Tokyo"
+      "token_id": 3686,
+      "content": " information"
     },
     {
       "type": "response.reasoning.delta",
@@ -1115,13 +1073,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Tokyo"
+      "delta": " information"
     },
     {
       "type": "response.output_token",
       "sequence_number": 21,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1058,
+      "content": ":"
     },
     {
       "type": "response.reasoning.delta",
@@ -1129,13 +1087,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": ":"
     },
     {
       "type": "response.output_token",
       "sequence_number": 23,
-      "token_id": 13516,
-      "content": " Use"
+      "token_id": 17253,
+      "content": " weather"
     },
     {
       "type": "response.reasoning.delta",
@@ -1143,13 +1101,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Use"
+      "delta": " weather"
     },
     {
       "type": "response.output_token",
       "sequence_number": 25,
-      "token_id": 2012,
-      "content": " get"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -1157,13 +1115,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " get"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 27,
-      "token_id": 11332,
-      "content": "_time"
+      "token_id": 5151,
+      "content": " San"
     },
     {
       "type": "response.reasoning.delta",
@@ -1171,13 +1129,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "_time"
+      "delta": " San"
     },
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 12717,
+      "content": " Francisco"
     },
     {
       "type": "response.reasoning.delta",
@@ -1185,13 +1143,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": " Francisco"
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 81542,
-      "content": " timezone"
+      "token_id": 1321,
+      "content": " and"
     },
     {
       "type": "response.reasoning.delta",
@@ -1199,13 +1157,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " timezone"
+      "delta": " and"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 1429,
-      "content": " \""
+      "token_id": 2142,
+      "content": " time"
     },
     {
       "type": "response.reasoning.delta",
@@ -1213,13 +1171,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " \""
+      "delta": " time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 70184,
-      "content": "Asia"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -1227,13 +1185,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "Asia"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 27501,
-      "content": "/T"
+      "token_id": 23286,
+      "content": " Tokyo"
     },
     {
       "type": "response.reasoning.delta",
@@ -1241,13 +1199,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "/T"
+      "delta": " Tokyo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 1662,
-      "content": "ok"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -1255,13 +1213,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "ok"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 41,
-      "token_id": 13504,
-      "content": "yo"
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -1269,13 +1227,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "yo"
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 24483,
-      "content": "\".\n"
+      "token_id": 2534,
+      "content": " need"
     },
     {
       "type": "response.reasoning.delta",
@@ -1283,25 +1241,865 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\".\n"
+      "delta": " need"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
+      "token_id": 1317,
+      "content": " to"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 46,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " to"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 47,
+      "token_id": 3690,
+      "content": " call"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 48,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " call"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 49,
+      "token_id": 2960,
+      "content": " both"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 50,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " both"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 51,
+      "token_id": 7389,
+      "content": " functions"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 52,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " functions"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 53,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 54,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 55,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 56,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 57,
+      "token_id": 5314,
+      "content": " already"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 58,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " already"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 59,
+      "token_id": 4418,
+      "content": " called"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 60,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " called"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 61,
+      "token_id": 2012,
+      "content": " get"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 62,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " get"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 63,
+      "token_id": 1095,
+      "content": "_"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 64,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 65,
+      "token_id": 45629,
+      "content": "weather"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 66,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "weather"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 67,
+      "token_id": 1394,
+      "content": " for"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 68,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " for"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 69,
+      "token_id": 5151,
+      "content": " San"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 70,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " San"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 71,
+      "token_id": 12717,
+      "content": " Francisco"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 72,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Francisco"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 73,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 74,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 75,
+      "token_id": 9032,
+      "content": " Now"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 76,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Now"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 77,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 78,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 79,
+      "token_id": 2534,
+      "content": " need"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 80,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " need"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 81,
+      "token_id": 1317,
+      "content": " to"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 82,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " to"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 83,
+      "token_id": 3690,
+      "content": " call"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 84,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " call"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 85,
+      "token_id": 2012,
+      "content": " get"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 86,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " get"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 87,
+      "token_id": 11332,
+      "content": "_time"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 88,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_time"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 89,
+      "token_id": 1394,
+      "content": " for"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 90,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " for"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 91,
+      "token_id": 23286,
+      "content": " Tokyo"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 92,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Tokyo"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 93,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 94,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 95,
+      "token_id": 1531,
+      "content": " The"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 96,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 97,
+      "token_id": 2012,
+      "content": " get"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 98,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " get"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 99,
+      "token_id": 11332,
+      "content": "_time"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 100,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_time"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 101,
+      "token_id": 2254,
+      "content": " function"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 102,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " function"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 103,
+      "token_id": 10867,
+      "content": " requires"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 104,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " requires"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 105,
+      "token_id": 1261,
+      "content": " a"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 106,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " a"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 107,
+      "token_id": 81542,
+      "content": " timezone"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 108,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " timezone"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 109,
+      "token_id": 25421,
+      "content": " identifier"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 110,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " identifier"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 111,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 112,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 113,
+      "token_id": 23286,
+      "content": " Tokyo"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 114,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Tokyo"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 115,
+      "token_id": 1395,
+      "content": " is"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 116,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " is"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 117,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 118,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 119,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 120,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 121,
+      "token_id": 6777,
+      "content": " Japan"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 122,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Japan"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 123,
+      "token_id": 19839,
+      "content": " Standard"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 124,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Standard"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 125,
+      "token_id": 8936,
+      "content": " Time"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 126,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Time"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 127,
+      "token_id": 81542,
+      "content": " timezone"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 128,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " timezone"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 129,
+      "token_id": 1044,
+      "content": ","
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 130,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ","
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 131,
+      "token_id": 1799,
+      "content": " which"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 132,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " which"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 133,
+      "token_id": 1395,
+      "content": " is"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 134,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " is"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 135,
+      "token_id": 15188,
+      "content": " Asia"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 136,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Asia"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 137,
+      "token_id": 27501,
+      "content": "/T"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 138,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "/T"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 139,
+      "token_id": 1662,
+      "content": "ok"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 140,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ok"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 141,
+      "token_id": 13504,
+      "content": "yo"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 142,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "yo"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 143,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 144,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 145,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 146,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 147,
+      "token_id": 7534,
+      "content": "'ll"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 148,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'ll"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 149,
+      "token_id": 3690,
+      "content": " call"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 150,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " call"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 151,
+      "token_id": 1455,
+      "content": " that"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 152,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " that"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 153,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 154,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 155,
+      "token_id": 9246,
+      "content": " Let"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 156,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Let"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 157,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 158,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 159,
+      "token_id": 1653,
+      "content": " do"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 160,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " do"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 161,
+      "token_id": 1494,
+      "content": " it"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 162,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " it"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 163,
+      "token_id": 1626,
+      "content": ".\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 164,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 165,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 46,
+      "sequence_number": 166,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "Now I need to get the time in Tokyo. Use get_time with timezone \"Asia/Tokyo\"."
+      "text": "The user is asking for two pieces of information: weather in San Francisco and time in Tokyo. I need to call both functions. I already called get_weather for San Francisco. Now I need to call get_time for Tokyo. The get_time function requires a timezone identifier. Tokyo is in the Japan Standard Time timezone, which is Asia/Tokyo. I'll call that. Let's do it."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 47,
+      "sequence_number": 167,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -1311,7 +2109,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "Now I need to get the time in Tokyo. Use get_time with timezone \"Asia/Tokyo\"."
+            "text": "The user is asking for two pieces of information: weather in San Francisco and time in Tokyo. I need to call both functions. I already called get_weather for San Francisco. Now I need to call get_time for Tokyo. The get_time function requires a timezone identifier. Tokyo is in the Japan Standard Time timezone, which is Asia/Tokyo. I'll call that. Let's do it."
           }
         ],
         "encrypted_content": null
@@ -1319,49 +2117,49 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 48,
+      "sequence_number": 168,
       "token_id": 14,
       "content": "<tool_call>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 49,
+      "sequence_number": 169,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 50,
+      "sequence_number": 170,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 51,
+      "sequence_number": 171,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 52,
+      "sequence_number": 172,
       "token_id": 94314,
       "content": "=get"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 53,
+      "sequence_number": 173,
       "token_id": 11332,
       "content": "_time"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 54,
+      "sequence_number": 174,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 55,
+      "sequence_number": 175,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -1374,49 +2172,49 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 56,
+      "sequence_number": 176,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 57,
+      "sequence_number": 177,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 58,
+      "sequence_number": 178,
       "token_id": 1061,
       "content": "="
     },
     {
       "type": "response.output_token",
-      "sequence_number": 59,
+      "sequence_number": 179,
       "token_id": 7647,
       "content": "time"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 60,
+      "sequence_number": 180,
       "token_id": 14864,
       "content": "zone"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 61,
+      "sequence_number": 181,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 62,
+      "sequence_number": 182,
       "token_id": 70184,
       "content": "Asia"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 63,
+      "sequence_number": 183,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "Asia",
@@ -1424,13 +2222,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 64,
+      "sequence_number": 184,
       "token_id": 27501,
       "content": "/T"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 65,
+      "sequence_number": 185,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "/T",
@@ -1438,13 +2236,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 66,
+      "sequence_number": 186,
       "token_id": 1662,
       "content": "ok"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 67,
+      "sequence_number": 187,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "ok",
@@ -1452,13 +2250,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 68,
+      "sequence_number": 188,
       "token_id": 13504,
       "content": "yo"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 69,
+      "sequence_number": 189,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "yo",
@@ -1466,49 +2264,49 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 70,
+      "sequence_number": 190,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 71,
+      "sequence_number": 191,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 72,
+      "sequence_number": 192,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 73,
+      "sequence_number": 193,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 74,
+      "sequence_number": 194,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 75,
+      "sequence_number": 195,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 76,
+      "sequence_number": 196,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 77,
+      "sequence_number": 197,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "{\"timezone\":\"Asia/Tokyo\"}",
@@ -1516,14 +2314,14 @@
     },
     {
       "type": "response.function_call_arguments.done",
-      "sequence_number": 78,
+      "sequence_number": 198,
       "item_id": "fc_0",
       "output_index": 1,
       "arguments": "{\"timezone\": \"Asia/Tokyo\"}"
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 79,
+      "sequence_number": 199,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -1536,13 +2334,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 80,
+      "sequence_number": 200,
       "token_id": 15,
       "content": "</tool_call>"
     },
     {
       "type": "response.completed",
-      "sequence_number": 81,
+      "sequence_number": 201,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -1550,8 +2348,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -1562,7 +2358,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "Now I need to get the time in Tokyo. Use get_time with timezone \"Asia/Tokyo\"."
+                "text": "The user is asking for two pieces of information: weather in San Francisco and time in Tokyo. I need to call both functions. I already called get_weather for San Francisco. Now I need to call get_time for Tokyo. The get_time function requires a timezone identifier. Tokyo is in the Japan Standard Time timezone, which is Asia/Tokyo. I'll call that. Let's do it."
               }
             ],
             "encrypted_content": null
@@ -1584,9 +2380,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 22
+            "reasoning_tokens": 82
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -1604,11 +2402,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -1621,11 +2419,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -1700,8 +2498,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 11,
-      "token_id": 2295,
-      "content": " two"
+      "token_id": 2960,
+      "content": " both"
     },
     {
       "type": "response.reasoning.delta",
@@ -1709,13 +2507,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " two"
+      "delta": " both"
     },
     {
       "type": "response.output_token",
       "sequence_number": 13,
-      "token_id": 5705,
-      "content": " things"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -1723,13 +2521,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " things"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 15,
-      "token_id": 1058,
-      "content": ":"
+      "token_id": 17253,
+      "content": " weather"
     },
     {
       "type": "response.reasoning.delta",
@@ -1737,13 +2535,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ":"
+      "delta": " weather"
     },
     {
       "type": "response.output_token",
       "sequence_number": 17,
-      "token_id": 17253,
-      "content": " weather"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -1751,13 +2549,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " weather"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 19,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 5151,
+      "content": " San"
     },
     {
       "type": "response.reasoning.delta",
@@ -1765,13 +2563,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": " San"
     },
     {
       "type": "response.output_token",
       "sequence_number": 21,
-      "token_id": 5151,
-      "content": " San"
+      "token_id": 12717,
+      "content": " Francisco"
     },
     {
       "type": "response.reasoning.delta",
@@ -1779,13 +2577,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " San"
+      "delta": " Francisco"
     },
     {
       "type": "response.output_token",
       "sequence_number": 23,
-      "token_id": 12717,
-      "content": " Francisco"
+      "token_id": 1321,
+      "content": " and"
     },
     {
       "type": "response.reasoning.delta",
@@ -1793,13 +2591,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Francisco"
+      "delta": " and"
     },
     {
       "type": "response.output_token",
       "sequence_number": 25,
-      "token_id": 1321,
-      "content": " and"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -1807,13 +2605,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " and"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 27,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 2142,
+      "content": " time"
     },
     {
       "type": "response.reasoning.delta",
@@ -1821,13 +2619,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 2142,
-      "content": " time"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -1835,13 +2633,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " time"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 23286,
+      "content": " Tokyo"
     },
     {
       "type": "response.reasoning.delta",
@@ -1849,13 +2647,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": " Tokyo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 23286,
-      "content": " Tokyo"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -1863,13 +2661,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Tokyo"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -1877,13 +2675,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 6483,
+      "content": "'ve"
     },
     {
       "type": "response.reasoning.delta",
@@ -1891,13 +2689,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": "'ve"
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 1736,
-      "content": " have"
+      "token_id": 2434,
+      "content": " used"
     },
     {
       "type": "response.reasoning.delta",
@@ -1905,7 +2703,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " have"
+      "delta": " used"
     },
     {
       "type": "response.output_token",
@@ -1924,8 +2722,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 3657,
-      "content": " results"
+      "token_id": 12589,
+      "content": " tools"
     },
     {
       "type": "response.reasoning.delta",
@@ -1933,13 +2731,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " results"
+      "delta": " tools"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1058,
+      "content": ":"
     },
     {
       "type": "response.reasoning.delta",
@@ -1947,13 +2745,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": ":"
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 1531,
-      "content": " The"
+      "token_id": 2012,
+      "content": " get"
     },
     {
       "type": "response.reasoning.delta",
@@ -1961,13 +2759,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " The"
+      "delta": " get"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 17253,
-      "content": " weather"
+      "token_id": 1095,
+      "content": "_"
     },
     {
       "type": "response.reasoning.delta",
@@ -1975,13 +2773,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " weather"
+      "delta": "_"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 45629,
+      "content": "weather"
     },
     {
       "type": "response.reasoning.delta",
@@ -1989,13 +2787,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": "weather"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 5151,
-      "content": " San"
+      "token_id": 1394,
+      "content": " for"
     },
     {
       "type": "response.reasoning.delta",
@@ -2003,13 +2801,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " San"
+      "delta": " for"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 12717,
-      "content": " Francisco"
+      "token_id": 5151,
+      "content": " San"
     },
     {
       "type": "response.reasoning.delta",
@@ -2017,13 +2815,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Francisco"
+      "delta": " San"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 1395,
-      "content": " is"
+      "token_id": 12717,
+      "content": " Francisco"
     },
     {
       "type": "response.reasoning.delta",
@@ -2031,13 +2829,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is"
+      "delta": " Francisco"
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 1032,
-      "content": " "
+      "token_id": 8583,
+      "content": " returned"
     },
     {
       "type": "response.reasoning.delta",
@@ -2045,13 +2843,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " "
+      "delta": " returned"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 1054,
-      "content": "6"
+      "token_id": 6138,
+      "content": " temperature"
     },
     {
       "type": "response.reasoning.delta",
@@ -2059,13 +2857,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "6"
+      "delta": " temperature"
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 1053,
-      "content": "5"
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -2073,13 +2871,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "5"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 4372,
-      "content": "°"
+      "token_id": 1054,
+      "content": "6"
     },
     {
       "type": "response.reasoning.delta",
@@ -2087,13 +2885,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "°"
+      "delta": "6"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
-      "token_id": 1070,
-      "content": "F"
+      "token_id": 1053,
+      "content": "5"
     },
     {
       "type": "response.reasoning.delta",
@@ -2101,13 +2899,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "F"
+      "delta": "5"
     },
     {
       "type": "response.output_token",
       "sequence_number": 69,
-      "token_id": 1321,
-      "content": " and"
+      "token_id": 4372,
+      "content": "°"
     },
     {
       "type": "response.reasoning.delta",
@@ -2115,13 +2913,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " and"
+      "delta": "°"
     },
     {
       "type": "response.output_token",
       "sequence_number": 71,
-      "token_id": 24976,
-      "content": " fog"
+      "token_id": 1070,
+      "content": "F"
     },
     {
       "type": "response.reasoning.delta",
@@ -2129,13 +2927,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " fog"
+      "delta": "F"
     },
     {
       "type": "response.output_token",
       "sequence_number": 73,
-      "token_id": 2891,
-      "content": "gy"
+      "token_id": 1044,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -2143,13 +2941,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "gy"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 75,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 6570,
+      "content": " condition"
     },
     {
       "type": "response.reasoning.delta",
@@ -2157,13 +2955,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " condition"
     },
     {
       "type": "response.output_token",
       "sequence_number": 77,
-      "token_id": 1531,
-      "content": " The"
+      "token_id": 24976,
+      "content": " fog"
     },
     {
       "type": "response.reasoning.delta",
@@ -2171,13 +2969,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " The"
+      "delta": " fog"
     },
     {
       "type": "response.output_token",
       "sequence_number": 79,
-      "token_id": 2142,
-      "content": " time"
+      "token_id": 2891,
+      "content": "gy"
     },
     {
       "type": "response.reasoning.delta",
@@ -2185,13 +2983,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " time"
+      "delta": "gy"
     },
     {
       "type": "response.output_token",
       "sequence_number": 81,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -2199,13 +2997,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 83,
-      "token_id": 23286,
-      "content": " Tokyo"
+      "token_id": 2012,
+      "content": " get"
     },
     {
       "type": "response.reasoning.delta",
@@ -2213,13 +3011,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Tokyo"
+      "delta": " get"
     },
     {
       "type": "response.output_token",
       "sequence_number": 85,
-      "token_id": 1395,
-      "content": " is"
+      "token_id": 11332,
+      "content": "_time"
     },
     {
       "type": "response.reasoning.delta",
@@ -2227,13 +3025,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is"
+      "delta": "_time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 87,
-      "token_id": 1032,
-      "content": " "
+      "token_id": 1394,
+      "content": " for"
     },
     {
       "type": "response.reasoning.delta",
@@ -2241,13 +3039,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " "
+      "delta": " for"
     },
     {
       "type": "response.output_token",
       "sequence_number": 89,
-      "token_id": 1050,
-      "content": "2"
+      "token_id": 15188,
+      "content": " Asia"
     },
     {
       "type": "response.reasoning.delta",
@@ -2255,13 +3053,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "2"
+      "delta": " Asia"
     },
     {
       "type": "response.output_token",
       "sequence_number": 91,
-      "token_id": 1051,
-      "content": "3"
+      "token_id": 27501,
+      "content": "/T"
     },
     {
       "type": "response.reasoning.delta",
@@ -2269,13 +3067,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "3"
+      "delta": "/T"
     },
     {
       "type": "response.output_token",
       "sequence_number": 93,
-      "token_id": 1058,
-      "content": ":"
+      "token_id": 1662,
+      "content": "ok"
     },
     {
       "type": "response.reasoning.delta",
@@ -2283,13 +3081,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ":"
+      "delta": "ok"
     },
     {
       "type": "response.output_token",
       "sequence_number": 95,
-      "token_id": 1048,
-      "content": "0"
+      "token_id": 13504,
+      "content": "yo"
     },
     {
       "type": "response.reasoning.delta",
@@ -2297,13 +3095,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "0"
+      "delta": "yo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 97,
-      "token_id": 1048,
-      "content": "0"
+      "token_id": 8583,
+      "content": " returned"
     },
     {
       "type": "response.reasoning.delta",
@@ -2311,13 +3109,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "0"
+      "delta": " returned"
     },
     {
       "type": "response.output_token",
       "sequence_number": 99,
-      "token_id": 1319,
-      "content": " ("
+      "token_id": 2142,
+      "content": " time"
     },
     {
       "type": "response.reasoning.delta",
@@ -2325,13 +3123,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " ("
+      "delta": " time"
     },
     {
       "type": "response.output_token",
       "sequence_number": 101,
-      "token_id": 1049,
-      "content": "1"
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -2339,13 +3137,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "1"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 103,
-      "token_id": 1049,
-      "content": "1"
+      "token_id": 1050,
+      "content": "2"
     },
     {
       "type": "response.reasoning.delta",
@@ -2353,13 +3151,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "1"
+      "delta": "2"
     },
     {
       "type": "response.output_token",
       "sequence_number": 105,
-      "token_id": 1058,
-      "content": ":"
+      "token_id": 1051,
+      "content": "3"
     },
     {
       "type": "response.reasoning.delta",
@@ -2367,13 +3165,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ":"
+      "delta": "3"
     },
     {
       "type": "response.output_token",
       "sequence_number": 107,
-      "token_id": 1048,
-      "content": "0"
+      "token_id": 1058,
+      "content": ":"
     },
     {
       "type": "response.reasoning.delta",
@@ -2381,7 +3179,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "0"
+      "delta": ":"
     },
     {
       "type": "response.output_token",
@@ -2400,8 +3198,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 111,
-      "token_id": 18445,
-      "content": " PM"
+      "token_id": 1048,
+      "content": "0"
     },
     {
       "type": "response.reasoning.delta",
@@ -2409,13 +3207,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " PM"
+      "delta": "0"
     },
     {
       "type": "response.output_token",
       "sequence_number": 113,
-      "token_id": 1041,
-      "content": ")"
+      "token_id": 1044,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -2423,13 +3221,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ")"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 115,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 81542,
+      "content": " timezone"
     },
     {
       "type": "response.reasoning.delta",
@@ -2437,13 +3235,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": " timezone"
     },
     {
       "type": "response.output_token",
       "sequence_number": 117,
-      "token_id": 17480,
-      "content": " UTC"
+      "token_id": 23286,
+      "content": " Tokyo"
     },
     {
       "type": "response.reasoning.delta",
@@ -2451,13 +3249,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " UTC"
+      "delta": " Tokyo"
     },
     {
       "type": "response.output_token",
       "sequence_number": 119,
-      "token_id": 1043,
-      "content": "+"
+      "token_id": 1044,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -2465,13 +3263,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "+"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 121,
-      "token_id": 1057,
-      "content": "9"
+      "token_id": 17480,
+      "content": " UTC"
     },
     {
       "type": "response.reasoning.delta",
@@ -2479,13 +3277,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "9"
+      "delta": " UTC"
     },
     {
       "type": "response.output_token",
       "sequence_number": 123,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1043,
+      "content": "+"
     },
     {
       "type": "response.reasoning.delta",
@@ -2493,13 +3291,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": "+"
     },
     {
       "type": "response.output_token",
       "sequence_number": 125,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 1048,
+      "content": "0"
     },
     {
       "type": "response.reasoning.delta",
@@ -2507,13 +3305,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": "0"
     },
     {
       "type": "response.output_token",
       "sequence_number": 127,
-      "token_id": 2715,
-      "content": " should"
+      "token_id": 1057,
+      "content": "9"
     },
     {
       "type": "response.reasoning.delta",
@@ -2521,13 +3319,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " should"
+      "delta": "9"
     },
     {
       "type": "response.output_token",
       "sequence_number": 129,
-      "token_id": 2988,
-      "content": " present"
+      "token_id": 1058,
+      "content": ":"
     },
     {
       "type": "response.reasoning.delta",
@@ -2535,13 +3333,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " present"
+      "delta": ":"
     },
     {
       "type": "response.output_token",
       "sequence_number": 131,
-      "token_id": 2960,
-      "content": " both"
+      "token_id": 1048,
+      "content": "0"
     },
     {
       "type": "response.reasoning.delta",
@@ -2549,13 +3347,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " both"
+      "delta": "0"
     },
     {
       "type": "response.output_token",
       "sequence_number": 133,
-      "token_id": 16897,
-      "content": " answers"
+      "token_id": 1048,
+      "content": "0"
     },
     {
       "type": "response.reasoning.delta",
@@ -2563,13 +3361,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " answers"
+      "delta": "0"
     },
     {
       "type": "response.output_token",
       "sequence_number": 135,
-      "token_id": 11904,
-      "content": " clearly"
+      "token_id": 1338,
+      "content": ".\n\n"
     },
     {
       "type": "response.reasoning.delta",
@@ -2577,13 +3375,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " clearly"
+      "delta": ".\n\n"
     },
     {
       "type": "response.output_token",
       "sequence_number": 137,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 12082,
+      "content": "Now"
     },
     {
       "type": "response.reasoning.delta",
@@ -2591,13 +3389,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": "Now"
     },
     {
       "type": "response.output_token",
       "sequence_number": 139,
-      "token_id": 9246,
-      "content": " Let"
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -2605,13 +3403,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Let"
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 141,
-      "token_id": 1681,
-      "content": "'s"
+      "token_id": 2534,
+      "content": " need"
     },
     {
       "type": "response.reasoning.delta",
@@ -2619,13 +3417,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "'s"
+      "delta": " need"
     },
     {
       "type": "response.output_token",
       "sequence_number": 143,
-      "token_id": 8174,
-      "content": " format"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -2633,13 +3431,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " format"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 145,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 2988,
+      "content": " present"
     },
     {
       "type": "response.reasoning.delta",
@@ -2647,13 +3445,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " present"
     },
     {
       "type": "response.output_token",
       "sequence_number": 147,
-      "token_id": 4005,
-      "content": " response"
+      "token_id": 2960,
+      "content": " both"
     },
     {
       "type": "response.reasoning.delta",
@@ -2661,13 +3459,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " response"
+      "delta": " both"
     },
     {
       "type": "response.output_token",
       "sequence_number": 149,
-      "token_id": 1626,
-      "content": ".\n"
+      "token_id": 16897,
+      "content": " answers"
     },
     {
       "type": "response.reasoning.delta",
@@ -2675,25 +3473,1299 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ".\n"
+      "delta": " answers"
     },
     {
       "type": "response.output_token",
       "sequence_number": 151,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 152,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 153,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 154,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 155,
+      "token_id": 7534,
+      "content": "'ll"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 156,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'ll"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 157,
+      "token_id": 28373,
+      "content": " combine"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 158,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " combine"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 159,
+      "token_id": 2424,
+      "content": " them"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 160,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " them"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 161,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 162,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 163,
+      "token_id": 1261,
+      "content": " a"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 164,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " a"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 165,
+      "token_id": 6133,
+      "content": " clear"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 166,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " clear"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 167,
+      "token_id": 4005,
+      "content": " response"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 168,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " response"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 169,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 170,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 171,
+      "token_id": 9246,
+      "content": " Let"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 172,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Let"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 173,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 174,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 175,
+      "token_id": 8174,
+      "content": " format"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 176,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " format"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 177,
+      "token_id": 1058,
+      "content": ":"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 178,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ":"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 179,
+      "token_id": 1429,
+      "content": " \""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 180,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " \""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 181,
+      "token_id": 1784,
+      "content": "The"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 182,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 183,
+      "token_id": 17253,
+      "content": " weather"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 184,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " weather"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 185,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 186,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 187,
+      "token_id": 5151,
+      "content": " San"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 188,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " San"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 189,
+      "token_id": 12717,
+      "content": " Francisco"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 190,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Francisco"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 191,
+      "token_id": 1395,
+      "content": " is"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 192,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " is"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 193,
+      "token_id": 10548,
+      "content": " currently"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 194,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " currently"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 195,
+      "token_id": 1032,
+      "content": " "
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 196,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " "
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 197,
+      "token_id": 1054,
+      "content": "6"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 198,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "6"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 199,
+      "token_id": 1053,
+      "content": "5"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 200,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "5"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 201,
+      "token_id": 4372,
+      "content": "°"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 202,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "°"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 203,
+      "token_id": 1070,
+      "content": "F"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 204,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "F"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 205,
+      "token_id": 1321,
+      "content": " and"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 206,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 207,
+      "token_id": 24976,
+      "content": " fog"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 208,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " fog"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 209,
+      "token_id": 2891,
+      "content": "gy"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 210,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "gy"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 211,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 212,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 213,
+      "token_id": 1531,
+      "content": " The"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 214,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 215,
+      "token_id": 3519,
+      "content": " current"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 216,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " current"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 217,
+      "token_id": 2142,
+      "content": " time"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 218,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " time"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 219,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 220,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 221,
+      "token_id": 23286,
+      "content": " Tokyo"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 222,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Tokyo"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 223,
+      "token_id": 1395,
+      "content": " is"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 224,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " is"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 225,
+      "token_id": 1032,
+      "content": " "
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 226,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " "
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 227,
+      "token_id": 1050,
+      "content": "2"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 228,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "2"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 229,
+      "token_id": 1051,
+      "content": "3"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 230,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "3"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 231,
+      "token_id": 1058,
+      "content": ":"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 232,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ":"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 233,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 234,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "0"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 235,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 236,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "0"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 237,
+      "token_id": 1319,
+      "content": " ("
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 238,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " ("
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 239,
+      "token_id": 17526,
+      "content": "UTC"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 240,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "UTC"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 241,
+      "token_id": 1043,
+      "content": "+"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 242,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "+"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 243,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 244,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "0"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 245,
+      "token_id": 1057,
+      "content": "9"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 246,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "9"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 247,
+      "token_id": 1058,
+      "content": ":"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 248,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ":"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 249,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 250,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "0"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 251,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 252,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "0"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 253,
+      "token_id": 1577,
+      "content": ")."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 254,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ")."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 255,
+      "token_id": 1034,
+      "content": "\""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 256,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "\""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 257,
+      "token_id": 5646,
+      "content": " That"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 258,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " That"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 259,
+      "token_id": 7444,
+      "content": " seems"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 260,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " seems"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 261,
+      "token_id": 3683,
+      "content": " good"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 262,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " good"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 263,
+      "token_id": 1338,
+      "content": ".\n\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 264,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 265,
+      "token_id": 1073,
+      "content": "I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 266,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 267,
+      "token_id": 2715,
+      "content": " should"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 268,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " should"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 269,
+      "token_id": 2095,
+      "content": " also"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 270,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " also"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 271,
+      "token_id": 3369,
+      "content": " consider"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 272,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " consider"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 273,
+      "token_id": 1693,
+      "content": " if"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 274,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " if"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 275,
+      "token_id": 2156,
+      "content": " there"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 276,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " there"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 277,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 278,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 279,
+      "token_id": 2258,
+      "content": " any"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 280,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " any"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 281,
+      "token_id": 7481,
+      "content": " additional"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 282,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " additional"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 283,
+      "token_id": 5315,
+      "content": " context"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 284,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " context"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 285,
+      "token_id": 6618,
+      "content": " needed"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 286,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " needed"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 287,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 288,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 289,
+      "token_id": 1531,
+      "content": " The"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 290,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 291,
+      "token_id": 3330,
+      "content": " user"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 292,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " user"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 293,
+      "token_id": 4139,
+      "content": " might"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 294,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " might"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 295,
+      "token_id": 2933,
+      "content": " want"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 296,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " want"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 297,
+      "token_id": 2960,
+      "content": " both"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 298,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " both"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 299,
+      "token_id": 16897,
+      "content": " answers"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 300,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " answers"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 301,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 302,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 303,
+      "token_id": 1925,
+      "content": " one"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 304,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " one"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 305,
+      "token_id": 19286,
+      "content": " sentence"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 306,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " sentence"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 307,
+      "token_id": 1505,
+      "content": " or"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 308,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " or"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 309,
+      "token_id": 9960,
+      "content": " separate"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 310,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " separate"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 311,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 312,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 313,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 314,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 315,
+      "token_id": 7534,
+      "content": "'ll"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 316,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'ll"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 317,
+      "token_id": 5628,
+      "content": " give"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 318,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " give"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 319,
+      "token_id": 2960,
+      "content": " both"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 320,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " both"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 321,
+      "token_id": 1338,
+      "content": ".\n\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 322,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 323,
+      "token_id": 12082,
+      "content": "Now"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 324,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "Now"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 325,
+      "token_id": 1044,
+      "content": ","
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 326,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ","
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 327,
+      "token_id": 2778,
+      "content": " final"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 328,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " final"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 329,
+      "token_id": 4832,
+      "content": " answer"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 330,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " answer"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 331,
+      "token_id": 1626,
+      "content": ".\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 332,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 333,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 152,
+      "sequence_number": 334,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user asked for two things: weather in San Francisco and the time in Tokyo. I have both results. The weather in San Francisco is 65°F and foggy. The time in Tokyo is 23:00 (11:00 PM) with UTC+9. I should present both answers clearly. Let's format the response."
+      "text": "The user asked for both the weather in San Francisco and the time in Tokyo. I've used both tools: get_weather for San Francisco returned temperature 65°F, condition foggy. get_time for Asia/Tokyo returned time 23:00, timezone Tokyo, UTC+09:00.\n\nNow I need to present both answers. I'll combine them in a clear response. Let's format: \"The weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).\" That seems good.\n\nI should also consider if there's any additional context needed. The user might want both answers in one sentence or separate. I'll give both.\n\nNow, final answer."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 153,
+      "sequence_number": 335,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -2703,7 +4775,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user asked for two things: weather in San Francisco and the time in Tokyo. I have both results. The weather in San Francisco is 65°F and foggy. The time in Tokyo is 23:00 (11:00 PM) with UTC+9. I should present both answers clearly. Let's format the response."
+            "text": "The user asked for both the weather in San Francisco and the time in Tokyo. I've used both tools: get_weather for San Francisco returned temperature 65°F, condition foggy. get_time for Asia/Tokyo returned time 23:00, timezone Tokyo, UTC+09:00.\n\nNow I need to present both answers. I'll combine them in a clear response. Let's format: \"The weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).\" That seems good.\n\nI should also consider if there's any additional context needed. The user might want both answers in one sentence or separate. I'll give both.\n\nNow, final answer."
           }
         ],
         "encrypted_content": null
@@ -2711,13 +4783,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 154,
+      "sequence_number": 336,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 155,
+      "sequence_number": 337,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -2729,7 +4801,7 @@
     },
     {
       "type": "response.content_part.added",
-      "sequence_number": 156,
+      "sequence_number": 338,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2742,7 +4814,7 @@
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 157,
+      "sequence_number": 339,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2751,13 +4823,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 158,
+      "sequence_number": 340,
       "token_id": 1784,
       "content": "The"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 159,
+      "sequence_number": 341,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2766,28 +4838,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 160,
-      "token_id": 3519,
-      "content": " current"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 161,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " current",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 162,
+      "sequence_number": 342,
       "token_id": 17253,
       "content": " weather"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 163,
+      "sequence_number": 343,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2796,13 +4853,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 164,
+      "sequence_number": 344,
       "token_id": 1294,
       "content": " in"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 165,
+      "sequence_number": 345,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2811,13 +4868,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 166,
+      "sequence_number": 346,
       "token_id": 5151,
       "content": " San"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 167,
+      "sequence_number": 347,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2826,13 +4883,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 168,
+      "sequence_number": 348,
       "token_id": 12717,
       "content": " Francisco"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 169,
+      "sequence_number": 349,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2841,13 +4898,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 170,
+      "sequence_number": 350,
       "token_id": 1395,
       "content": " is"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 171,
+      "sequence_number": 351,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2856,28 +4913,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 172,
-      "token_id": 1603,
-      "content": " **"
+      "sequence_number": 352,
+      "token_id": 10548,
+      "content": " currently"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 173,
+      "sequence_number": 353,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " **",
+      "delta": " currently",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 174,
+      "sequence_number": 354,
+      "token_id": 1032,
+      "content": " "
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 355,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " ",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 356,
       "token_id": 1054,
       "content": "6"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 175,
+      "sequence_number": 357,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2886,13 +4958,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 176,
+      "sequence_number": 358,
       "token_id": 1053,
       "content": "5"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 177,
+      "sequence_number": 359,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2901,13 +4973,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 178,
+      "sequence_number": 360,
       "token_id": 4372,
       "content": "°"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 179,
+      "sequence_number": 361,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2916,13 +4988,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 180,
+      "sequence_number": 362,
       "token_id": 1070,
       "content": "F"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 181,
+      "sequence_number": 363,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2931,73 +5003,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 182,
-      "token_id": 1438,
-      "content": "**"
+      "sequence_number": 364,
+      "token_id": 1321,
+      "content": " and"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 183,
+      "sequence_number": 365,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "**",
+      "delta": " and",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 184,
-      "token_id": 1454,
-      "content": " with"
+      "sequence_number": 366,
+      "token_id": 24976,
+      "content": " fog"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 185,
+      "sequence_number": 367,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " with",
+      "delta": " fog",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 186,
-      "token_id": 1603,
-      "content": " **"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 187,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " **",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 188,
-      "token_id": 119780,
-      "content": "fog"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 189,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "fog",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 190,
+      "sequence_number": 368,
       "token_id": 2891,
       "content": "gy"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 191,
+      "sequence_number": 369,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3006,73 +5048,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 192,
-      "token_id": 1438,
-      "content": "**"
+      "sequence_number": 370,
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 193,
+      "sequence_number": 371,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "**",
+      "delta": ".",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 194,
-      "token_id": 5481,
-      "content": " conditions"
+      "sequence_number": 372,
+      "token_id": 1531,
+      "content": " The"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 195,
+      "sequence_number": 373,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " conditions",
+      "delta": " The",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 196,
-      "token_id": 1338,
-      "content": ".\n\n"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 197,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ".\n\n",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 198,
-      "token_id": 1784,
-      "content": "The"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 199,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "The",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 200,
+      "sequence_number": 374,
       "token_id": 3519,
       "content": " current"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 201,
+      "sequence_number": 375,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3081,13 +5093,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 202,
+      "sequence_number": 376,
       "token_id": 2142,
       "content": " time"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 203,
+      "sequence_number": 377,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3096,13 +5108,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 204,
+      "sequence_number": 378,
       "token_id": 1294,
       "content": " in"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 205,
+      "sequence_number": 379,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3111,13 +5123,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 206,
+      "sequence_number": 380,
       "token_id": 23286,
       "content": " Tokyo"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 207,
+      "sequence_number": 381,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3126,13 +5138,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 208,
+      "sequence_number": 382,
       "token_id": 1395,
       "content": " is"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 209,
+      "sequence_number": 383,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3141,28 +5153,28 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 210,
-      "token_id": 1603,
-      "content": " **"
+      "sequence_number": 384,
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 211,
+      "sequence_number": 385,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " **",
+      "delta": " ",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 212,
+      "sequence_number": 386,
       "token_id": 1050,
       "content": "2"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 213,
+      "sequence_number": 387,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3171,13 +5183,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 214,
+      "sequence_number": 388,
       "token_id": 1051,
       "content": "3"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 215,
+      "sequence_number": 389,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3186,13 +5198,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 216,
+      "sequence_number": 390,
       "token_id": 1058,
       "content": ":"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 217,
+      "sequence_number": 391,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3201,13 +5213,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 218,
+      "sequence_number": 392,
       "token_id": 1048,
       "content": "0"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 219,
+      "sequence_number": 393,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3216,13 +5228,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 220,
+      "sequence_number": 394,
       "token_id": 1048,
       "content": "0"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 221,
+      "sequence_number": 395,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3231,28 +5243,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 222,
-      "token_id": 1438,
-      "content": "**"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 223,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "**",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 224,
+      "sequence_number": 396,
       "token_id": 1319,
       "content": " ("
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 225,
+      "sequence_number": 397,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3261,238 +5258,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 226,
-      "token_id": 1049,
-      "content": "1"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 227,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "1",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 228,
-      "token_id": 1049,
-      "content": "1"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 229,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "1",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 230,
-      "token_id": 1058,
-      "content": ":"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 231,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ":",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 232,
-      "token_id": 1048,
-      "content": "0"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 233,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "0",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 234,
-      "token_id": 1048,
-      "content": "0"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 235,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "0",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 236,
-      "token_id": 18445,
-      "content": " PM"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 237,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " PM",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 238,
-      "token_id": 1041,
-      "content": ")"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 239,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ")",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 240,
-      "token_id": 1294,
-      "content": " in"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 241,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " in",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 242,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 243,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " the",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 244,
-      "token_id": 15188,
-      "content": " Asia"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 245,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " Asia",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 246,
-      "token_id": 27501,
-      "content": "/T"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 247,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "/T",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 248,
-      "token_id": 1662,
-      "content": "ok"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 249,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "ok",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 250,
-      "token_id": 13504,
-      "content": "yo"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 251,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "yo",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 252,
-      "token_id": 81542,
-      "content": " timezone"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 253,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " timezone",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 254,
-      "token_id": 1319,
-      "content": " ("
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 255,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " (",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 256,
+      "sequence_number": 398,
       "token_id": 17526,
       "content": "UTC"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 257,
+      "sequence_number": 399,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3501,13 +5273,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 258,
+      "sequence_number": 400,
       "token_id": 1043,
       "content": "+"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 259,
+      "sequence_number": 401,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3516,13 +5288,28 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 260,
+      "sequence_number": 402,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 403,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "0",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 404,
       "token_id": 1057,
       "content": "9"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 261,
+      "sequence_number": 405,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3531,13 +5318,58 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 262,
+      "sequence_number": 406,
+      "token_id": 1058,
+      "content": ":"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 407,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": ":",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 408,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 409,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "0",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 410,
+      "token_id": 1048,
+      "content": "0"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 411,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "0",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 412,
       "token_id": 1577,
       "content": ")."
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 263,
+      "sequence_number": 413,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3546,29 +5378,29 @@
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 264,
+      "sequence_number": 414,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "text": "\nThe current weather in San Francisco is **65°F** with **foggy** conditions.\n\nThe current time in Tokyo is **23:00** (11:00 PM) in the Asia/Tokyo timezone (UTC+9).",
+      "text": "\nThe weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).",
       "logprobs": []
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 265,
+      "sequence_number": 415,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
       "part": {
         "type": "output_text",
-        "text": "\nThe current weather in San Francisco is **65°F** with **foggy** conditions.\n\nThe current time in Tokyo is **23:00** (11:00 PM) in the Asia/Tokyo timezone (UTC+9).",
+        "text": "\nThe weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).",
         "annotations": [],
         "logprobs": []
       }
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 266,
+      "sequence_number": 416,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -3578,7 +5410,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "\nThe current weather in San Francisco is **65°F** with **foggy** conditions.\n\nThe current time in Tokyo is **23:00** (11:00 PM) in the Asia/Tokyo timezone (UTC+9).",
+            "text": "\nThe weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).",
             "annotations": [],
             "logprobs": []
           }
@@ -3587,7 +5419,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 267,
+      "sequence_number": 417,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -3595,8 +5427,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 11,
-        "stop_token": "<|im_end|>",
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -3607,7 +5437,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user asked for two things: weather in San Francisco and the time in Tokyo. I have both results. The weather in San Francisco is 65°F and foggy. The time in Tokyo is 23:00 (11:00 PM) with UTC+9. I should present both answers clearly. Let's format the response."
+                "text": "The user asked for both the weather in San Francisco and the time in Tokyo. I've used both tools: get_weather for San Francisco returned temperature 65°F, condition foggy. get_time for Asia/Tokyo returned time 23:00, timezone Tokyo, UTC+09:00.\n\nNow I need to present both answers. I'll combine them in a clear response. Let's format: \"The weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).\" That seems good.\n\nI should also consider if there's any additional context needed. The user might want both answers in one sentence or separate. I'll give both.\n\nNow, final answer."
               }
             ],
             "encrypted_content": null
@@ -3620,7 +5450,7 @@
             "content": [
               {
                 "type": "output_text",
-                "text": "\nThe current weather in San Francisco is **65°F** with **foggy** conditions.\n\nThe current time in Tokyo is **23:00** (11:00 PM) in the Asia/Tokyo timezone (UTC+9).",
+                "text": "\nThe weather in San Francisco is currently 65°F and foggy. The current time in Tokyo is 23:00 (UTC+09:00).",
                 "annotations": [],
                 "logprobs": []
               }
@@ -3629,15 +5459,17 @@
         ],
         "usage": {
           "input_tokens": 379,
-          "output_tokens": 55,
-          "total_tokens": 434,
+          "output_tokens": 39,
+          "total_tokens": 418,
           "input_tokens_details": {
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 75
+            "reasoning_tokens": 166
           }
-        }
+        },
+        "stop_token_id": 11,
+        "stop_token": "<|im_end|>"
       }
     },
     {

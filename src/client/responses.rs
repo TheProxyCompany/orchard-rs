@@ -2153,7 +2153,14 @@ impl Client {
             .map(|response_format| serde_json::to_string(&response_format).unwrap_or_default())
             .unwrap_or_default();
 
-        let rng_seed = rand::thread_rng().gen::<u64>();
+        // Deterministic requests omit the seed so the engine pins its own
+        // deterministic default; sending a fresh random seed made every
+        // "deterministic" request sample a different trajectory.
+        let rng_seed = if request.deterministic {
+            None
+        } else {
+            Some(rand::thread_rng().gen::<u64>())
+        };
         let temperature = request.temperature.unwrap_or_else(|| {
             formatter
                 .generation_default_f64("temperature")

@@ -559,10 +559,13 @@ impl Client {
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
         // Build PromptPayload with full multimodal data
         // Generate unique RNG seed if not explicitly provided
-        let rng_seed = if params.rng_seed == 0 {
-            rand::thread_rng().gen::<u64>()
+        let rng_seed = if params.rng_seed != 0 {
+            Some(params.rng_seed)
+        } else if params.deterministic {
+            // Omit the seed: the engine pins its deterministic default.
+            None
         } else {
-            params.rng_seed
+            Some(rand::thread_rng().gen::<u64>())
         };
 
         let prompt_payload = PromptPayload {
@@ -861,10 +864,13 @@ impl Client {
             );
 
             // Generate unique RNG seed for EACH prompt in batch
-            let rng_seed = if params.rng_seed == 0 {
-                rand::thread_rng().gen::<u64>()
+            let rng_seed = if params.rng_seed != 0 {
+                Some(params.rng_seed)
+            } else if params.deterministic {
+                // Omit the seed: the engine pins its deterministic default.
+                None
             } else {
-                params.rng_seed
+                Some(rand::thread_rng().gen::<u64>())
             };
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
@@ -1378,7 +1384,7 @@ fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
         top_p: defaults::TOP_P,
         top_k: defaults::TOP_K,
         min_p: 0.0,
-        rng_seed: rand::thread_rng().gen::<u64>(),
+        rng_seed: Some(rand::thread_rng().gen::<u64>()),
         deterministic: false,
         stop_sequences: Vec::new(),
         num_candidates: 1,
@@ -1451,7 +1457,13 @@ fn build_modal_artifact_prompt_payload(
         top_p: sampling_params.top_p,
         top_k: sampling_params.top_k,
         min_p: sampling_params.min_p,
-        rng_seed: sampling_params.rng_seed,
+        rng_seed: if sampling_params.rng_seed != 0 {
+            Some(sampling_params.rng_seed)
+        } else if sampling_params.deterministic {
+            None
+        } else {
+            Some(rand::thread_rng().gen::<u64>())
+        },
         deterministic: sampling_params.deterministic,
         task_name: Some(task_name.to_string()),
         modal_options_json,
@@ -1483,7 +1495,7 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
         top_p: defaults::TOP_P,
         top_k: defaults::TOP_K,
         min_p: 0.0,
-        rng_seed: rand::thread_rng().gen::<u64>(),
+        rng_seed: Some(rand::thread_rng().gen::<u64>()),
         deterministic: false,
         stop_sequences: Vec::new(),
         num_candidates: 1,

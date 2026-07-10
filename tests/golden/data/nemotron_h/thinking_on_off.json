@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -330,8 +330,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 2613,
-      "content": ".\""
+      "token_id": 4043,
+      "content": ".\"\n\n"
     },
     {
       "type": "response.reasoning.delta",
@@ -339,13 +339,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ".\""
+      "delta": ".\"\n\n"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 4493,
-      "content": " So"
+      "token_id": 4268,
+      "content": "We"
     },
     {
       "type": "response.reasoning.delta",
@@ -353,13 +353,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " So"
+      "delta": "We"
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 4832,
-      "content": " answer"
+      "token_id": 2534,
+      "content": " need"
     },
     {
       "type": "response.reasoning.delta",
@@ -367,13 +367,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " answer"
+      "delta": " need"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 1058,
-      "content": ":"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -381,13 +381,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ":"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 1032,
-      "content": " "
+      "token_id": 24002,
+      "content": " compute"
     },
     {
       "type": "response.reasoning.delta",
@@ -395,13 +395,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " "
+      "delta": " compute"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 1052,
-      "content": "4"
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -409,13 +409,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "4"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 1051,
-      "content": "3"
+      "token_id": 1049,
+      "content": "1"
     },
     {
       "type": "response.reasoning.delta",
@@ -423,13 +423,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "3"
+      "delta": "1"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1055,
+      "content": "7"
     },
     {
       "type": "response.reasoning.delta",
@@ -437,13 +437,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": "7"
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 26666,
-      "content": " Must"
+      "token_id": 1867,
+      "content": " +"
     },
     {
       "type": "response.reasoning.delta",
@@ -451,13 +451,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Must"
+      "delta": " +"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 22695,
-      "content": " reply"
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -465,13 +465,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " reply"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 1050,
+      "content": "2"
     },
     {
       "type": "response.reasoning.delta",
@@ -479,13 +479,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": "2"
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 2586,
-      "content": " just"
+      "token_id": 1054,
+      "content": "6"
     },
     {
       "type": "response.reasoning.delta",
@@ -493,13 +493,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " just"
+      "delta": "6"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 1376,
+      "content": " ="
     },
     {
       "type": "response.reasoning.delta",
@@ -507,13 +507,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " ="
     },
     {
       "type": "response.output_token",
       "sequence_number": 69,
-      "token_id": 2782,
-      "content": " number"
+      "token_id": 1032,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -521,13 +521,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " number"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 71,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 1052,
+      "content": "4"
     },
     {
       "type": "response.reasoning.delta",
@@ -535,13 +535,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": "4"
     },
     {
       "type": "response.output_token",
       "sequence_number": 73,
-      "token_id": 1836,
-      "content": " no"
+      "token_id": 1051,
+      "content": "3"
     },
     {
       "type": "response.reasoning.delta",
@@ -549,13 +549,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " no"
+      "delta": "3"
     },
     {
       "type": "response.output_token",
       "sequence_number": 75,
-      "token_id": 7185,
-      "content": " extra"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -563,13 +563,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " extra"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 77,
-      "token_id": 3403,
-      "content": " text"
+      "token_id": 4493,
+      "content": " So"
     },
     {
       "type": "response.reasoning.delta",
@@ -577,13 +577,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " text"
+      "delta": " So"
     },
     {
       "type": "response.output_token",
       "sequence_number": 79,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 22695,
+      "content": " reply"
     },
     {
       "type": "response.reasoning.delta",
@@ -591,13 +591,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " reply"
     },
     {
       "type": "response.output_token",
       "sequence_number": 81,
-      "token_id": 4493,
-      "content": " So"
+      "token_id": 1429,
+      "content": " \""
     },
     {
       "type": "response.reasoning.delta",
@@ -605,13 +605,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " So"
+      "delta": " \""
     },
     {
       "type": "response.output_token",
       "sequence_number": 83,
-      "token_id": 4848,
-      "content": " output"
+      "token_id": 1052,
+      "content": "4"
     },
     {
       "type": "response.reasoning.delta",
@@ -619,13 +619,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " output"
+      "delta": "4"
     },
     {
       "type": "response.output_token",
       "sequence_number": 85,
-      "token_id": 1429,
-      "content": " \""
+      "token_id": 1051,
+      "content": "3"
     },
     {
       "type": "response.reasoning.delta",
@@ -633,13 +633,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " \""
+      "delta": "3"
     },
     {
       "type": "response.output_token",
       "sequence_number": 87,
-      "token_id": 1052,
-      "content": "4"
+      "token_id": 3871,
+      "content": "\"."
     },
     {
       "type": "response.reasoning.delta",
@@ -647,13 +647,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "4"
+      "delta": "\"."
     },
     {
       "type": "response.output_token",
       "sequence_number": 89,
-      "token_id": 1051,
-      "content": "3"
+      "token_id": 3501,
+      "content": " No"
     },
     {
       "type": "response.reasoning.delta",
@@ -661,13 +661,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "3"
+      "delta": " No"
     },
     {
       "type": "response.output_token",
       "sequence_number": 91,
-      "token_id": 24483,
-      "content": "\".\n"
+      "token_id": 7185,
+      "content": " extra"
     },
     {
       "type": "response.reasoning.delta",
@@ -675,25 +675,53 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\".\n"
+      "delta": " extra"
     },
     {
       "type": "response.output_token",
       "sequence_number": 93,
+      "token_id": 3403,
+      "content": " text"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 94,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " text"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 95,
+      "token_id": 1626,
+      "content": ".\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 96,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 97,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 94,
+      "sequence_number": 98,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user asks: \"What is 17 + 26? Reply with just the number.\" So answer: 43. Must reply with just the number, no extra text. So output \"43\"."
+      "text": "The user asks: \"What is 17 + 26? Reply with just the number.\"\n\nWe need to compute 17 + 26 = 43. So reply \"43\". No extra text."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 95,
+      "sequence_number": 99,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -703,7 +731,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user asks: \"What is 17 + 26? Reply with just the number.\" So answer: 43. Must reply with just the number, no extra text. So output \"43\"."
+            "text": "The user asks: \"What is 17 + 26? Reply with just the number.\"\n\nWe need to compute 17 + 26 = 43. So reply \"43\". No extra text."
           }
         ],
         "encrypted_content": null
@@ -711,13 +739,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 96,
+      "sequence_number": 100,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 97,
+      "sequence_number": 101,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -729,7 +757,7 @@
     },
     {
       "type": "response.content_part.added",
-      "sequence_number": 98,
+      "sequence_number": 102,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -742,7 +770,7 @@
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 99,
+      "sequence_number": 103,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -751,13 +779,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 100,
+      "sequence_number": 104,
       "token_id": 1052,
       "content": "4"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 101,
+      "sequence_number": 105,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -766,13 +794,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 102,
+      "sequence_number": 106,
       "token_id": 1051,
       "content": "3"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 103,
+      "sequence_number": 107,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -781,7 +809,7 @@
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 104,
+      "sequence_number": 108,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -790,7 +818,7 @@
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 105,
+      "sequence_number": 109,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -803,7 +831,7 @@
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 106,
+      "sequence_number": 110,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -822,7 +850,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 107,
+      "sequence_number": 111,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -830,8 +858,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 11,
-        "stop_token": "<|im_end|>",
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -842,7 +868,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user asks: \"What is 17 + 26? Reply with just the number.\" So answer: 43. Must reply with just the number, no extra text. So output \"43\"."
+                "text": "The user asks: \"What is 17 + 26? Reply with just the number.\"\n\nWe need to compute 17 + 26 = 43. So reply \"43\". No extra text."
               }
             ],
             "encrypted_content": null
@@ -870,9 +896,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 46
+            "reasoning_tokens": 48
           }
-        }
+        },
+        "stop_token_id": 11,
+        "stop_token": "<|im_end|>"
       }
     },
     {
@@ -890,11 +918,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -907,11 +935,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -1020,8 +1048,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 11,
-        "stop_token": "<|im_end|>",
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -1049,7 +1075,9 @@
           "output_tokens_details": {
             "reasoning_tokens": 0
           }
-        }
+        },
+        "stop_token_id": 11,
+        "stop_token": "<|im_end|>"
       }
     },
     {

@@ -126,6 +126,29 @@ pub(crate) fn assert_or_record(
 ) {
     let live = normalize(events);
     let path = golden_path(template_type, scenario);
+
+    // GOLDEN_RECORD=1 rewrites the turn in place instead of asserting —
+    // required whenever the engine's sampled streams legitimately change
+    // (e.g. the fp32 logit-pipeline pin re-recorded every orchard-py golden;
+    // these files must be regenerated the same way or they assert against a
+    // retired engine).
+    if std::env::var_os("GOLDEN_RECORD").is_some() {
+        let mut data: Value = fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        data[turn] = Value::Array(live);
+        let serialized = serde_json::to_string_pretty(&data)
+            .unwrap_or_else(|err| panic!("failed to serialize golden {}: {}", path.display(), err));
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .unwrap_or_else(|err| panic!("failed to create {}: {}", parent.display(), err));
+        }
+        fs::write(&path, serialized)
+            .unwrap_or_else(|err| panic!("failed to write golden {}: {}", path.display(), err));
+        return;
+    }
+
     let text = fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("missing golden {}: {}", path.display(), err));
     let data: Value = serde_json::from_str(&text)

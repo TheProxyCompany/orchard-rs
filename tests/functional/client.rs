@@ -2,11 +2,11 @@
 //!
 //! Mirrors orchard-py/tests/functional/test_client.py
 //! Tests the embedded IPC client with both streaming and non-streaming.
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, ALL_MODELS};
 
 async fn run_client_chat_non_streaming(prompt: &str) {
     let fixture = get_fixture().await;
@@ -119,6 +119,7 @@ async fn run_client_chat_streaming(prompt: &str) {
 /// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_continuation() {
+    let _slot = volley_slot().await;
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with exactly five words: alpha beta gamma delta epsilon.",
     )
@@ -129,6 +130,7 @@ async fn test_client_chat_non_streaming_continuation() {
 /// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_plea() {
+    let _slot = volley_slot().await;
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with a 5 token plea for more tokens.",
     )
@@ -139,6 +141,7 @@ async fn test_client_chat_non_streaming_plea() {
 /// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_artist() {
+    let _slot = volley_slot().await;
     run_client_chat_streaming("Respond with your favorite musical artist of the last 10 years.")
         .await;
 }
@@ -147,6 +150,7 @@ async fn test_client_chat_streaming_artist() {
 /// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_movie() {
+    let _slot = volley_slot().await;
     run_client_chat_streaming("Respond with your favorite movie of the last 10 years.").await;
 }
 

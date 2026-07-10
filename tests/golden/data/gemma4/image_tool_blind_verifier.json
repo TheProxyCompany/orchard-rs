@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "google/gemma-4-E2B-it",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "google/gemma-4-E2B-it",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -656,8 +656,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 90,
-      "token_id": 506,
-      "content": " the"
+      "token_id": 11985,
+      "content": " receiving"
     },
     {
       "type": "response.reasoning.delta",
@@ -665,13 +665,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " receiving"
     },
     {
       "type": "response.output_token",
       "sequence_number": 92,
-      "token_id": 5904,
-      "content": " tool"
+      "token_id": 506,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -679,13 +679,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " tool"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 94,
-      "token_id": 7623,
-      "content": " returns"
+      "token_id": 2471,
+      "content": " image"
     },
     {
       "type": "response.reasoning.delta",
@@ -693,13 +693,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " returns"
+      "delta": " image"
     },
     {
       "type": "response.output_token",
       "sequence_number": 96,
-      "token_id": 506,
-      "content": " the"
+      "token_id": 1354,
+      "content": " result"
     },
     {
       "type": "response.reasoning.delta",
@@ -707,13 +707,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " result"
     },
     {
       "type": "response.output_token",
       "sequence_number": 98,
-      "token_id": 2471,
-      "content": " image"
+      "token_id": 236764,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -721,13 +721,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " image"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 100,
-      "token_id": 236764,
-      "content": ","
+      "token_id": 9779,
+      "content": " describe"
     },
     {
       "type": "response.reasoning.delta",
@@ -735,13 +735,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": " describe"
     },
     {
       "type": "response.output_token",
       "sequence_number": 102,
-      "token_id": 9779,
-      "content": " describe"
+      "token_id": 1144,
+      "content": " what"
     },
     {
       "type": "response.reasoning.delta",
@@ -749,13 +749,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " describe"
+      "delta": " what"
     },
     {
       "type": "response.output_token",
       "sequence_number": 104,
-      "token_id": 506,
-      "content": " the"
+      "token_id": 2495,
+      "content": " object"
     },
     {
       "type": "response.reasoning.delta",
@@ -763,13 +763,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " object"
     },
     {
       "type": "response.output_token",
       "sequence_number": 106,
-      "token_id": 2495,
-      "content": " object"
+      "token_id": 563,
+      "content": " is"
     },
     {
       "type": "response.reasoning.delta",
@@ -777,7 +777,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " object"
+      "delta": " is"
     },
     {
       "type": "response.output_token",
@@ -1034,8 +1034,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 144,
-      "token_id": 607,
-      "content": " with"
+      "token_id": 236761,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -1043,431 +1043,25 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 146,
-      "token_id": 614,
-      "content": " an"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 147,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " an"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 148,
-      "token_id": 6780,
-      "content": " appropriate"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 149,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " appropriate"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 150,
-      "token_id": 11172,
-      "content": " prompt"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 151,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " prompt"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 152,
-      "token_id": 236761,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 153,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 154,
-      "token_id": 107,
-      "content": "\n"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 155,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 156,
-      "token_id": 11407,
-      "content": "Then"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 157,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "Then"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 158,
-      "token_id": 236764,
-      "content": ","
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 159,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ","
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 160,
-      "token_id": 564,
-      "content": " I"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 161,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " I"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 162,
-      "token_id": 795,
-      "content": " will"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 163,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " will"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 164,
-      "token_id": 4491,
-      "content": " wait"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 165,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " wait"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 166,
-      "token_id": 573,
-      "content": " for"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 167,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " for"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 168,
-      "token_id": 506,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 169,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 170,
-      "token_id": 5904,
-      "content": " tool"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 171,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " tool"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 172,
-      "token_id": 236789,
-      "content": "'"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 173,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 174,
-      "token_id": 236751,
-      "content": "s"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 175,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "s"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 176,
-      "token_id": 3938,
-      "content": " output"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 177,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " output"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 178,
-      "token_id": 532,
-      "content": " and"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 179,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " and"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 180,
-      "token_id": 1299,
-      "content": " then"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 181,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " then"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 182,
-      "token_id": 3890,
-      "content": " answer"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 183,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " answer"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 184,
-      "token_id": 506,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 185,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 186,
-      "token_id": 2430,
-      "content": " user"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 187,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " user"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 188,
-      "token_id": 236789,
-      "content": "'"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 189,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 190,
-      "token_id": 236751,
-      "content": "s"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 191,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "s"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 192,
-      "token_id": 2864,
-      "content": " request"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 193,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " request"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 194,
-      "token_id": 2721,
-      "content": " based"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 195,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " based"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 196,
-      "token_id": 580,
-      "content": " on"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 197,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " on"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 198,
-      "token_id": 600,
-      "content": " that"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 199,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " that"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 200,
-      "token_id": 3938,
-      "content": " output"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 201,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " output"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 202,
-      "token_id": 236761,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 203,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 204,
       "token_id": 101,
       "content": "<channel|>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 205,
+      "sequence_number": 147,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After the tool returns the image, describe the object in the generated image.\n\nI need to call the `generate_image` tool first with an appropriate prompt.\nThen, I will wait for the tool's output and then answer the user's request based on that output."
+      "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After receiving the image result, describe what object is in the generated image.\n\nI need to call the `generate_image` tool first."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 206,
+      "sequence_number": 148,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -1477,7 +1071,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After the tool returns the image, describe the object in the generated image.\n\nI need to call the `generate_image` tool first with an appropriate prompt.\nThen, I will wait for the tool's output and then answer the user's request based on that output."
+            "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After receiving the image result, describe what object is in the generated image.\n\nI need to call the `generate_image` tool first."
           }
         ],
         "encrypted_content": null
@@ -1485,43 +1079,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 207,
+      "sequence_number": 149,
       "token_id": 48,
       "content": "<|tool_call>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 208,
+      "sequence_number": 150,
       "token_id": 6639,
       "content": "call"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 209,
+      "sequence_number": 151,
       "token_id": 236787,
       "content": ":"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 210,
+      "sequence_number": 152,
       "token_id": 19057,
       "content": "generate"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 211,
+      "sequence_number": 153,
       "token_id": 236779,
       "content": "_"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 212,
+      "sequence_number": 154,
       "token_id": 3304,
       "content": "image"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 213,
+      "sequence_number": 155,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -1534,37 +1128,37 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 214,
+      "sequence_number": 156,
       "token_id": 236782,
       "content": "{"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 215,
+      "sequence_number": 157,
       "token_id": 32061,
       "content": "prompt"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 216,
+      "sequence_number": 158,
       "token_id": 236787,
       "content": ":"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 217,
+      "sequence_number": 159,
       "token_id": 52,
       "content": "<|\"|>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 218,
+      "sequence_number": 160,
       "token_id": 811,
       "content": "one"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 219,
+      "sequence_number": 161,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "one",
@@ -1572,13 +1166,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 220,
+      "sequence_number": 162,
       "token_id": 2604,
       "content": " red"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 221,
+      "sequence_number": 163,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " red",
@@ -1586,13 +1180,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 222,
+      "sequence_number": 164,
       "token_id": 17810,
       "content": " apple"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 223,
+      "sequence_number": 165,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " apple",
@@ -1600,13 +1194,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 224,
+      "sequence_number": 166,
       "token_id": 32452,
       "content": " centered"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 225,
+      "sequence_number": 167,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " centered",
@@ -1614,13 +1208,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 226,
+      "sequence_number": 168,
       "token_id": 580,
       "content": " on"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 227,
+      "sequence_number": 169,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " on",
@@ -1628,13 +1222,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 228,
+      "sequence_number": 170,
       "token_id": 496,
       "content": " a"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 229,
+      "sequence_number": 171,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " a",
@@ -1642,13 +1236,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 230,
+      "sequence_number": 172,
       "token_id": 14529,
       "content": " plain"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 231,
+      "sequence_number": 173,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " plain",
@@ -1656,13 +1250,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 232,
+      "sequence_number": 174,
       "token_id": 2173,
       "content": " white"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 233,
+      "sequence_number": 175,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " white",
@@ -1670,13 +1264,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 234,
+      "sequence_number": 176,
       "token_id": 1695,
       "content": " background"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 235,
+      "sequence_number": 177,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": " background",
@@ -1684,19 +1278,19 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 236,
+      "sequence_number": 178,
       "token_id": 52,
       "content": "<|\"|>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 237,
+      "sequence_number": 179,
       "token_id": 236783,
       "content": "}"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 238,
+      "sequence_number": 180,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "{\"prompt\":\"one red apple centered on a plain white background\"}",
@@ -1704,14 +1298,14 @@
     },
     {
       "type": "response.function_call_arguments.done",
-      "sequence_number": 239,
+      "sequence_number": 181,
       "item_id": "fc_0",
       "output_index": 1,
       "arguments": "{\"prompt\": \"one red apple centered on a plain white background\"}"
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 240,
+      "sequence_number": 182,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -1724,13 +1318,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 241,
+      "sequence_number": 183,
       "token_id": 49,
       "content": "<tool_call|>"
     },
     {
       "type": "response.completed",
-      "sequence_number": 242,
+      "sequence_number": 184,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -1738,8 +1332,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "google/gemma-4-E2B-it",
         "output": [
           {
@@ -1750,7 +1342,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After the tool returns the image, describe the object in the generated image.\n\nI need to call the `generate_image` tool first with an appropriate prompt.\nThen, I will wait for the tool's output and then answer the user's request based on that output."
+                "text": "The user wants me to perform two steps:\n1.  Use the `generate_image` tool to create an image of \"one red apple centered on a plain white background\".\n2.  After receiving the image result, describe what object is in the generated image.\n\nI need to call the `generate_image` tool first."
               }
             ],
             "encrypted_content": null
@@ -1772,9 +1364,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 100
+            "reasoning_tokens": 71
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {

@@ -1,16 +1,17 @@
 //! End-to-end basic chat completion tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_basic.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_basic.py::test_chat_completion_first_token
 #[tokio::test]
 async fn test_chat_completion_first_token() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {
         let params = SamplingParams {
@@ -64,6 +65,7 @@ async fn test_chat_completion_first_token() {
 /// Mirrors: test_basic.py::test_chat_completion_multi_token
 #[tokio::test]
 async fn test_chat_completion_multi_token() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {
         let params = SamplingParams {

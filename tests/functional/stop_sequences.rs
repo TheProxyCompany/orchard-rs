@@ -1,16 +1,17 @@
 //! End-to-end stop sequence tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_stop_sequences.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test stop sequence on "blue" - should output red, white, blue and stop at blue.
 /// Mirrors: test_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
 async fn test_chat_completion_respects_stop_sequence() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {

@@ -1,11 +1,11 @@
 //! End-to-end determinism tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_determinism.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, ALL_MODELS};
 
 async fn run_multi_candidate_determinism(batch_size: i32) {
     use std::collections::HashMap;
@@ -198,21 +198,25 @@ async fn run_sequential_request_determinism() {
 /// Mirrors: test_determinism.py::test_multi_candidate_determinism
 #[tokio::test]
 async fn test_multi_candidate_determinism_n2() {
+    let _slot = volley_slot().await;
     run_multi_candidate_determinism(2).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n4() {
+    let _slot = volley_slot().await;
     run_multi_candidate_determinism(4).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n8() {
+    let _slot = volley_slot().await;
     run_multi_candidate_determinism(8).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n16() {
+    let _slot = volley_slot().await;
     run_multi_candidate_determinism(16).await;
 }
 
@@ -220,5 +224,6 @@ async fn test_multi_candidate_determinism_n16() {
 /// Mirrors: test_determinism.py::test_sequential_request_determinism
 #[tokio::test]
 async fn test_sequential_request_determinism() {
+    let _slot = volley_slot().await;
     run_sequential_request_determinism().await;
 }

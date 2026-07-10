@@ -8,7 +8,9 @@ use orchard::{
 };
 use serde_json::{json, Value};
 
-use crate::fixture::{get_fixture, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID};
+use crate::fixture::{
+    get_fixture, volley_slot, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID,
+};
 use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
@@ -231,7 +233,13 @@ fn request(input: Vec<ResponseInputItem>) -> ResponsesRequest {
         input: ResponsesInput::Items(input),
         stream: true,
         instructions: None,
-        temperature: Some(0.0),
+        // None resolves each model's generation.yaml sampling defaults — the
+        // same resolution orchard-py's server applies to its golden requests.
+        // Pinning 0.0 here ran these cases greedy while py sampled with the
+        // deterministic seed: greedy argmax locked qwen3.5 into an 8k-token
+        // thinking loop and parked gpt_oss turn-2 continuations on a
+        // bistable knife-edge that flipped with batch composition.
+        temperature: None,
         top_p: None,
         top_k: None,
         min_p: None,
@@ -450,6 +458,7 @@ fn model_by_checkpoint(checkpoint: &str) -> Model {
 
 #[tokio::test]
 async fn test_thinking_on_off() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a careful assistant. Answer the user's question correctly.";
     const QUESTION: &str = "What is 17 + 26? Reply with just the number.";
     const ANSWER: &str = "43";
@@ -553,6 +562,7 @@ async fn test_thinking_on_off() {
 
 #[tokio::test]
 async fn test_reason_then_structured() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a helpful assistant. Reason about the request, then return the answer as a single JSON object that matches the requested schema exactly.";
     const USER: &str = "Return the capital of France and its population. Use the capital string \"Paris\" and the integer literal 2148327 (no decimal point).";
     let expected = json!({"capital": "Paris", "population": 2148327});
@@ -632,6 +642,7 @@ async fn test_reason_then_structured() {
 
 #[tokio::test]
 async fn test_reason_then_tool() {
+    let _slot = volley_slot().await;
     for &model in MODELS {
         if !model.tools {
             continue;
@@ -749,6 +760,7 @@ async fn test_reason_then_tool() {
 
 #[tokio::test]
 async fn test_tool_result_grounding() {
+    let _slot = volley_slot().await;
     let surprise_result = json!({"temperature": 9, "unit": "celsius", "condition": "snowing"});
 
     for &model in MODELS {
@@ -877,6 +889,7 @@ async fn test_tool_result_grounding() {
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -1053,6 +1066,7 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier_flux() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -1238,6 +1252,7 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1418,6 +1433,7 @@ async fn test_image_edit_tool_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier_flux() {
+    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1597,6 +1613,7 @@ async fn test_image_edit_tool_blind_verifier_flux() {
 
 #[tokio::test]
 async fn test_audio_telephone_tts_to_speech_to_text() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     for (tts_label, tts_model_id) in TTS_MODELS {
         for phrase in AUDIO_TELEPHONE_PHRASES {
@@ -1646,6 +1663,7 @@ async fn test_audio_telephone_tts_to_speech_to_text() {
 
 #[tokio::test]
 async fn test_tool_selection() {
+    let _slot = volley_slot().await;
     let distractors = vec![
         tool(
             "get_time",
@@ -1835,6 +1853,7 @@ async fn test_tool_selection() {
 
 #[tokio::test]
 async fn test_tool_chaining() {
+    let _slot = volley_slot().await;
     const KEY: &str = "K7-MAGENTA-9931";
     const CHEST_CONTENTS: &str = "a jade dragon figurine";
     let find_key = tool(
@@ -2000,6 +2019,7 @@ async fn test_tool_chaining() {
 
 #[tokio::test]
 async fn test_multi_tool() {
+    let _slot = volley_slot().await;
     let tools = vec![weather_tool(), get_time_tool()];
     const SYSTEM: &str = "You are a helpful assistant with tool calling. Call the tools you need to answer the request, then use their results to give the final answer.";
 

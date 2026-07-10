@@ -1,18 +1,19 @@
 //! End-to-end multi-candidate generation tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_multi_candidate.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 
 use std::collections::HashMap;
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test non-streaming multi-candidate responses return the expected number of choices.
 /// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_non_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -81,6 +82,7 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
 /// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_streaming() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {

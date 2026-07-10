@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -92,8 +92,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 9,
-      "token_id": 3081,
-      "content": " find"
+      "token_id": 2685,
+      "content": " follow"
     },
     {
       "type": "response.reasoning.delta",
@@ -101,7 +101,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " find"
+      "delta": " follow"
     },
     {
       "type": "response.output_token",
@@ -120,8 +120,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 13,
-      "token_id": 3844,
-      "content": " key"
+      "token_id": 3330,
+      "content": " user"
     },
     {
       "type": "response.reasoning.delta",
@@ -129,13 +129,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " key"
+      "delta": " user"
     },
     {
       "type": "response.output_token",
       "sequence_number": 15,
-      "token_id": 1294,
-      "content": " in"
+      "token_id": 1681,
+      "content": "'s"
     },
     {
       "type": "response.reasoning.delta",
@@ -143,13 +143,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " in"
+      "delta": "'s"
     },
     {
       "type": "response.output_token",
       "sequence_number": 17,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 4546,
+      "content": " request"
     },
     {
       "type": "response.reasoning.delta",
@@ -157,13 +157,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " request"
     },
     {
       "type": "response.output_token",
       "sequence_number": 19,
-      "token_id": 11329,
-      "content": " library"
+      "token_id": 5966,
+      "content": " step"
     },
     {
       "type": "response.reasoning.delta",
@@ -171,13 +171,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " library"
+      "delta": " step"
     },
     {
       "type": "response.output_token",
       "sequence_number": 21,
-      "token_id": 2158,
-      "content": " first"
+      "token_id": 1536,
+      "content": " by"
     },
     {
       "type": "response.reasoning.delta",
@@ -185,13 +185,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " first"
+      "delta": " by"
     },
     {
       "type": "response.output_token",
       "sequence_number": 23,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 5966,
+      "content": " step"
     },
     {
       "type": "response.reasoning.delta",
@@ -199,13 +199,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": " step"
     },
     {
       "type": "response.output_token",
       "sequence_number": 25,
-      "token_id": 2430,
-      "content": " then"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -213,13 +213,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " then"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 27,
-      "token_id": 2210,
-      "content": " use"
+      "token_id": 7610,
+      "content": " First"
     },
     {
       "type": "response.reasoning.delta",
@@ -227,13 +227,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " use"
+      "delta": " First"
     },
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 1455,
-      "content": " that"
+      "token_id": 1044,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -241,13 +241,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " that"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 3844,
-      "content": " key"
+      "token_id": 3081,
+      "content": " find"
     },
     {
       "type": "response.reasoning.delta",
@@ -255,13 +255,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " key"
+      "delta": " find"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 1317,
-      "content": " to"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -269,13 +269,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " to"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 46049,
-      "content": " unlock"
+      "token_id": 3844,
+      "content": " key"
     },
     {
       "type": "response.reasoning.delta",
@@ -283,13 +283,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " unlock"
+      "delta": " key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 16052,
+      "content": " hidden"
     },
     {
       "type": "response.reasoning.delta",
@@ -297,13 +297,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " hidden"
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 67251,
-      "content": " treasure"
+      "token_id": 1294,
+      "content": " in"
     },
     {
       "type": "response.reasoning.delta",
@@ -311,13 +311,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " treasure"
+      "delta": " in"
     },
     {
       "type": "response.output_token",
       "sequence_number": 41,
-      "token_id": 15448,
-      "content": " chest"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -325,13 +325,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " chest"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 11329,
+      "content": " library"
     },
     {
       "type": "response.reasoning.delta",
@@ -339,13 +339,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " library"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 9246,
-      "content": " Let"
+      "token_id": 2505,
+      "content": " using"
     },
     {
       "type": "response.reasoning.delta",
@@ -353,13 +353,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Let"
+      "delta": " using"
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 1639,
-      "content": " me"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -367,13 +367,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " me"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 3030,
-      "content": " start"
+      "token_id": 3081,
+      "content": " find"
     },
     {
       "type": "response.reasoning.delta",
@@ -381,13 +381,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " start"
+      "delta": " find"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 1536,
-      "content": " by"
+      "token_id": 13286,
+      "content": "_key"
     },
     {
       "type": "response.reasoning.delta",
@@ -395,13 +395,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " by"
+      "delta": "_key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 14388,
-      "content": " calling"
+      "token_id": 9519,
+      "content": " tool"
     },
     {
       "type": "response.reasoning.delta",
@@ -409,13 +409,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " calling"
+      "delta": " tool"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 3081,
-      "content": " find"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -423,13 +423,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " find"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 13286,
-      "content": "_key"
+      "token_id": 6830,
+      "content": " Then"
     },
     {
       "type": "response.reasoning.delta",
@@ -437,13 +437,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "_key"
+      "delta": " Then"
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 2210,
+      "content": " use"
     },
     {
       "type": "response.reasoning.delta",
@@ -451,13 +451,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": " use"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 5349,
-      "content": " room"
+      "token_id": 1455,
+      "content": " that"
     },
     {
       "type": "response.reasoning.delta",
@@ -465,13 +465,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " room"
+      "delta": " that"
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 1429,
-      "content": " \""
+      "token_id": 3844,
+      "content": " key"
     },
     {
       "type": "response.reasoning.delta",
@@ -479,13 +479,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " \""
+      "delta": " key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 40693,
-      "content": "library"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -493,13 +493,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "library"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
-      "token_id": 24483,
-      "content": "\".\n"
+      "token_id": 46049,
+      "content": " unlock"
     },
     {
       "type": "response.reasoning.delta",
@@ -507,25 +507,431 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\".\n"
+      "delta": " unlock"
     },
     {
       "type": "response.output_token",
       "sequence_number": 69,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 70,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 71,
+      "token_id": 67251,
+      "content": " treasure"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 72,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " treasure"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 73,
+      "token_id": 15448,
+      "content": " chest"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 74,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " chest"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 75,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 76,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " with"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 77,
+      "token_id": 46049,
+      "content": " unlock"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 78,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " unlock"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 79,
+      "token_id": 17936,
+      "content": "_ch"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 80,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_ch"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 81,
+      "token_id": 1372,
+      "content": "est"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 82,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "est"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 83,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 84,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 85,
+      "token_id": 15513,
+      "content": " Finally"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 86,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Finally"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 87,
+      "token_id": 1044,
+      "content": ","
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 88,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ","
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 89,
+      "token_id": 5584,
+      "content": " tell"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 90,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " tell"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 91,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 92,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 93,
+      "token_id": 3330,
+      "content": " user"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 94,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " user"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 95,
+      "token_id": 2549,
+      "content": " what"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 96,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " what"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 97,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 98,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 99,
+      "token_id": 6625,
+      "content": " inside"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 100,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " inside"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 101,
+      "token_id": 1338,
+      "content": ".\n\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 102,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 103,
+      "token_id": 12598,
+      "content": "Let"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 104,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "Let"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 105,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 106,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 107,
+      "token_id": 3030,
+      "content": " start"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 108,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " start"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 109,
+      "token_id": 1536,
+      "content": " by"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 110,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " by"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 111,
+      "token_id": 14388,
+      "content": " calling"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 112,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " calling"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 113,
+      "token_id": 3081,
+      "content": " find"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 114,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " find"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 115,
+      "token_id": 13286,
+      "content": "_key"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 116,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 117,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 118,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " with"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 119,
+      "token_id": 5349,
+      "content": " room"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 120,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " room"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 121,
+      "token_id": 1429,
+      "content": " \""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 122,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " \""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 123,
+      "token_id": 40693,
+      "content": "library"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 124,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "library"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 125,
+      "token_id": 24483,
+      "content": "\".\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 126,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "\".\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 127,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 70,
+      "sequence_number": 128,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "I need to find the key in the library first, then use that key to unlock the treasure chest. Let me start by calling find_key with room \"library\"."
+      "text": "I need to follow the user's request step by step. First, find the key hidden in the library using the find_key tool. Then use that key to unlock the treasure chest with unlock_chest. Finally, tell the user what's inside.\n\nLet's start by calling find_key with room \"library\"."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 71,
+      "sequence_number": 129,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -535,7 +941,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "I need to find the key in the library first, then use that key to unlock the treasure chest. Let me start by calling find_key with room \"library\"."
+            "text": "I need to follow the user's request step by step. First, find the key hidden in the library using the find_key tool. Then use that key to unlock the treasure chest with unlock_chest. Finally, tell the user what's inside.\n\nLet's start by calling find_key with room \"library\"."
           }
         ],
         "encrypted_content": null
@@ -543,55 +949,55 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 72,
+      "sequence_number": 130,
       "token_id": 14,
       "content": "<tool_call>"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 73,
+      "sequence_number": 131,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 74,
+      "sequence_number": 132,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 75,
+      "sequence_number": 133,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 76,
+      "sequence_number": 134,
       "token_id": 1061,
       "content": "="
     },
     {
       "type": "response.output_token",
-      "sequence_number": 77,
+      "sequence_number": 135,
       "token_id": 8697,
       "content": "find"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 78,
+      "sequence_number": 136,
       "token_id": 13286,
       "content": "_key"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 79,
+      "sequence_number": 137,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 80,
+      "sequence_number": 138,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -604,43 +1010,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 81,
+      "sequence_number": 139,
       "token_id": 1060,
       "content": "<"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 82,
+      "sequence_number": 140,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 83,
+      "sequence_number": 141,
       "token_id": 1061,
       "content": "="
     },
     {
       "type": "response.output_token",
-      "sequence_number": 84,
+      "sequence_number": 142,
       "token_id": 9722,
       "content": "room"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 85,
+      "sequence_number": 143,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 86,
+      "sequence_number": 144,
       "token_id": 40693,
       "content": "library"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 87,
+      "sequence_number": 145,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "library",
@@ -648,49 +1054,49 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 88,
+      "sequence_number": 146,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 89,
+      "sequence_number": 147,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 90,
+      "sequence_number": 148,
       "token_id": 31960,
       "content": "parameter"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 91,
+      "sequence_number": 149,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 92,
+      "sequence_number": 150,
       "token_id": 1885,
       "content": "</"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 93,
+      "sequence_number": 151,
       "token_id": 5165,
       "content": "function"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 94,
+      "sequence_number": 152,
       "token_id": 1561,
       "content": ">\n"
     },
     {
       "type": "response.function_call_arguments.delta",
-      "sequence_number": 95,
+      "sequence_number": 153,
       "item_id": "fc_0",
       "output_index": 1,
       "delta": "{\"room\":\"library\"}",
@@ -698,14 +1104,14 @@
     },
     {
       "type": "response.function_call_arguments.done",
-      "sequence_number": 96,
+      "sequence_number": 154,
       "item_id": "fc_0",
       "output_index": 1,
       "arguments": "{\"room\": \"library\"}"
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 97,
+      "sequence_number": 155,
       "output_index": 1,
       "item": {
         "type": "function_call",
@@ -718,13 +1124,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 98,
+      "sequence_number": 156,
       "token_id": 15,
       "content": "</tool_call>"
     },
     {
       "type": "response.completed",
-      "sequence_number": 99,
+      "sequence_number": 157,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -732,8 +1138,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -744,7 +1148,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "I need to find the key in the library first, then use that key to unlock the treasure chest. Let me start by calling find_key with room \"library\"."
+                "text": "I need to follow the user's request step by step. First, find the key hidden in the library using the find_key tool. Then use that key to unlock the treasure chest with unlock_chest. Finally, tell the user what's inside.\n\nLet's start by calling find_key with room \"library\"."
               }
             ],
             "encrypted_content": null
@@ -766,9 +1170,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 34
+            "reasoning_tokens": 63
           }
-        }
+        },
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -786,11 +1192,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -803,1065 +1209,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [],
-        "usage": null
-      }
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 2,
-      "token_id": 1784,
-      "content": "The"
-    },
-    {
-      "type": "response.output_item.added",
-      "sequence_number": 3,
-      "output_index": 0,
-      "item": {
-        "type": "reasoning",
-        "id": "reasoning_0",
-        "status": "in_progress",
-        "summary": [],
-        "content": [],
-        "encrypted_content": null
-      }
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 4,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "The"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 5,
-      "token_id": 3081,
-      "content": " find"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 6,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " find"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 7,
-      "token_id": 13286,
-      "content": "_key"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 8,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "_key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 9,
-      "token_id": 9519,
-      "content": " tool"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 10,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " tool"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 11,
-      "token_id": 8583,
-      "content": " returned"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 12,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " returned"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 13,
-      "token_id": 1261,
-      "content": " a"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 14,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " a"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 15,
-      "token_id": 3844,
-      "content": " key"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 16,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 17,
-      "token_id": 1058,
-      "content": ":"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 18,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ":"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 19,
-      "token_id": 1429,
-      "content": " \""
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 20,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " \""
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 21,
-      "token_id": 1075,
-      "content": "K"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 22,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "K"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 23,
-      "token_id": 1055,
-      "content": "7"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 24,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "7"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 25,
-      "token_id": 5036,
-      "content": "-M"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 26,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "-M"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 27,
-      "token_id": 6970,
-      "content": "AG"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 28,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "AG"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 29,
-      "token_id": 8911,
-      "content": "ENT"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 30,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "ENT"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 31,
-      "token_id": 1065,
-      "content": "A"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 32,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "A"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 33,
-      "token_id": 1045,
-      "content": "-"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 34,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "-"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 35,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 36,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "9"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 37,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 38,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "9"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 39,
-      "token_id": 1051,
-      "content": "3"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 40,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "3"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 41,
-      "token_id": 1049,
-      "content": "1"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 42,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "1"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 43,
-      "token_id": 3871,
-      "content": "\"."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 44,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "\"."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 45,
-      "token_id": 9032,
-      "content": " Now"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 46,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " Now"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 47,
-      "token_id": 1362,
-      "content": " I"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 48,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " I"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 49,
-      "token_id": 2534,
-      "content": " need"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 50,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " need"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 51,
-      "token_id": 1317,
-      "content": " to"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 52,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " to"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 53,
-      "token_id": 46049,
-      "content": " unlock"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 54,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " unlock"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 55,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 56,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 57,
-      "token_id": 67251,
-      "content": " treasure"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 58,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " treasure"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 59,
-      "token_id": 15448,
-      "content": " chest"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 60,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " chest"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 61,
-      "token_id": 1454,
-      "content": " with"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 62,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " with"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 63,
-      "token_id": 1593,
-      "content": " this"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 64,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " this"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 65,
-      "token_id": 3844,
-      "content": " key"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 66,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 67,
-      "token_id": 2505,
-      "content": " using"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 68,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " using"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 69,
-      "token_id": 46049,
-      "content": " unlock"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 70,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " unlock"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 71,
-      "token_id": 17936,
-      "content": "_ch"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 72,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "_ch"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 73,
-      "token_id": 1372,
-      "content": "est"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 74,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "est"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 75,
-      "token_id": 1046,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 76,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 77,
-      "token_id": 9246,
-      "content": " Let"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 78,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " Let"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 79,
-      "token_id": 1681,
-      "content": "'s"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 80,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'s"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 81,
-      "token_id": 1653,
-      "content": " do"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 82,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " do"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 83,
-      "token_id": 1455,
-      "content": " that"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 84,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " that"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 85,
-      "token_id": 1626,
-      "content": ".\n"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 86,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ".\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 87,
-      "token_id": 13,
-      "content": "</think>"
-    },
-    {
-      "type": "response.reasoning.done",
-      "sequence_number": 88,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "text": "The find_key tool returned a key: \"K7-MAGENTA-9931\". Now I need to unlock the treasure chest with this key using unlock_chest. Let's do that."
-    },
-    {
-      "type": "response.output_item.done",
-      "sequence_number": 89,
-      "output_index": 0,
-      "item": {
-        "type": "reasoning",
-        "id": "reasoning_0",
-        "status": "completed",
-        "summary": [],
-        "content": [
-          {
-            "type": "reasoning_text",
-            "text": "The find_key tool returned a key: \"K7-MAGENTA-9931\". Now I need to unlock the treasure chest with this key using unlock_chest. Let's do that."
-          }
-        ],
-        "encrypted_content": null
-      }
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 90,
-      "token_id": 14,
-      "content": "<tool_call>"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 91,
-      "token_id": 1010,
-      "content": "\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 92,
-      "token_id": 1060,
-      "content": "<"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 93,
-      "token_id": 5165,
-      "content": "function"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 94,
-      "token_id": 1061,
-      "content": "="
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 95,
-      "token_id": 1384,
-      "content": "un"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 96,
-      "token_id": 10559,
-      "content": "lock"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 97,
-      "token_id": 17936,
-      "content": "_ch"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 98,
-      "token_id": 1372,
-      "content": "est"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 99,
-      "token_id": 1561,
-      "content": ">\n"
-    },
-    {
-      "type": "response.output_item.added",
-      "sequence_number": 100,
-      "output_index": 1,
-      "item": {
-        "type": "function_call",
-        "id": "fc_0",
-        "call_id": "call_0",
-        "name": "unlock_chest",
-        "arguments": "",
-        "status": "in_progress"
-      }
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 101,
-      "token_id": 1060,
-      "content": "<"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 102,
-      "token_id": 31960,
-      "content": "parameter"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 103,
-      "token_id": 1061,
-      "content": "="
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 104,
-      "token_id": 3892,
-      "content": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 105,
-      "token_id": 1561,
-      "content": ">\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 106,
-      "token_id": 1075,
-      "content": "K"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 107,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "K",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 108,
-      "token_id": 1055,
-      "content": "7"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 109,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "7",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 110,
-      "token_id": 5036,
-      "content": "-M"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 111,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "-M",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 112,
-      "token_id": 6970,
-      "content": "AG"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 113,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "AG",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 114,
-      "token_id": 8911,
-      "content": "ENT"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 115,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "ENT",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 116,
-      "token_id": 1065,
-      "content": "A"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 117,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "A",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 118,
-      "token_id": 1045,
-      "content": "-"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 119,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "-",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 120,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 121,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "9",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 122,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 123,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "9",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 124,
-      "token_id": 1051,
-      "content": "3"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 125,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "3",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 126,
-      "token_id": 1049,
-      "content": "1"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 127,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "1",
-      "field_path": "key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 128,
-      "token_id": 1010,
-      "content": "\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 129,
-      "token_id": 1885,
-      "content": "</"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 130,
-      "token_id": 31960,
-      "content": "parameter"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 131,
-      "token_id": 1561,
-      "content": ">\n"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 132,
-      "token_id": 1885,
-      "content": "</"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 133,
-      "token_id": 5165,
-      "content": "function"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 134,
-      "token_id": 1561,
-      "content": ">\n"
-    },
-    {
-      "type": "response.function_call_arguments.delta",
-      "sequence_number": 135,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "delta": "{\"key\":\"K7-MAGENTA-9931\"}",
-      "field_path": null
-    },
-    {
-      "type": "response.function_call_arguments.done",
-      "sequence_number": 136,
-      "item_id": "fc_0",
-      "output_index": 1,
-      "arguments": "{\"key\": \"K7-MAGENTA-9931\"}"
-    },
-    {
-      "type": "response.output_item.done",
-      "sequence_number": 137,
-      "output_index": 1,
-      "item": {
-        "type": "function_call",
-        "id": "fc_0",
-        "call_id": "call_0",
-        "name": "unlock_chest",
-        "arguments": "{\"key\": \"K7-MAGENTA-9931\"}",
-        "status": "completed"
-      }
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 138,
-      "token_id": 15,
-      "content": "</tool_call>"
-    },
-    {
-      "type": "response.completed",
-      "sequence_number": 139,
-      "response": {
-        "id": "resp_0",
-        "object": "response",
-        "created_at": null,
-        "completed_at": null,
-        "status": "completed",
-        "incomplete_details": null,
+        "usage": null,
         "stop_token_id": null,
-        "stop_token": null,
-        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
-        "output": [
-          {
-            "type": "reasoning",
-            "id": "reasoning_0",
-            "status": "completed",
-            "summary": [],
-            "content": [
-              {
-                "type": "reasoning_text",
-                "text": "The find_key tool returned a key: \"K7-MAGENTA-9931\". Now I need to unlock the treasure chest with this key using unlock_chest. Let's do that."
-              }
-            ],
-            "encrypted_content": null
-          },
-          {
-            "type": "function_call",
-            "id": "fc_0",
-            "call_id": "call_0",
-            "name": "unlock_chest",
-            "arguments": "{\"key\": \"K7-MAGENTA-9931\"}",
-            "status": "completed"
-          }
-        ],
-        "usage": {
-          "input_tokens": 304,
-          "output_tokens": 34,
-          "total_tokens": 338,
-          "input_tokens_details": {
-            "cached_tokens": 0
-          },
-          "output_tokens_details": {
-            "reasoning_tokens": 43
-          }
-        }
-      }
-    },
-    {
-      "type": "done"
-    }
-  ],
-  "turn3": [
-    {
-      "type": "response.created",
-      "sequence_number": 0,
-      "response": {
-        "id": "resp_0",
-        "object": "response",
-        "created_at": null,
-        "completed_at": null,
-        "status": "in_progress",
-        "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
-        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
-        "output": [],
-        "usage": null
-      }
-    },
-    {
-      "type": "response.in_progress",
-      "sequence_number": 1,
-      "response": {
-        "id": "resp_0",
-        "object": "response",
-        "created_at": null,
-        "completed_at": null,
-        "status": "in_progress",
-        "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
-        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
-        "output": [],
-        "usage": null
+        "stop_token": null
       }
     },
     {
@@ -1908,8 +1260,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 7,
-      "token_id": 6136,
-      "content": " asked"
+      "token_id": 17000,
+      "content": " wants"
     },
     {
       "type": "response.reasoning.delta",
@@ -1917,13 +1269,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " asked"
+      "delta": " wants"
     },
     {
       "type": "response.output_token",
       "sequence_number": 9,
-      "token_id": 1317,
-      "content": " to"
+      "token_id": 1639,
+      "content": " me"
     },
     {
       "type": "response.reasoning.delta",
@@ -1931,13 +1283,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " to"
+      "delta": " me"
     },
     {
       "type": "response.output_token",
       "sequence_number": 11,
-      "token_id": 3081,
-      "content": " find"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -1945,13 +1297,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " find"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 13,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 3081,
+      "content": " find"
     },
     {
       "type": "response.reasoning.delta",
@@ -1959,13 +1311,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " find"
     },
     {
       "type": "response.output_token",
       "sequence_number": 15,
-      "token_id": 3844,
-      "content": " key"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -1973,13 +1325,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " key"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 17,
-      "token_id": 16052,
-      "content": " hidden"
+      "token_id": 3844,
+      "content": " key"
     },
     {
       "type": "response.reasoning.delta",
@@ -1987,7 +1339,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " hidden"
+      "delta": " key"
     },
     {
       "type": "response.output_token",
@@ -2062,8 +1414,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 46049,
-      "content": " unlock"
+      "token_id": 2210,
+      "content": " use"
     },
     {
       "type": "response.reasoning.delta",
@@ -2071,13 +1423,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " unlock"
+      "delta": " use"
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 1494,
+      "content": " it"
     },
     {
       "type": "response.reasoning.delta",
@@ -2085,13 +1437,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " it"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 67251,
-      "content": " treasure"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -2099,13 +1451,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " treasure"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 15448,
-      "content": " chest"
+      "token_id": 46049,
+      "content": " unlock"
     },
     {
       "type": "response.reasoning.delta",
@@ -2113,13 +1465,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " chest"
+      "delta": " unlock"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -2127,13 +1479,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 1494,
-      "content": " it"
+      "token_id": 67251,
+      "content": " treasure"
     },
     {
       "type": "response.reasoning.delta",
@@ -2141,13 +1493,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " it"
+      "delta": " treasure"
     },
     {
       "type": "response.output_token",
       "sequence_number": 41,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 15448,
+      "content": " chest"
     },
     {
       "type": "response.reasoning.delta",
@@ -2155,13 +1507,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": " chest"
     },
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 1321,
-      "content": " and"
+      "token_id": 1044,
+      "content": ","
     },
     {
       "type": "response.reasoning.delta",
@@ -2169,13 +1521,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " and"
+      "delta": ","
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 5584,
-      "content": " tell"
+      "token_id": 1321,
+      "content": " and"
     },
     {
       "type": "response.reasoning.delta",
@@ -2183,13 +1535,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " tell"
+      "delta": " and"
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 2549,
-      "content": " what"
+      "token_id": 5584,
+      "content": " tell"
     },
     {
       "type": "response.reasoning.delta",
@@ -2197,13 +1549,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " what"
+      "delta": " tell"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 1681,
-      "content": "'s"
+      "token_id": 2424,
+      "content": " them"
     },
     {
       "type": "response.reasoning.delta",
@@ -2211,13 +1563,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "'s"
+      "delta": " them"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 6625,
-      "content": " inside"
+      "token_id": 2549,
+      "content": " what"
     },
     {
       "type": "response.reasoning.delta",
@@ -2225,13 +1577,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " inside"
+      "delta": " what"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1681,
+      "content": "'s"
     },
     {
       "type": "response.reasoning.delta",
@@ -2239,13 +1591,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": "'s"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 6625,
+      "content": " inside"
     },
     {
       "type": "response.reasoning.delta",
@@ -2253,13 +1605,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": " inside"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 2434,
-      "content": " used"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -2267,13 +1619,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " used"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 3081,
-      "content": " find"
+      "token_id": 4493,
+      "content": " So"
     },
     {
       "type": "response.reasoning.delta",
@@ -2281,13 +1633,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " find"
+      "delta": " So"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 13286,
-      "content": "_key"
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -2295,13 +1647,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "_key"
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 1408,
-      "content": " on"
+      "token_id": 2534,
+      "content": " need"
     },
     {
       "type": "response.reasoning.delta",
@@ -2309,13 +1661,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " on"
+      "delta": " need"
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 11329,
-      "content": " library"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -2323,13 +1675,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " library"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 3690,
+      "content": " call"
     },
     {
       "type": "response.reasoning.delta",
@@ -2337,13 +1689,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": " call"
     },
     {
       "type": "response.output_token",
       "sequence_number": 69,
-      "token_id": 4884,
-      "content": " got"
+      "token_id": 3081,
+      "content": " find"
     },
     {
       "type": "response.reasoning.delta",
@@ -2351,13 +1703,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " got"
+      "delta": " find"
     },
     {
       "type": "response.output_token",
       "sequence_number": 71,
-      "token_id": 3844,
-      "content": " key"
+      "token_id": 13286,
+      "content": "_key"
     },
     {
       "type": "response.reasoning.delta",
@@ -2365,13 +1717,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " key"
+      "delta": "_key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 73,
-      "token_id": 1429,
-      "content": " \""
+      "token_id": 1454,
+      "content": " with"
     },
     {
       "type": "response.reasoning.delta",
@@ -2379,13 +1731,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " \""
+      "delta": " with"
     },
     {
       "type": "response.output_token",
       "sequence_number": 75,
-      "token_id": 1075,
-      "content": "K"
+      "token_id": 5349,
+      "content": " room"
     },
     {
       "type": "response.reasoning.delta",
@@ -2393,13 +1745,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "K"
+      "delta": " room"
     },
     {
       "type": "response.output_token",
       "sequence_number": 77,
-      "token_id": 1055,
-      "content": "7"
+      "token_id": 1429,
+      "content": " \""
     },
     {
       "type": "response.reasoning.delta",
@@ -2407,13 +1759,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "7"
+      "delta": " \""
     },
     {
       "type": "response.output_token",
       "sequence_number": 79,
-      "token_id": 5036,
-      "content": "-M"
+      "token_id": 40693,
+      "content": "library"
     },
     {
       "type": "response.reasoning.delta",
@@ -2421,13 +1773,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "-M"
+      "delta": "library"
     },
     {
       "type": "response.output_token",
       "sequence_number": 81,
-      "token_id": 6970,
-      "content": "AG"
+      "token_id": 3871,
+      "content": "\"."
     },
     {
       "type": "response.reasoning.delta",
@@ -2435,13 +1787,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "AG"
+      "delta": "\"."
     },
     {
       "type": "response.output_token",
       "sequence_number": 83,
-      "token_id": 8911,
-      "content": "ENT"
+      "token_id": 1531,
+      "content": " The"
     },
     {
       "type": "response.reasoning.delta",
@@ -2449,13 +1801,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "ENT"
+      "delta": " The"
     },
     {
       "type": "response.output_token",
       "sequence_number": 85,
-      "token_id": 1065,
-      "content": "A"
+      "token_id": 2282,
+      "content": " result"
     },
     {
       "type": "response.reasoning.delta",
@@ -2463,13 +1815,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "A"
+      "delta": " result"
     },
     {
       "type": "response.output_token",
       "sequence_number": 87,
-      "token_id": 1045,
-      "content": "-"
+      "token_id": 1395,
+      "content": " is"
     },
     {
       "type": "response.reasoning.delta",
@@ -2477,13 +1829,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "-"
+      "delta": " is"
     },
     {
       "type": "response.output_token",
       "sequence_number": 89,
-      "token_id": 1057,
-      "content": "9"
+      "token_id": 1261,
+      "content": " a"
     },
     {
       "type": "response.reasoning.delta",
@@ -2491,13 +1843,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "9"
+      "delta": " a"
     },
     {
       "type": "response.output_token",
       "sequence_number": 91,
-      "token_id": 1057,
-      "content": "9"
+      "token_id": 3844,
+      "content": " key"
     },
     {
       "type": "response.reasoning.delta",
@@ -2505,13 +1857,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "9"
+      "delta": " key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 93,
-      "token_id": 1051,
-      "content": "3"
+      "token_id": 3310,
+      "content": " string"
     },
     {
       "type": "response.reasoning.delta",
@@ -2519,13 +1871,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "3"
+      "delta": " string"
     },
     {
       "type": "response.output_token",
       "sequence_number": 95,
-      "token_id": 1049,
-      "content": "1"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -2533,13 +1885,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "1"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 97,
-      "token_id": 3871,
-      "content": "\"."
+      "token_id": 6830,
+      "content": " Then"
     },
     {
       "type": "response.reasoning.delta",
@@ -2547,13 +1899,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\"."
+      "delta": " Then"
     },
     {
       "type": "response.output_token",
       "sequence_number": 99,
-      "token_id": 6830,
-      "content": " Then"
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -2561,13 +1913,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Then"
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 101,
-      "token_id": 90498,
-      "content": " unlocked"
+      "token_id": 2534,
+      "content": " need"
     },
     {
       "type": "response.reasoning.delta",
@@ -2575,13 +1927,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " unlocked"
+      "delta": " need"
     },
     {
       "type": "response.output_token",
       "sequence_number": 103,
-      "token_id": 15448,
-      "content": " chest"
+      "token_id": 1317,
+      "content": " to"
     },
     {
       "type": "response.reasoning.delta",
@@ -2589,13 +1941,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " chest"
+      "delta": " to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 105,
-      "token_id": 1454,
-      "content": " with"
+      "token_id": 3690,
+      "content": " call"
     },
     {
       "type": "response.reasoning.delta",
@@ -2603,13 +1955,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " with"
+      "delta": " call"
     },
     {
       "type": "response.output_token",
       "sequence_number": 107,
-      "token_id": 1455,
-      "content": " that"
+      "token_id": 46049,
+      "content": " unlock"
     },
     {
       "type": "response.reasoning.delta",
@@ -2617,13 +1969,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " that"
+      "delta": " unlock"
     },
     {
       "type": "response.output_token",
       "sequence_number": 109,
-      "token_id": 3844,
-      "content": " key"
+      "token_id": 17936,
+      "content": "_ch"
     },
     {
       "type": "response.reasoning.delta",
@@ -2631,13 +1983,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " key"
+      "delta": "_ch"
     },
     {
       "type": "response.output_token",
       "sequence_number": 111,
-      "token_id": 1044,
-      "content": ","
+      "token_id": 1372,
+      "content": "est"
     },
     {
       "type": "response.reasoning.delta",
@@ -2645,13 +1997,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ","
+      "delta": "est"
     },
     {
       "type": "response.output_token",
       "sequence_number": 113,
-      "token_id": 4884,
-      "content": " got"
+      "token_id": 1454,
+      "content": " with"
     },
     {
       "type": "response.reasoning.delta",
@@ -2659,13 +2011,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " got"
+      "delta": " with"
     },
     {
       "type": "response.output_token",
       "sequence_number": 115,
-      "token_id": 16231,
-      "content": " contents"
+      "token_id": 1455,
+      "content": " that"
     },
     {
       "type": "response.reasoning.delta",
@@ -2673,13 +2025,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " contents"
+      "delta": " that"
     },
     {
       "type": "response.output_token",
       "sequence_number": 117,
-      "token_id": 1429,
-      "content": " \""
+      "token_id": 3844,
+      "content": " key"
     },
     {
       "type": "response.reasoning.delta",
@@ -2687,13 +2039,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " \""
+      "delta": " key"
     },
     {
       "type": "response.output_token",
       "sequence_number": 119,
-      "token_id": 1097,
-      "content": "a"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -2701,13 +2053,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "a"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 121,
-      "token_id": 1475,
-      "content": " j"
+      "token_id": 6830,
+      "content": " Then"
     },
     {
       "type": "response.reasoning.delta",
@@ -2715,13 +2067,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " j"
+      "delta": " Then"
     },
     {
       "type": "response.output_token",
       "sequence_number": 123,
-      "token_id": 1993,
-      "content": "ade"
+      "token_id": 3463,
+      "content": " report"
     },
     {
       "type": "response.reasoning.delta",
@@ -2729,13 +2081,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "ade"
+      "delta": " report"
     },
     {
       "type": "response.output_token",
       "sequence_number": 125,
-      "token_id": 40426,
-      "content": " dragon"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -2743,13 +2095,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " dragon"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 127,
-      "token_id": 37203,
-      "content": " figur"
+      "token_id": 16231,
+      "content": " contents"
     },
     {
       "type": "response.reasoning.delta",
@@ -2757,13 +2109,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " figur"
+      "delta": " contents"
     },
     {
       "type": "response.output_token",
       "sequence_number": 129,
-      "token_id": 1519,
-      "content": "ine"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -2771,13 +2123,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "ine"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 131,
-      "token_id": 3871,
-      "content": "\"."
+      "token_id": 9246,
+      "content": " Let"
     },
     {
       "type": "response.reasoning.delta",
@@ -2785,13 +2137,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\"."
+      "delta": " Let"
     },
     {
       "type": "response.output_token",
       "sequence_number": 133,
-      "token_id": 9032,
-      "content": " Now"
+      "token_id": 1681,
+      "content": "'s"
     },
     {
       "type": "response.reasoning.delta",
@@ -2799,13 +2151,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " Now"
+      "delta": "'s"
     },
     {
       "type": "response.output_token",
       "sequence_number": 135,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 1653,
+      "content": " do"
     },
     {
       "type": "response.reasoning.delta",
@@ -2813,13 +2165,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": " do"
     },
     {
       "type": "response.output_token",
       "sequence_number": 137,
-      "token_id": 2534,
-      "content": " need"
+      "token_id": 1455,
+      "content": " that"
     },
     {
       "type": "response.reasoning.delta",
@@ -2827,13 +2179,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " need"
+      "delta": " that"
     },
     {
       "type": "response.output_token",
       "sequence_number": 139,
-      "token_id": 1317,
-      "content": " to"
+      "token_id": 1626,
+      "content": ".\n"
     },
     {
       "type": "response.reasoning.delta",
@@ -2841,627 +2193,25 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " to"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 141,
-      "token_id": 4832,
-      "content": " answer"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 142,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " answer"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 143,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 144,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 145,
-      "token_id": 3330,
-      "content": " user"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 146,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " user"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 147,
-      "token_id": 1454,
-      "content": " with"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 148,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " with"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 149,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 150,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 151,
-      "token_id": 2282,
-      "content": " result"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 152,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " result"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 153,
-      "token_id": 1046,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 154,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 155,
-      "token_id": 1531,
-      "content": " The"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 156,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " The"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 157,
-      "token_id": 4832,
-      "content": " answer"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 158,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " answer"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 159,
-      "token_id": 1395,
-      "content": " is"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 160,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " is"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 161,
-      "token_id": 1058,
-      "content": ":"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 162,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ":"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 163,
-      "token_id": 1531,
-      "content": " The"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 164,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " The"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 165,
-      "token_id": 3844,
-      "content": " key"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 166,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " key"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 167,
-      "token_id": 2959,
-      "content": " found"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 168,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " found"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 169,
-      "token_id": 1395,
-      "content": " is"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 170,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " is"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 171,
-      "token_id": 1550,
-      "content": " K"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 172,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " K"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 173,
-      "token_id": 1055,
-      "content": "7"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 174,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "7"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 175,
-      "token_id": 5036,
-      "content": "-M"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 176,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "-M"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 177,
-      "token_id": 6970,
-      "content": "AG"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 178,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "AG"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 179,
-      "token_id": 8911,
-      "content": "ENT"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 180,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "ENT"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 181,
-      "token_id": 1065,
-      "content": "A"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 182,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "A"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 183,
-      "token_id": 1045,
-      "content": "-"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 184,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "-"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 185,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 186,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "9"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 187,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 188,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "9"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 189,
-      "token_id": 1051,
-      "content": "3"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 190,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "3"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 191,
-      "token_id": 1049,
-      "content": "1"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 192,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "1"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 193,
-      "token_id": 1044,
-      "content": ","
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 194,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ","
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 195,
-      "token_id": 1321,
-      "content": " and"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 196,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " and"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 197,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 198,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " the"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 199,
-      "token_id": 15448,
-      "content": " chest"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 200,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " chest"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 201,
-      "token_id": 8688,
-      "content": " contains"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 202,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " contains"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 203,
-      "token_id": 1261,
-      "content": " a"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 204,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " a"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 205,
-      "token_id": 1475,
-      "content": " j"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 206,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " j"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 207,
-      "token_id": 1993,
-      "content": "ade"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 208,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "ade"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 209,
-      "token_id": 40426,
-      "content": " dragon"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 210,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " dragon"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 211,
-      "token_id": 37203,
-      "content": " figur"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 212,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " figur"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 213,
-      "token_id": 1519,
-      "content": "ine"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 214,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "ine"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 215,
-      "token_id": 1046,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 216,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 217,
-      "token_id": 1362,
-      "content": " I"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 218,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " I"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 219,
-      "token_id": 7534,
-      "content": "'ll"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 220,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'ll"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 221,
-      "token_id": 5234,
-      "content": " provide"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 222,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " provide"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 223,
-      "token_id": 1455,
-      "content": " that"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 224,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " that"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 225,
-      "token_id": 1626,
-      "content": ".\n"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 226,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
       "delta": ".\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 227,
+      "sequence_number": 141,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 228,
+      "sequence_number": 142,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user asked to find the key hidden in the library, then unlock the treasure chest with it, and tell what's inside. I used find_key on library, got key \"K7-MAGENTA-9931\". Then unlocked chest with that key, got contents \"a jade dragon figurine\". Now I need to answer the user with the result. The answer is: The key found is K7-MAGENTA-9931, and the chest contains a jade dragon figurine. I'll provide that."
+      "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. So I need to call find_key with room \"library\". The result is a key string. Then I need to call unlock_chest with that key. Then report the contents. Let's do that."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 229,
+      "sequence_number": 143,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -3471,7 +2221,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user asked to find the key hidden in the library, then unlock the treasure chest with it, and tell what's inside. I used find_key on library, got key \"K7-MAGENTA-9931\". Then unlocked chest with that key, got contents \"a jade dragon figurine\". Now I need to answer the user with the result. The answer is: The key found is K7-MAGENTA-9931, and the chest contains a jade dragon figurine. I'll provide that."
+            "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. So I need to call find_key with room \"library\". The result is a key string. Then I need to call unlock_chest with that key. Then report the contents. Let's do that."
           }
         ],
         "encrypted_content": null
@@ -3479,13 +2229,1949 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 230,
+      "sequence_number": 144,
+      "token_id": 14,
+      "content": "<tool_call>"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 145,
+      "token_id": 1010,
+      "content": "\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 146,
+      "token_id": 1060,
+      "content": "<"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 147,
+      "token_id": 5165,
+      "content": "function"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 148,
+      "token_id": 1061,
+      "content": "="
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 149,
+      "token_id": 1384,
+      "content": "un"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 150,
+      "token_id": 10559,
+      "content": "lock"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 151,
+      "token_id": 17936,
+      "content": "_ch"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 152,
+      "token_id": 1372,
+      "content": "est"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 153,
+      "token_id": 1561,
+      "content": ">\n"
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 154,
+      "output_index": 1,
+      "item": {
+        "type": "function_call",
+        "id": "fc_0",
+        "call_id": "call_0",
+        "name": "unlock_chest",
+        "arguments": "",
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 155,
+      "token_id": 1060,
+      "content": "<"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 156,
+      "token_id": 31960,
+      "content": "parameter"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 157,
+      "token_id": 1061,
+      "content": "="
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 158,
+      "token_id": 3892,
+      "content": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 159,
+      "token_id": 1561,
+      "content": ">\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 160,
+      "token_id": 1075,
+      "content": "K"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 161,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "K",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 162,
+      "token_id": 1055,
+      "content": "7"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 163,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "7",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 164,
+      "token_id": 5036,
+      "content": "-M"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 165,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "-M",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 166,
+      "token_id": 6970,
+      "content": "AG"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 167,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "AG",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 168,
+      "token_id": 8911,
+      "content": "ENT"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 169,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "ENT",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 170,
+      "token_id": 1065,
+      "content": "A"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 171,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "A",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 172,
+      "token_id": 1045,
+      "content": "-"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 173,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "-",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 174,
+      "token_id": 1057,
+      "content": "9"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 175,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "9",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 176,
+      "token_id": 1057,
+      "content": "9"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 177,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "9",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 178,
+      "token_id": 1051,
+      "content": "3"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 179,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "3",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 180,
+      "token_id": 1049,
+      "content": "1"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 181,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "1",
+      "field_path": "key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 182,
+      "token_id": 1010,
+      "content": "\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 183,
+      "token_id": 1885,
+      "content": "</"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 184,
+      "token_id": 31960,
+      "content": "parameter"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 185,
+      "token_id": 1561,
+      "content": ">\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 186,
+      "token_id": 1885,
+      "content": "</"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 187,
+      "token_id": 5165,
+      "content": "function"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 188,
+      "token_id": 1561,
+      "content": ">\n"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 189,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "delta": "{\"key\":\"K7-MAGENTA-9931\"}",
+      "field_path": null
+    },
+    {
+      "type": "response.function_call_arguments.done",
+      "sequence_number": 190,
+      "item_id": "fc_0",
+      "output_index": 1,
+      "arguments": "{\"key\": \"K7-MAGENTA-9931\"}"
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 191,
+      "output_index": 1,
+      "item": {
+        "type": "function_call",
+        "id": "fc_0",
+        "call_id": "call_0",
+        "name": "unlock_chest",
+        "arguments": "{\"key\": \"K7-MAGENTA-9931\"}",
+        "status": "completed"
+      }
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 192,
+      "token_id": 15,
+      "content": "</tool_call>"
+    },
+    {
+      "type": "response.completed",
+      "sequence_number": 193,
+      "response": {
+        "id": "resp_0",
+        "object": "response",
+        "created_at": null,
+        "completed_at": null,
+        "status": "completed",
+        "incomplete_details": null,
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "output": [
+          {
+            "type": "reasoning",
+            "id": "reasoning_0",
+            "status": "completed",
+            "summary": [],
+            "content": [
+              {
+                "type": "reasoning_text",
+                "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. So I need to call find_key with room \"library\". The result is a key string. Then I need to call unlock_chest with that key. Then report the contents. Let's do that."
+              }
+            ],
+            "encrypted_content": null
+          },
+          {
+            "type": "function_call",
+            "id": "fc_0",
+            "call_id": "call_0",
+            "name": "unlock_chest",
+            "arguments": "{\"key\": \"K7-MAGENTA-9931\"}",
+            "status": "completed"
+          }
+        ],
+        "usage": {
+          "input_tokens": 304,
+          "output_tokens": 34,
+          "total_tokens": 338,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 70
+          }
+        },
+        "stop_token_id": null,
+        "stop_token": null
+      }
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "turn3": [
+    {
+      "type": "response.created",
+      "sequence_number": 0,
+      "response": {
+        "id": "resp_0",
+        "object": "response",
+        "created_at": null,
+        "completed_at": null,
+        "status": "in_progress",
+        "incomplete_details": null,
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "output": [],
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
+      }
+    },
+    {
+      "type": "response.in_progress",
+      "sequence_number": 1,
+      "response": {
+        "id": "resp_0",
+        "object": "response",
+        "created_at": null,
+        "completed_at": null,
+        "status": "in_progress",
+        "incomplete_details": null,
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "output": [],
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
+      }
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 2,
+      "token_id": 1784,
+      "content": "The"
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 3,
+      "output_index": 0,
+      "item": {
+        "type": "reasoning",
+        "id": "reasoning_0",
+        "status": "in_progress",
+        "summary": [],
+        "content": [],
+        "encrypted_content": null
+      }
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 4,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 5,
+      "token_id": 3330,
+      "content": " user"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 6,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " user"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 7,
+      "token_id": 17000,
+      "content": " wants"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 8,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " wants"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 9,
+      "token_id": 1639,
+      "content": " me"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 10,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " me"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 11,
+      "token_id": 1317,
+      "content": " to"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 12,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " to"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 13,
+      "token_id": 3081,
+      "content": " find"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 14,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " find"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 15,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 16,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 17,
+      "token_id": 3844,
+      "content": " key"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 18,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 19,
+      "token_id": 1294,
+      "content": " in"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 20,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " in"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 21,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 22,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 23,
+      "token_id": 11329,
+      "content": " library"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 24,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " library"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 25,
+      "token_id": 1044,
+      "content": ","
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 26,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ","
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 27,
+      "token_id": 2430,
+      "content": " then"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 28,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " then"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 29,
+      "token_id": 2210,
+      "content": " use"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 30,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " use"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 31,
+      "token_id": 1494,
+      "content": " it"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 32,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " it"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 33,
+      "token_id": 1317,
+      "content": " to"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 34,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " to"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 35,
+      "token_id": 46049,
+      "content": " unlock"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 36,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " unlock"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 37,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 38,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 39,
+      "token_id": 67251,
+      "content": " treasure"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 40,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " treasure"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 41,
+      "token_id": 15448,
+      "content": " chest"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 42,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " chest"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 43,
+      "token_id": 1044,
+      "content": ","
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 44,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ","
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 45,
+      "token_id": 1321,
+      "content": " and"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 46,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 47,
+      "token_id": 5584,
+      "content": " tell"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 48,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " tell"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 49,
+      "token_id": 2424,
+      "content": " them"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 50,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " them"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 51,
+      "token_id": 2549,
+      "content": " what"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 52,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " what"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 53,
+      "token_id": 1681,
+      "content": "'s"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 54,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'s"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 55,
+      "token_id": 6625,
+      "content": " inside"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 56,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " inside"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 57,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 58,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 59,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 60,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 61,
+      "token_id": 6483,
+      "content": "'ve"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 62,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'ve"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 63,
+      "token_id": 5314,
+      "content": " already"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 64,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " already"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 65,
+      "token_id": 5595,
+      "content": " done"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 66,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " done"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 67,
+      "token_id": 2960,
+      "content": " both"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 68,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " both"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 69,
+      "token_id": 9578,
+      "content": " steps"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 70,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " steps"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 71,
+      "token_id": 2100,
+      "content": ":\n\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 72,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ":\n\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 73,
+      "token_id": 1049,
+      "content": "1"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 74,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "1"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 75,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 76,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 77,
+      "token_id": 69851,
+      "content": " Called"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 78,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Called"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 79,
+      "token_id": 3081,
+      "content": " find"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 80,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " find"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 81,
+      "token_id": 13286,
+      "content": "_key"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 82,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 83,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 84,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " with"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 85,
+      "token_id": 5349,
+      "content": " room"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 86,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " room"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 87,
+      "token_id": 1429,
+      "content": " \""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 88,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " \""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 89,
+      "token_id": 40693,
+      "content": "library"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 90,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "library"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 91,
+      "token_id": 1034,
+      "content": "\""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 92,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "\""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 93,
+      "token_id": 1321,
+      "content": " and"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 94,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 95,
+      "token_id": 4884,
+      "content": " got"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 96,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " got"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 97,
+      "token_id": 3844,
+      "content": " key"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 98,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 99,
+      "token_id": 1429,
+      "content": " \""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 100,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " \""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 101,
+      "token_id": 1075,
+      "content": "K"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 102,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "K"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 103,
+      "token_id": 1055,
+      "content": "7"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 104,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "7"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 105,
+      "token_id": 5036,
+      "content": "-M"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 106,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "-M"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 107,
+      "token_id": 6970,
+      "content": "AG"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 108,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "AG"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 109,
+      "token_id": 8911,
+      "content": "ENT"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 110,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ENT"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 111,
+      "token_id": 1065,
+      "content": "A"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 112,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "A"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 113,
+      "token_id": 1045,
+      "content": "-"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 114,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "-"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 115,
+      "token_id": 1057,
+      "content": "9"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 116,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "9"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 117,
+      "token_id": 1057,
+      "content": "9"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 118,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "9"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 119,
+      "token_id": 1051,
+      "content": "3"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 120,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "3"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 121,
+      "token_id": 1049,
+      "content": "1"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 122,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "1"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 123,
+      "token_id": 2241,
+      "content": "\"\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 124,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "\"\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 125,
+      "token_id": 1050,
+      "content": "2"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 126,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "2"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 127,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 128,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 129,
+      "token_id": 69851,
+      "content": " Called"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 130,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " Called"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 131,
+      "token_id": 46049,
+      "content": " unlock"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 132,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " unlock"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 133,
+      "token_id": 17936,
+      "content": "_ch"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 134,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "_ch"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 135,
+      "token_id": 1372,
+      "content": "est"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 136,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "est"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 137,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 138,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " with"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 139,
+      "token_id": 1455,
+      "content": " that"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 140,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " that"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 141,
+      "token_id": 3844,
+      "content": " key"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 142,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " key"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 143,
+      "token_id": 1321,
+      "content": " and"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 144,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 145,
+      "token_id": 4884,
+      "content": " got"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 146,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " got"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 147,
+      "token_id": 16231,
+      "content": " contents"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 148,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " contents"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 149,
+      "token_id": 1429,
+      "content": " \""
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 150,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " \""
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 151,
+      "token_id": 1097,
+      "content": "a"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 152,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "a"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 153,
+      "token_id": 1475,
+      "content": " j"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 154,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " j"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 155,
+      "token_id": 1993,
+      "content": "ade"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 156,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ade"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 157,
+      "token_id": 40426,
+      "content": " dragon"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 158,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " dragon"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 159,
+      "token_id": 37203,
+      "content": " figur"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 160,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " figur"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 161,
+      "token_id": 1519,
+      "content": "ine"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 162,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ine"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 163,
+      "token_id": 4410,
+      "content": "\"\n\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 164,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "\"\n\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 165,
+      "token_id": 12082,
+      "content": "Now"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 166,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "Now"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 167,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 168,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 169,
+      "token_id": 2534,
+      "content": " need"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 170,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " need"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 171,
+      "token_id": 1317,
+      "content": " to"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 172,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " to"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 173,
+      "token_id": 2988,
+      "content": " present"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 174,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " present"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 175,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 176,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 177,
+      "token_id": 4832,
+      "content": " answer"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 178,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " answer"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 179,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 180,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 181,
+      "token_id": 1531,
+      "content": " The"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 182,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " The"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 183,
+      "token_id": 15448,
+      "content": " chest"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 184,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " chest"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 185,
+      "token_id": 8688,
+      "content": " contains"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 186,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " contains"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 187,
+      "token_id": 1261,
+      "content": " a"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 188,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " a"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 189,
+      "token_id": 1475,
+      "content": " j"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 190,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " j"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 191,
+      "token_id": 1993,
+      "content": "ade"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 192,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ade"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 193,
+      "token_id": 40426,
+      "content": " dragon"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 194,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " dragon"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 195,
+      "token_id": 37203,
+      "content": " figur"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 196,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " figur"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 197,
+      "token_id": 1519,
+      "content": "ine"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 198,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "ine"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 199,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 200,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 201,
+      "token_id": 1362,
+      "content": " I"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 202,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " I"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 203,
+      "token_id": 7534,
+      "content": "'ll"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 204,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "'ll"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 205,
+      "token_id": 3468,
+      "content": " state"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 206,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " state"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 207,
+      "token_id": 1593,
+      "content": " this"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 208,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " this"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 209,
+      "token_id": 11904,
+      "content": " clearly"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 210,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " clearly"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 211,
+      "token_id": 1626,
+      "content": ".\n"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 212,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".\n"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 213,
+      "token_id": 13,
+      "content": "</think>"
+    },
+    {
+      "type": "response.reasoning.done",
+      "sequence_number": 214,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. I've already done both steps:\n\n1. Called find_key with room \"library\" and got key \"K7-MAGENTA-9931\"\n2. Called unlock_chest with that key and got contents \"a jade dragon figurine\"\n\nNow I need to present the answer. The chest contains a jade dragon figurine. I'll state this clearly."
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 215,
+      "output_index": 0,
+      "item": {
+        "type": "reasoning",
+        "id": "reasoning_0",
+        "status": "completed",
+        "summary": [],
+        "content": [
+          {
+            "type": "reasoning_text",
+            "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. I've already done both steps:\n\n1. Called find_key with room \"library\" and got key \"K7-MAGENTA-9931\"\n2. Called unlock_chest with that key and got contents \"a jade dragon figurine\"\n\nNow I need to present the answer. The chest contains a jade dragon figurine. I'll state this clearly."
+          }
+        ],
+        "encrypted_content": null
+      }
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 216,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 231,
+      "sequence_number": 217,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -3497,7 +4183,7 @@
     },
     {
       "type": "response.content_part.added",
-      "sequence_number": 232,
+      "sequence_number": 218,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3510,7 +4196,7 @@
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 233,
+      "sequence_number": 219,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3519,13 +4205,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 234,
+      "sequence_number": 220,
       "token_id": 1073,
       "content": "I"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 235,
+      "sequence_number": 221,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3534,13 +4220,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 236,
+      "sequence_number": 222,
       "token_id": 2959,
       "content": " found"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 237,
+      "sequence_number": 223,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3549,13 +4235,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 238,
+      "sequence_number": 224,
       "token_id": 1278,
       "content": " the"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 239,
+      "sequence_number": 225,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3564,13 +4250,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 240,
+      "sequence_number": 226,
       "token_id": 3844,
       "content": " key"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 241,
+      "sequence_number": 227,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3579,13 +4265,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 242,
+      "sequence_number": 228,
       "token_id": 16052,
       "content": " hidden"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 243,
+      "sequence_number": 229,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3594,13 +4280,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 244,
+      "sequence_number": 230,
       "token_id": 1294,
       "content": " in"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 245,
+      "sequence_number": 231,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3609,13 +4295,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 246,
+      "sequence_number": 232,
       "token_id": 1278,
       "content": " the"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 247,
+      "sequence_number": 233,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3624,13 +4310,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 248,
+      "sequence_number": 234,
       "token_id": 11329,
       "content": " library"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 249,
+      "sequence_number": 235,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3639,13 +4325,43 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 250,
+      "sequence_number": 236,
+      "token_id": 1319,
+      "content": " ("
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 237,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " (",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 238,
+      "token_id": 3892,
+      "content": "key"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 239,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "key",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 240,
       "token_id": 1058,
       "content": ":"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 251,
+      "sequence_number": 241,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3654,43 +4370,28 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 252,
-      "token_id": 1603,
-      "content": " **"
+      "sequence_number": 242,
+      "token_id": 1550,
+      "content": " K"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 253,
+      "sequence_number": 243,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " **",
+      "delta": " K",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 254,
-      "token_id": 1075,
-      "content": "K"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 255,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "K",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 256,
+      "sequence_number": 244,
       "token_id": 1055,
       "content": "7"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 257,
+      "sequence_number": 245,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3699,13 +4400,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 258,
+      "sequence_number": 246,
       "token_id": 5036,
       "content": "-M"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 259,
+      "sequence_number": 247,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3714,13 +4415,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 260,
+      "sequence_number": 248,
       "token_id": 6970,
       "content": "AG"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 261,
+      "sequence_number": 249,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3729,13 +4430,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 262,
+      "sequence_number": 250,
       "token_id": 8911,
       "content": "ENT"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 263,
+      "sequence_number": 251,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3744,13 +4445,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 264,
+      "sequence_number": 252,
       "token_id": 1065,
       "content": "A"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 265,
+      "sequence_number": 253,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3759,13 +4460,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 266,
+      "sequence_number": 254,
       "token_id": 1045,
       "content": "-"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 267,
+      "sequence_number": 255,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3774,13 +4475,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 268,
+      "sequence_number": 256,
       "token_id": 1057,
       "content": "9"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 269,
+      "sequence_number": 257,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3789,13 +4490,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 270,
+      "sequence_number": 258,
       "token_id": 1057,
       "content": "9"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 271,
+      "sequence_number": 259,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3804,13 +4505,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 272,
+      "sequence_number": 260,
       "token_id": 1051,
       "content": "3"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 273,
+      "sequence_number": 261,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3819,13 +4520,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 274,
+      "sequence_number": 262,
       "token_id": 1049,
       "content": "1"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 275,
+      "sequence_number": 263,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -3834,208 +4535,28 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 276,
-      "token_id": 12617,
-      "content": "**."
+      "sequence_number": 264,
+      "token_id": 1041,
+      "content": ")"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 277,
+      "sequence_number": 265,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "**.",
+      "delta": ")",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 278,
-      "token_id": 1032,
-      "content": " "
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 279,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " ",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 280,
-      "token_id": 1267,
-      "content": "\n\n"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 281,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "\n\n",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 282,
-      "token_id": 23511,
-      "content": "Using"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 283,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "Using",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 284,
-      "token_id": 1593,
-      "content": " this"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 285,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " this",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 286,
-      "token_id": 3844,
-      "content": " key"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 287,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " key",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 288,
-      "token_id": 1044,
-      "content": ","
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 289,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ",",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 290,
-      "token_id": 1362,
-      "content": " I"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 291,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " I",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 292,
-      "token_id": 90498,
-      "content": " unlocked"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 293,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " unlocked",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 294,
-      "token_id": 1278,
-      "content": " the"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 295,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " the",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 296,
-      "token_id": 67251,
-      "content": " treasure"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 297,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " treasure",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 298,
-      "token_id": 15448,
-      "content": " chest"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 299,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " chest",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 300,
-      "token_id": 1044,
-      "content": ","
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 301,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ",",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 302,
+      "sequence_number": 266,
       "token_id": 1321,
       "content": " and"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 303,
+      "sequence_number": 267,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4044,28 +4565,163 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 304,
-      "token_id": 6625,
-      "content": " inside"
+      "sequence_number": 268,
+      "token_id": 90498,
+      "content": " unlocked"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 305,
+      "sequence_number": 269,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": " inside",
+      "delta": " unlocked",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 306,
+      "sequence_number": 270,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 271,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " the",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 272,
+      "token_id": 67251,
+      "content": " treasure"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 273,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " treasure",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 274,
+      "token_id": 15448,
+      "content": " chest"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 275,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " chest",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 276,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 277,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " with",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 278,
+      "token_id": 1494,
+      "content": " it"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 279,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " it",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 280,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 281,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": ".",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 282,
+      "token_id": 52806,
+      "content": " Inside"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 283,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " Inside",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 284,
+      "token_id": 1278,
+      "content": " the"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 285,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " the",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 286,
+      "token_id": 15448,
+      "content": " chest"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 287,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " chest",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 288,
       "token_id": 1395,
       "content": " is"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 307,
+      "sequence_number": 289,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4074,28 +4730,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 308,
-      "token_id": 1261,
-      "content": " a"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 309,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " a",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 310,
+      "sequence_number": 290,
       "token_id": 1603,
       "content": " **"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 311,
+      "sequence_number": 291,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4104,28 +4745,58 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 312,
-      "token_id": 75846,
-      "content": "jade"
+      "sequence_number": 292,
+      "token_id": 1097,
+      "content": "a"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 313,
+      "sequence_number": 293,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "jade",
+      "delta": "a",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 314,
+      "sequence_number": 294,
+      "token_id": 1475,
+      "content": " j"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 295,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " j",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 296,
+      "token_id": 1993,
+      "content": "ade"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 297,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "ade",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 298,
       "token_id": 40426,
       "content": " dragon"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 315,
+      "sequence_number": 299,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4134,13 +4805,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 316,
+      "sequence_number": 300,
       "token_id": 37203,
       "content": " figur"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 317,
+      "sequence_number": 301,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4149,13 +4820,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 318,
+      "sequence_number": 302,
       "token_id": 1519,
       "content": "ine"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 319,
+      "sequence_number": 303,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4164,13 +4835,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 320,
+      "sequence_number": 304,
       "token_id": 12617,
       "content": "**."
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 321,
+      "sequence_number": 305,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -4179,29 +4850,29 @@
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 322,
+      "sequence_number": 306,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "text": "\nI found the key hidden in the library: **K7-MAGENTA-9931**. \n\nUsing this key, I unlocked the treasure chest, and inside is a **jade dragon figurine**.",
+      "text": "\nI found the key hidden in the library (key: K7-MAGENTA-9931) and unlocked the treasure chest with it. Inside the chest is **a jade dragon figurine**.",
       "logprobs": []
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 323,
+      "sequence_number": 307,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
       "part": {
         "type": "output_text",
-        "text": "\nI found the key hidden in the library: **K7-MAGENTA-9931**. \n\nUsing this key, I unlocked the treasure chest, and inside is a **jade dragon figurine**.",
+        "text": "\nI found the key hidden in the library (key: K7-MAGENTA-9931) and unlocked the treasure chest with it. Inside the chest is **a jade dragon figurine**.",
         "annotations": [],
         "logprobs": []
       }
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 324,
+      "sequence_number": 308,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -4211,7 +4882,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "\nI found the key hidden in the library: **K7-MAGENTA-9931**. \n\nUsing this key, I unlocked the treasure chest, and inside is a **jade dragon figurine**.",
+            "text": "\nI found the key hidden in the library (key: K7-MAGENTA-9931) and unlocked the treasure chest with it. Inside the chest is **a jade dragon figurine**.",
             "annotations": [],
             "logprobs": []
           }
@@ -4220,7 +4891,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 325,
+      "sequence_number": 309,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -4228,8 +4899,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 11,
-        "stop_token": "<|im_end|>",
         "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
         "output": [
           {
@@ -4240,7 +4909,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user asked to find the key hidden in the library, then unlock the treasure chest with it, and tell what's inside. I used find_key on library, got key \"K7-MAGENTA-9931\". Then unlocked chest with that key, got contents \"a jade dragon figurine\". Now I need to answer the user with the result. The answer is: The key found is K7-MAGENTA-9931, and the chest contains a jade dragon figurine. I'll provide that."
+                "text": "The user wants me to find the key in the library, then use it to unlock the treasure chest, and tell them what's inside. I've already done both steps:\n\n1. Called find_key with room \"library\" and got key \"K7-MAGENTA-9931\"\n2. Called unlock_chest with that key and got contents \"a jade dragon figurine\"\n\nNow I need to present the answer. The chest contains a jade dragon figurine. I'll state this clearly."
               }
             ],
             "encrypted_content": null
@@ -4253,7 +4922,7 @@
             "content": [
               {
                 "type": "output_text",
-                "text": "\nI found the key hidden in the library: **K7-MAGENTA-9931**. \n\nUsing this key, I unlocked the treasure chest, and inside is a **jade dragon figurine**.",
+                "text": "\nI found the key hidden in the library (key: K7-MAGENTA-9931) and unlocked the treasure chest with it. Inside the chest is **a jade dragon figurine**.",
                 "annotations": [],
                 "logprobs": []
               }
@@ -4262,15 +4931,17 @@
         ],
         "usage": {
           "input_tokens": 363,
-          "output_tokens": 46,
-          "total_tokens": 409,
+          "output_tokens": 45,
+          "total_tokens": 408,
           "input_tokens_details": {
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 113
+            "reasoning_tokens": 106
           }
-        }
+        },
+        "stop_token_id": 11,
+        "stop_token": "<|im_end|>"
       }
     },
     {

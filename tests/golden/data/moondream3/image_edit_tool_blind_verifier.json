@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "moondream/moondream3-preview",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "moondream/moondream3-preview",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -194,8 +194,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 22,
-      "token_id": 11485,
-      "content": "blue"
+      "token_id": 53,
+      "content": "A"
     },
     {
       "type": "response.output_item.added",
@@ -228,18 +228,33 @@
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "blue",
+      "delta": "A",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 26,
+      "token_id": 2669,
+      "content": " blue"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 27,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " blue",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 28,
       "token_id": 5210,
       "content": " circle"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 27,
+      "sequence_number": 29,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -248,24 +263,9 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 28,
-      "token_id": 46758,
-      "content": ", red"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 29,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": ", red",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
       "sequence_number": 30,
-      "token_id": 3461,
-      "content": " square"
+      "token_id": 41261,
+      "content": " and a"
     },
     {
       "type": "response.output_text.delta",
@@ -273,34 +273,79 @@
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
+      "delta": " and a",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 32,
+      "token_id": 1821,
+      "content": " red"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 33,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " red",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 34,
+      "token_id": 3461,
+      "content": " square"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 35,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
       "delta": " square",
       "logprobs": []
     },
     {
-      "type": "response.output_text.done",
-      "sequence_number": 32,
+      "type": "response.output_token",
+      "sequence_number": 36,
+      "token_id": 34,
+      "content": "."
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 37,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "text": "blue circle, red square",
+      "delta": ".",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_text.done",
+      "sequence_number": 38,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "text": "A blue circle and a red square.",
       "logprobs": []
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 33,
+      "sequence_number": 39,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
       "part": {
         "type": "output_text",
-        "text": "blue circle, red square",
+        "text": "A blue circle and a red square.",
         "annotations": [],
         "logprobs": []
       }
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 34,
+      "sequence_number": 40,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -310,7 +355,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "blue circle, red square",
+            "text": "A blue circle and a red square.",
             "annotations": [],
             "logprobs": []
           }
@@ -319,7 +364,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 35,
+      "sequence_number": 41,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -327,8 +372,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 0,
-        "stop_token": "<|endoftext|>",
         "model": "moondream/moondream3-preview",
         "output": [
           {
@@ -352,7 +395,7 @@
             "content": [
               {
                 "type": "output_text",
-                "text": "blue circle, red square",
+                "text": "A blue circle and a red square.",
                 "annotations": [],
                 "logprobs": []
               }
@@ -361,15 +404,17 @@
         ],
         "usage": {
           "input_tokens": 745,
-          "output_tokens": 5,
-          "total_tokens": 750,
+          "output_tokens": 8,
+          "total_tokens": 753,
           "input_tokens_details": {
             "cached_tokens": 0
           },
           "output_tokens_details": {
             "reasoning_tokens": 9
           }
-        }
+        },
+        "stop_token_id": 0,
+        "stop_token": "<|endoftext|>"
       }
     },
     {

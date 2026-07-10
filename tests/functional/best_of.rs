@@ -1,19 +1,20 @@
 //! End-to-end best_of tests.
 //!
 //! Mirrors orchard-py/tests/functional/test_best_of.py
-//! Run with: cargo test --test functional -- --test-threads=1
+//! Run with: cargo test --test functional
 //!
 //! Note: Validation tests (best_of < n returns 422, streaming+best_of returns 422)
 //! are HTTP-specific and not ported.
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
 
 /// Test that best_of fan-out returns only the top-n candidates while reflecting total work in usage.
 /// Mirrors: test_best_of.py::test_chat_completion_best_of_selects_top_n
 #[tokio::test]
 async fn test_chat_completion_best_of_selects_top_n() {
+    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {

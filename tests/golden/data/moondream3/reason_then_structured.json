@@ -10,11 +10,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "moondream/moondream3-preview",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -27,11 +27,11 @@
         "completed_at": null,
         "status": "in_progress",
         "incomplete_details": null,
-        "stop_token_id": null,
-        "stop_token": null,
         "model": "moondream/moondream3-preview",
         "output": [],
-        "usage": null
+        "usage": null,
+        "stop_token_id": null,
+        "stop_token": null
       }
     },
     {
@@ -176,8 +176,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 21,
-      "token_id": 41187,
-      "content": ". The"
+      "token_id": 41254,
+      "content": ". I"
     },
     {
       "type": "response.reasoning.delta",
@@ -185,13 +185,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ". The"
+      "delta": ". I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 23,
-      "token_id": 3059,
-      "content": " capital"
+      "token_id": 41410,
+      "content": " need to"
     },
     {
       "type": "response.reasoning.delta",
@@ -199,13 +199,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " capital"
+      "delta": " need to"
     },
     {
       "type": "response.output_token",
       "sequence_number": 25,
-      "token_id": 44462,
-      "content": " is \""
+      "token_id": 647,
+      "content": " return"
     },
     {
       "type": "response.reasoning.delta",
@@ -213,13 +213,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is \""
+      "delta": " return"
     },
     {
       "type": "response.output_token",
       "sequence_number": 27,
-      "token_id": 28605,
-      "content": "Paris"
+      "token_id": 264,
+      "content": " a"
     },
     {
       "type": "response.reasoning.delta",
@@ -227,13 +227,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "Paris"
+      "delta": " a"
     },
     {
       "type": "response.output_token",
       "sequence_number": 29,
-      "token_id": 49971,
-      "content": "\" and the"
+      "token_id": 12275,
+      "content": " JSON"
     },
     {
       "type": "response.reasoning.delta",
@@ -241,13 +241,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "\" and the"
+      "delta": " JSON"
     },
     {
       "type": "response.output_token",
       "sequence_number": 31,
-      "token_id": 2335,
-      "content": " population"
+      "token_id": 1282,
+      "content": " object"
     },
     {
       "type": "response.reasoning.delta",
@@ -255,13 +255,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " population"
+      "delta": " object"
     },
     {
       "type": "response.output_token",
       "sequence_number": 33,
-      "token_id": 41649,
-      "content": " is "
+      "token_id": 41206,
+      "content": " with the"
     },
     {
       "type": "response.reasoning.delta",
@@ -269,13 +269,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is "
+      "delta": " with the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 35,
-      "token_id": 38,
-      "content": "2"
+      "token_id": 3059,
+      "content": " capital"
     },
     {
       "type": "response.reasoning.delta",
@@ -283,13 +283,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "2"
+      "delta": " capital"
     },
     {
       "type": "response.output_token",
       "sequence_number": 37,
-      "token_id": 14143,
-      "content": "148"
+      "token_id": 421,
+      "content": " \""
     },
     {
       "type": "response.reasoning.delta",
@@ -297,13 +297,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "148"
+      "delta": " \""
     },
     {
       "type": "response.output_token",
       "sequence_number": 39,
-      "token_id": 19919,
-      "content": "327"
+      "token_id": 28605,
+      "content": "Paris"
     },
     {
       "type": "response.reasoning.delta",
@@ -311,13 +311,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "327"
+      "delta": "Paris"
     },
     {
       "type": "response.output_token",
       "sequence_number": 41,
-      "token_id": 41254,
-      "content": ". I"
+      "token_id": 49971,
+      "content": "\" and the"
     },
     {
       "type": "response.reasoning.delta",
@@ -325,13 +325,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ". I"
+      "delta": "\" and the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 43,
-      "token_id": 41410,
-      "content": " need to"
+      "token_id": 2335,
+      "content": " population"
     },
     {
       "type": "response.reasoning.delta",
@@ -339,13 +339,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " need to"
+      "delta": " population"
     },
     {
       "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 647,
-      "content": " return"
+      "token_id": 225,
+      "content": " "
     },
     {
       "type": "response.reasoning.delta",
@@ -353,13 +353,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " return"
+      "delta": " "
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 465,
-      "content": " this"
+      "token_id": 38,
+      "content": "2"
     },
     {
       "type": "response.reasoning.delta",
@@ -367,13 +367,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " this"
+      "delta": "2"
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 41224,
-      "content": " as a"
+      "token_id": 14143,
+      "content": "148"
     },
     {
       "type": "response.reasoning.delta",
@@ -381,13 +381,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " as a"
+      "delta": "148"
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 12275,
-      "content": " JSON"
+      "token_id": 19919,
+      "content": "327"
     },
     {
       "type": "response.reasoning.delta",
@@ -395,13 +395,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " JSON"
+      "delta": "327"
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 1282,
-      "content": " object"
+      "token_id": 41254,
+      "content": ". I"
     },
     {
       "type": "response.reasoning.delta",
@@ -409,13 +409,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " object"
+      "delta": ". I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 9999,
-      "content": " matching"
+      "token_id": 1097,
+      "content": " must"
     },
     {
       "type": "response.reasoning.delta",
@@ -423,13 +423,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " matching"
+      "delta": " must"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 267,
-      "content": " the"
+      "token_id": 4272,
+      "content": " ensure"
     },
     {
       "type": "response.reasoning.delta",
@@ -437,13 +437,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " ensure"
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 10369,
-      "content": " requested"
+      "token_id": 267,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -451,13 +451,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " requested"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 61,
-      "token_id": 28817,
-      "content": " schema"
+      "token_id": 12275,
+      "content": " JSON"
     },
     {
       "type": "response.reasoning.delta",
@@ -465,13 +465,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " schema"
+      "delta": " JSON"
     },
     {
       "type": "response.output_token",
       "sequence_number": 63,
-      "token_id": 4340,
-      "content": " exactly"
+      "token_id": 316,
+      "content": " is"
     },
     {
       "type": "response.reasoning.delta",
@@ -479,13 +479,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " exactly"
+      "delta": " is"
     },
     {
       "type": "response.output_token",
       "sequence_number": 65,
-      "token_id": 34,
-      "content": "."
+      "token_id": 11092,
+      "content": " formatted"
     },
     {
       "type": "response.reasoning.delta",
@@ -493,25 +493,151 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " formatted"
     },
     {
       "type": "response.output_token",
       "sequence_number": 67,
+      "token_id": 4340,
+      "content": " exactly"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 68,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " exactly"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 69,
+      "token_id": 359,
+      "content": " as"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 70,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " as"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 71,
+      "token_id": 10369,
+      "content": " requested"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 72,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " requested"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 73,
+      "token_id": 298,
+      "content": " and"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 74,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 75,
+      "token_id": 8970,
+      "content": " matches"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 76,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " matches"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 77,
+      "token_id": 267,
+      "content": " the"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 78,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " the"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 79,
+      "token_id": 28817,
+      "content": " schema"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 80,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " schema"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 81,
+      "token_id": 4340,
+      "content": " exactly"
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 82,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " exactly"
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 83,
+      "token_id": 34,
+      "content": "."
+    },
+    {
+      "type": "response.reasoning.delta",
+      "sequence_number": 84,
+      "item_id": "reasoning_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "."
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 85,
       "token_id": 3,
       "content": "<|md_reserved_2|>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 68,
+      "sequence_number": 86,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user is asking for the capital of France and its population. The capital is \"Paris\" and the population is 2148327. I need to return this as a JSON object matching the requested schema exactly."
+      "text": "The user is asking for the capital of France and its population. I need to return a JSON object with the capital \"Paris\" and the population 2148327. I must ensure the JSON is formatted exactly as requested and matches the schema exactly."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 69,
+      "sequence_number": 87,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -521,7 +647,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user is asking for the capital of France and its population. The capital is \"Paris\" and the population is 2148327. I need to return this as a JSON object matching the requested schema exactly."
+            "text": "The user is asking for the capital of France and its population. I need to return a JSON object with the capital \"Paris\" and the population 2148327. I must ensure the JSON is formatted exactly as requested and matches the schema exactly."
           }
         ],
         "encrypted_content": null
@@ -529,13 +655,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 70,
+      "sequence_number": 88,
       "token_id": 111,
       "content": "{"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 71,
+      "sequence_number": 89,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -547,7 +673,7 @@
     },
     {
       "type": "response.content_part.added",
-      "sequence_number": 72,
+      "sequence_number": 90,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -560,7 +686,7 @@
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 73,
+      "sequence_number": 91,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -569,13 +695,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 74,
+      "sequence_number": 92,
       "token_id": 203,
       "content": "\n"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 75,
+      "sequence_number": 93,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -584,13 +710,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 76,
+      "sequence_number": 94,
       "token_id": 262,
       "content": "  "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 77,
+      "sequence_number": 95,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -599,13 +725,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 78,
+      "sequence_number": 96,
       "token_id": 22,
       "content": "\""
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 79,
+      "sequence_number": 97,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -614,13 +740,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 80,
+      "sequence_number": 98,
       "token_id": 16035,
       "content": "capital"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 81,
+      "sequence_number": 99,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -629,13 +755,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 82,
+      "sequence_number": 100,
       "token_id": 2247,
       "content": "\":"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 83,
+      "sequence_number": 101,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -644,13 +770,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 84,
+      "sequence_number": 102,
       "token_id": 421,
       "content": " \""
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 85,
+      "sequence_number": 103,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -659,13 +785,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 86,
+      "sequence_number": 104,
       "token_id": 28605,
       "content": "Paris"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 87,
+      "sequence_number": 105,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -674,13 +800,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 88,
+      "sequence_number": 106,
       "token_id": 42410,
       "content": "\",\n"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 89,
+      "sequence_number": 107,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -689,13 +815,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 90,
+      "sequence_number": 108,
       "token_id": 262,
       "content": "  "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 91,
+      "sequence_number": 109,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -704,13 +830,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 92,
+      "sequence_number": 110,
       "token_id": 22,
       "content": "\""
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 93,
+      "sequence_number": 111,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -719,13 +845,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 94,
+      "sequence_number": 112,
       "token_id": 13000,
       "content": "population"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 95,
+      "sequence_number": 113,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -734,13 +860,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 96,
+      "sequence_number": 114,
       "token_id": 2247,
       "content": "\":"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 97,
+      "sequence_number": 115,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -749,13 +875,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 98,
+      "sequence_number": 116,
       "token_id": 225,
       "content": " "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 99,
+      "sequence_number": 117,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -764,13 +890,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 100,
+      "sequence_number": 118,
       "token_id": 38,
       "content": "2"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 101,
+      "sequence_number": 119,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -779,13 +905,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 102,
+      "sequence_number": 120,
       "token_id": 14143,
       "content": "148"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 103,
+      "sequence_number": 121,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -794,13 +920,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 104,
+      "sequence_number": 122,
       "token_id": 19919,
       "content": "327"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 105,
+      "sequence_number": 123,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -809,13 +935,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 106,
+      "sequence_number": 124,
       "token_id": 203,
       "content": "\n"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 107,
+      "sequence_number": 125,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -824,13 +950,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 108,
+      "sequence_number": 126,
       "token_id": 113,
       "content": "}"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 109,
+      "sequence_number": 127,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -839,7 +965,7 @@
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 110,
+      "sequence_number": 128,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -848,7 +974,7 @@
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 111,
+      "sequence_number": 129,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -861,7 +987,7 @@
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 112,
+      "sequence_number": 130,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -880,7 +1006,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 113,
+      "sequence_number": 131,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -888,8 +1014,6 @@
         "completed_at": null,
         "status": "completed",
         "incomplete_details": null,
-        "stop_token_id": 0,
-        "stop_token": "<|endoftext|>",
         "model": "moondream/moondream3-preview",
         "output": [
           {
@@ -900,7 +1024,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user is asking for the capital of France and its population. The capital is \"Paris\" and the population is 2148327. I need to return this as a JSON object matching the requested schema exactly."
+                "text": "The user is asking for the capital of France and its population. I need to return a JSON object with the capital \"Paris\" and the population 2148327. I must ensure the JSON is formatted exactly as requested and matches the schema exactly."
               }
             ],
             "encrypted_content": null
@@ -928,9 +1052,11 @@
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 33
+            "reasoning_tokens": 42
           }
-        }
+        },
+        "stop_token_id": 0,
+        "stop_token": "<|endoftext|>"
       }
     },
     {

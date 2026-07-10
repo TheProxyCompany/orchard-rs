@@ -7,6 +7,7 @@ use std::time::Duration;
 use ctor::dtor;
 use futures::future::try_join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 #[dtor]
 fn cleanup_engine() {
@@ -135,6 +136,13 @@ pub(crate) const TEXT_MODELS: &[&str] = &[
 pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
 pub(crate) const ALL_MODELS: &[&str] = TEXT_MODELS;
 
+/// Checkpoints whose profile supports tool calling — the orchard-py matrix
+/// gates tool cases on the same flag (models.py `tools=`), so suites stay
+/// in parity by filtering here instead of looping raw TEXT_MODELS.
+pub(crate) fn tool_model_ids() -> impl Iterator<Item = &'static str> {
+    MODELS.iter().filter(|m| m.tools).map(|m| m.checkpoint)
+}
+
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
     _engine: InferenceEngine,
@@ -143,6 +151,28 @@ pub(crate) struct TestFixture {
 }
 
 static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
+static VOLLEY: OnceLock<Semaphore> = OnceLock::new();
+
+/// Width-limited slot gating concurrent tests against the shared engine.
+///
+/// Acquire as the first line of every test and hold the permit for the whole
+/// test body. Tests run in parallel, but only `BUCKSHOT_WIDTH` (default 2)
+/// are in flight against the engine at once — unbounded concurrency trips
+/// the GPU watchdog. Mirrors orchard-py/tests/test_buckshot.py.
+pub(crate) async fn volley_slot() -> SemaphorePermit<'static> {
+    let semaphore = VOLLEY.get_or_init(|| {
+        let width = std::env::var("BUCKSHOT_WIDTH")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|&width| width > 0)
+            .unwrap_or(2);
+        Semaphore::new(width)
+    });
+    semaphore
+        .acquire()
+        .await
+        .expect("volley semaphore never closes")
+}
 
 fn init_fixture() -> TestFixture {
     if let Err(e) = InferenceEngine::shutdown(Duration::from_secs(30)) {
