@@ -271,10 +271,19 @@ impl ModelRegistry {
             "wait_for_completion": false,
         });
 
-        let response = ipc
+        let response = match ipc
             .send_management_command_async(command, Duration::from_secs(30))
             .await
-            .map_err(|e| format!("Failed to send load_model command: {}", e))?;
+        {
+            Ok(response) => response,
+            Err(e) => {
+                // Fail the entry we just marked ACTIVATING; leaving it parked
+                // there would hang this waiter and every later ensure_loaded.
+                let message = format!("Failed to send load_model command: {}", e);
+                self.fail_activation(canonical_id, &message).await;
+                return Err(message);
+            }
+        };
 
         // Check response status
         let status = response
@@ -855,14 +864,12 @@ impl ModelRegistry {
     ) -> Result<(ModelLoadState, Option<ModelInfo>, Option<String>), String> {
         let canonical_id = self.canonicalize(model_id).await?;
 
-        let _notify: Arc<Notify>;
-        let notified = {
+        let notify = {
             let entries = self.entries.read().await;
             let entry = entries
                 .get(&canonical_id)
                 .ok_or_else(|| format!("Model '{}' has not been scheduled", model_id))?;
 
-            // Notify is edge-triggered: arm the waiter while holding the lock.
             if !matches!(
                 entry.state,
                 ModelLoadState::Downloading | ModelLoadState::Activating
@@ -870,9 +877,31 @@ impl ModelRegistry {
                 return Ok((entry.state, entry.info.clone(), entry.error.clone()));
             }
 
-            _notify = entry.notify.clone();
-            _notify.notified()
+            entry.notify.clone()
         };
+
+        // A `Notified` future is only registered with `notify_waiters` once it
+        // has been polled or explicitly enabled -- creating it arms nothing.
+        // Enable it first, then re-check the state: a transition whose
+        // `notify_waiters` fired in the gap (e.g. engine death failing an
+        // ACTIVATING entry) would otherwise be lost and park this waiter
+        // forever, since no further notification ever comes.
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+
+        {
+            let entries = self.entries.read().await;
+            let entry = entries
+                .get(&canonical_id)
+                .ok_or_else(|| format!("Model '{}' not found", canonical_id))?;
+            if !matches!(
+                entry.state,
+                ModelLoadState::Downloading | ModelLoadState::Activating
+            ) {
+                return Ok((entry.state, entry.info.clone(), entry.error.clone()));
+            }
+        }
 
         // Wait for state transition
         match timeout {
@@ -1039,6 +1068,33 @@ impl ModelRegistry {
             .await;
     }
 
+    /// Handle engine death reported by the IPC listener.
+    ///
+    /// Fails every activation waiting on the engine: the model_loaded /
+    /// model_load_failed event that would resolve it can never arrive.
+    pub async fn handle_engine_died(&self, payload: &Value) {
+        let reason = payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Engine process died");
+
+        let mut entries = self.entries.write().await;
+        for (model_id, entry) in entries.iter_mut() {
+            if entry.state != ModelLoadState::Activating {
+                continue;
+            }
+
+            let error = format!("{} while activating '{}'", reason, model_id);
+            tracing::error!(model_id = %model_id, "{}", error);
+            entry.state = ModelLoadState::Failed;
+            entry.error = Some(error.clone());
+            entry.notify.notify_waiters();
+            for tx in entry.activation_waiters.drain(..) {
+                let _ = tx.send(Err(error.clone()));
+            }
+        }
+    }
+
     /// Handle model_load_failed event from PIE.
     ///
     /// Called by the event callback when a model_load_failed event is received.
@@ -1181,6 +1237,107 @@ mod tests {
         assert_eq!(entry.state, ModelLoadState::Failed);
         assert_eq!(entry.error.as_deref(), Some(error.as_str()));
         assert!(entry.activation_waiters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_engine_died_fails_activation_waiters() {
+        let registry = ModelRegistry::new().unwrap();
+        let canonical_id = "google/gemma-4-E2B-it".to_string();
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut entries = registry.entries.write().await;
+            let entry = entries.entry(canonical_id.clone()).or_default();
+            entry.state = ModelLoadState::Activating;
+            entry.activation_waiters.push(tx);
+        }
+
+        registry
+            .handle_engine_died(&json!({ "error": "Engine process died" }))
+            .await;
+
+        let error = rx.await.unwrap().unwrap_err();
+        assert!(error.contains("Engine process died"), "{error}");
+        assert!(error.contains(&canonical_id), "{error}");
+
+        let entries = registry.entries.read().await;
+        let entry = entries.get(&canonical_id).unwrap();
+        assert_eq!(entry.state, ModelLoadState::Failed);
+        assert_eq!(entry.error.as_deref(), Some(error.as_str()));
+        assert!(entry.activation_waiters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_await_model_wakes_when_engine_dies_mid_wait() {
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        let canonical_id = "mlx-community/parakeet-tdt-0.6b-v3".to_string();
+
+        {
+            let mut alias_cache = registry.alias_cache.write().await;
+            alias_cache.insert(canonical_id.to_lowercase(), canonical_id.clone());
+        }
+        {
+            let mut entries = registry.entries.write().await;
+            let entry = entries.entry(canonical_id.clone()).or_default();
+            entry.state = ModelLoadState::Activating;
+        }
+
+        let waiter_registry = Arc::clone(&registry);
+        let waiter_id = canonical_id.clone();
+        let waiter =
+            tokio::spawn(async move { waiter_registry.await_model(&waiter_id, None).await });
+
+        // Let the waiter reach its (unbounded) wait before the engine dies.
+        tokio::task::yield_now().await;
+
+        registry
+            .handle_engine_died(&json!({ "error": "Engine process died" }))
+            .await;
+
+        let (state, _info, error) = tokio::time::timeout(std::time::Duration::from_secs(5), waiter)
+            .await
+            .expect("await_model must wake when the engine dies mid-activation")
+            .unwrap()
+            .unwrap();
+        assert_eq!(state, ModelLoadState::Failed);
+        assert!(error.unwrap().contains("Engine process died"));
+    }
+
+    /// The state transition (and its `notify_waiters`) can land between
+    /// `await_model`'s state snapshot and its waiter registration; the
+    /// post-enable re-check must catch it instead of parking forever on a
+    /// notification that already fired. The interleave itself lives inside a
+    /// single poll and cannot be forced from a test, so this pins the closest
+    /// observable contract: a transition that wholly precedes the wait returns
+    /// immediately.
+    #[tokio::test]
+    async fn test_await_model_returns_when_transition_precedes_wait() {
+        let registry = ModelRegistry::new().unwrap();
+        let canonical_id = "mlx-community/parakeet-tdt-0.6b-v3".to_string();
+
+        {
+            let mut alias_cache = registry.alias_cache.write().await;
+            alias_cache.insert(canonical_id.to_lowercase(), canonical_id.clone());
+        }
+        {
+            let mut entries = registry.entries.write().await;
+            let entry = entries.entry(canonical_id.clone()).or_default();
+            entry.state = ModelLoadState::Activating;
+        }
+
+        registry
+            .handle_engine_died(&json!({ "error": "Engine process died" }))
+            .await;
+
+        let (state, _info, error) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                registry.await_model(&canonical_id, None).await
+            })
+            .await
+            .expect("await_model must not hang on an already-failed entry")
+            .unwrap();
+        assert_eq!(state, ModelLoadState::Failed);
+        assert!(error.unwrap().contains("Engine process died"));
     }
 
     #[tokio::test]

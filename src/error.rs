@@ -9,6 +9,8 @@ pub enum Error {
     // === IPC Errors ===
     #[error("IPC client not connected")]
     NotConnected,
+    #[error("Engine process is dead; cannot send new requests")]
+    EngineDead,
     #[error("Invalid response from PIE")]
     InvalidResponse,
     #[error("NNG error: {0}")]

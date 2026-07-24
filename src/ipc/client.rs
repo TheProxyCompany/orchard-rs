@@ -28,14 +28,23 @@ pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 const ENGINE_LIVENESS_POLL_INTERVAL: Duration = Duration::from_secs(10);
 const RESPONSE_RECV_TIMEOUT: Duration = Duration::from_millis(10);
 const RESPONSE_SOCKET_BUFFER_MESSAGES: i32 = 1024;
+/// Cap on how long a PUSH send may block. With no live peer (engine dead
+/// before the liveness poll notices), nng blocks the send forever otherwise.
+const REQUEST_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+/// Recv slice for management replies; between slices we poll engine liveness
+/// so a reply that will never come fails loudly instead of blocking.
+const MANAGEMENT_LIVENESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// A single token's log probability info from PIE.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TokenLogProb {
     /// The token string (or token ID as string)
     pub token: String,
-    /// The log probability value
+    /// The log probability value. PIE's wire format names this field
+    /// `probability` (transport.cpp writes `{"token":...,"probability":...}`);
+    /// the alias maps it here so the value survives deserialization.
+    #[serde(alias = "probability")]
     pub logprob: f64,
     /// Optional bytes representation
     pub bytes: Option<Vec<u8>>,
@@ -163,6 +172,10 @@ pub struct IPCClient {
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     listener_handle: Option<JoinHandle<()>>,
     should_stop: Arc<AtomicBool>,
+    /// Set by the listener when the engine process dies or the response
+    /// socket is gone for good; send paths fail fast instead of hanging.
+    engine_dead: Arc<AtomicBool>,
+    engine_pid_file: Option<PathBuf>,
     event_callback: Option<EventCallback>,
 }
 
@@ -183,23 +196,17 @@ impl IPCClient {
             active_requests: Arc::new(Mutex::new(HashMap::new())),
             listener_handle: None,
             should_stop: Arc::new(AtomicBool::new(false)),
+            engine_dead: Arc::new(AtomicBool::new(false)),
+            engine_pid_file: None,
             event_callback: None,
         }
     }
 
     /// Create a new IPC client with an event callback.
     pub fn with_event_callback(callback: EventCallback) -> Self {
-        Self {
-            request_socket: None,
-            response_socket: None,
-            management_socket: Arc::new(Mutex::new(None)),
-            response_channel_id: rand_u64(),
-            request_id_counter: AtomicU64::new(0),
-            active_requests: Arc::new(Mutex::new(HashMap::new())),
-            listener_handle: None,
-            should_stop: Arc::new(AtomicBool::new(false)),
-            event_callback: Some(callback),
-        }
+        let mut client = Self::new();
+        client.event_callback = Some(callback);
+        client
     }
 
     /// Get a clone of the management socket Arc for async operations.
@@ -220,6 +227,7 @@ impl IPCClient {
 
         // Create and connect request socket (PUSH)
         let request_socket = Socket::new(Protocol::Push0)?;
+        request_socket.set_opt::<nng::options::SendTimeout>(Some(REQUEST_SEND_TIMEOUT))?;
         request_socket.dial(&request_url())?;
         self.request_socket = Some(request_socket);
 
@@ -253,6 +261,8 @@ impl IPCClient {
 
         // Start listener thread
         self.should_stop.store(false, Ordering::SeqCst);
+        self.engine_dead.store(false, Ordering::SeqCst);
+        self.engine_pid_file = Some(engine_pid_file.clone());
         self.start_listener(engine_pid_file);
 
         Ok(())
@@ -374,19 +384,43 @@ impl IPCClient {
             .sum::<usize>()
             .max(1);
 
-        self.active_requests
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(
+        {
+            // Checked under the same lock the listener holds while draining on
+            // engine death, so a request can never register after the drain and
+            // hang with nobody left to fail it.
+            let mut requests = self
+                .active_requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if self.engine_dead.load(Ordering::SeqCst) {
+                return Err(Error::EngineDead);
+            }
+            requests.insert(
                 request_id,
                 ActiveRequest {
                     sender: tx,
                     remaining_finals,
                 },
             );
+        }
 
         let msg = nng::Message::from(payload.as_slice());
-        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+        if let Err((_, error)) = socket.send(msg) {
+            self.active_requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&request_id);
+            if self.engine_dead.load(Ordering::SeqCst)
+                || !self
+                    .engine_pid_file
+                    .as_deref()
+                    .map(engine_process_is_alive)
+                    .unwrap_or(true)
+            {
+                return Err(Error::EngineDead);
+            }
+            return Err(Error::Nng(error));
+        }
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -407,24 +441,17 @@ impl IPCClient {
         timeout: Duration,
     ) -> Result<Value> {
         let socket_arc = Arc::clone(&self.management_socket);
+        let engine_dead = Arc::clone(&self.engine_dead);
+        let engine_pid_file = self.engine_pid_file.clone();
 
         tokio::task::spawn_blocking(move || {
-            let guard = socket_arc.lock().unwrap_or_else(|e| e.into_inner());
-            let socket = guard.as_ref().ok_or(Error::NotConnected)?;
-
-            // Set timeout
-            socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
-
-            // Send command
-            let data = serde_json::to_vec(&command)?;
-            let msg = nng::Message::from(data.as_slice());
-            socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
-
-            // Receive response
-            let response = socket.recv()?;
-            let json: Value = serde_json::from_slice(&response)?;
-
-            Ok(json)
+            blocking_management_exchange(
+                &socket_arc,
+                &engine_dead,
+                engine_pid_file.as_deref(),
+                &command,
+                timeout,
+            )
         })
         .await
         .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
@@ -434,25 +461,13 @@ impl IPCClient {
     ///
     /// Prefer `send_management_command_async` in async contexts.
     pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
-        let guard = self
-            .management_socket
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let socket = guard.as_ref().ok_or(Error::NotConnected)?;
-
-        // Set timeout
-        socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
-
-        // Send command
-        let data = serde_json::to_vec(command)?;
-        let msg = nng::Message::from(data.as_slice());
-        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
-
-        // Receive response
-        let response = socket.recv()?;
-        let json: Value = serde_json::from_slice(&response)?;
-
-        Ok(json)
+        blocking_management_exchange(
+            &self.management_socket,
+            &self.engine_dead,
+            self.engine_pid_file.as_deref(),
+            command,
+            timeout,
+        )
     }
 
     /// Start the response listener thread.
@@ -460,6 +475,7 @@ impl IPCClient {
         let response_socket = self.response_socket.take();
         let active_requests = Arc::clone(&self.active_requests);
         let should_stop = Arc::clone(&self.should_stop);
+        let engine_dead = Arc::clone(&self.engine_dead);
         let response_channel_id = self.response_channel_id;
         let event_callback = self.event_callback.clone();
 
@@ -471,6 +487,7 @@ impl IPCClient {
                         socket,
                         active_requests,
                         should_stop,
+                        engine_dead,
                         response_channel_id,
                         engine_pid_file,
                         event_callback,
@@ -503,11 +520,76 @@ fn engine_process_is_alive(engine_pid_file: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// One request/reply exchange on the management REQ socket.
+///
+/// A bare recv blocks forever when the engine exits between send and reply —
+/// and it holds the management socket lock, wedging every queued command
+/// behind it. Receive in short slices and poll engine liveness between them,
+/// failing loudly the moment the engine is gone.
+fn blocking_management_exchange(
+    socket_arc: &Mutex<Option<Socket>>,
+    engine_dead: &AtomicBool,
+    engine_pid_file: Option<&Path>,
+    command: &Value,
+    timeout: Duration,
+) -> Result<Value> {
+    let guard = socket_arc.lock().unwrap_or_else(|e| e.into_inner());
+    let socket = guard.as_ref().ok_or(Error::NotConnected)?;
+
+    let engine_is_dead = || {
+        engine_dead.load(Ordering::SeqCst)
+            || !engine_pid_file.map(engine_process_is_alive).unwrap_or(true)
+    };
+    if engine_is_dead() {
+        return Err(Error::EngineDead);
+    }
+
+    // REQ send also blocks forever when the peer is gone (verified: it parks
+    // in nng_aio_wait), so both directions run in timed slices.
+    socket.set_opt::<nng::options::SendTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
+    socket.set_opt::<nng::options::RecvTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
+    let deadline = Instant::now() + timeout;
+
+    let data = serde_json::to_vec(command)?;
+    let mut msg = nng::Message::from(data.as_slice());
+    loop {
+        match socket.send(msg) {
+            Ok(()) => break,
+            Err((returned, nng::Error::TimedOut)) => {
+                if engine_is_dead() {
+                    return Err(Error::EngineDead);
+                }
+                if Instant::now() >= deadline {
+                    return Err(Error::Nng(nng::Error::TimedOut));
+                }
+                msg = returned;
+            }
+            Err((_, error)) => return Err(Error::Nng(error)),
+        }
+    }
+
+    loop {
+        match socket.recv() {
+            Ok(response) => return Ok(serde_json::from_slice(&response)?),
+            Err(nng::Error::TimedOut) => {
+                if engine_is_dead() {
+                    return Err(Error::EngineDead);
+                }
+                if Instant::now() >= deadline {
+                    return Err(Error::Nng(nng::Error::TimedOut));
+                }
+            }
+            Err(error) => return Err(Error::Nng(error)),
+        }
+    }
+}
+
 /// Response listener - runs on dedicated thread for minimal latency.
 fn run_response_listener(
     socket: Socket,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     should_stop: Arc<AtomicBool>,
+    engine_dead: Arc<AtomicBool>,
     response_channel_id: u64,
     engine_pid_file: PathBuf,
     event_callback: Option<EventCallback>,
@@ -518,6 +600,7 @@ fn run_response_listener(
     // Set receive timeout for responsive polling (10ms for better latency)
     let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(RESPONSE_RECV_TIMEOUT));
     let mut last_engine_check = Instant::now();
+    let mut death_reason: Option<String> = None;
 
     while !should_stop.load(Ordering::SeqCst) {
         match socket.recv() {
@@ -578,6 +661,7 @@ fn run_response_listener(
                             pid_file = %engine_pid_file.display(),
                             "PIE is no longer alive; shutting down IPC listener"
                         );
+                        death_reason = Some("Engine process died".to_string());
                         should_stop.store(true, Ordering::SeqCst);
                         break;
                     }
@@ -594,6 +678,7 @@ fn run_response_listener(
                         error = %error,
                         "PIE is no longer alive; shutting down IPC listener"
                     );
+                    death_reason = Some(format!("Engine process died ({})", error));
                     should_stop.store(true, Ordering::SeqCst);
                     break;
                 }
@@ -601,27 +686,41 @@ fn run_response_listener(
         }
     }
 
-    // Graceful shutdown: notify any remaining pending requests
+    // Shutdown: fail every pending request so no caller waits on a reply that
+    // will never come, and close the door on new registrations.
     tracing::info!("IPC listener shutting down");
-    let requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
+    let reason = death_reason.unwrap_or_else(|| "Engine process disconnected.".to_string());
+    {
+        let mut requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
+        // Under the same lock send_batch_request checks, so no request can
+        // slip in after this drain.
+        engine_dead.store(true, Ordering::SeqCst);
 
-    if !requests.is_empty() {
-        tracing::warn!(
-            "IPC listener exiting with {} active requests; failing them.",
-            requests.len()
-        );
+        if !requests.is_empty() {
+            tracing::warn!(
+                "IPC listener exiting with {} active requests; failing them.",
+                requests.len()
+            );
 
-        for (request_id, entry) in requests.iter() {
-            let error_delta = ResponseDelta {
-                request_id: *request_id,
-                is_final_delta: true,
-                finish_reason: Some("error".to_string()),
-                content: Some("Engine process disconnected.".to_string()),
-                error: Some("Engine process disconnected.".to_string()),
-                ..Default::default()
-            };
-            let _ = entry.sender.send(error_delta);
+            for (request_id, entry) in requests.iter() {
+                let error_delta = ResponseDelta {
+                    request_id: *request_id,
+                    is_final_delta: true,
+                    finish_reason: Some("error".to_string()),
+                    content: Some(reason.clone()),
+                    error: Some(reason.clone()),
+                    ..Default::default()
+                };
+                let _ = entry.sender.send(error_delta);
+            }
+            requests.clear();
         }
+    }
+
+    // Engine-side model activations can never complete now; let the registry
+    // fail its waiters instead of leaving them parked forever.
+    if let Some(callback) = &event_callback {
+        callback("engine_died", &serde_json::json!({ "error": reason }));
     }
 }
 
@@ -744,6 +843,21 @@ mod tests {
     }
 
     #[test]
+    fn test_top_logprobs_deserialize_pie_wire_format() {
+        // Exact frame shape PIE emits (transport.cpp): token id rendered as a
+        // string, value under `probability`. The values must land in
+        // TokenLogProb::logprob, not default to 0.0.
+        let wire = br#"{"request_id":7,"sequence_id":1,"prompt_index":0,"candidate_index":0,"content":"a","is_final_delta":false,"finish_reason":"DELTA","tokens":[976],"top_logprobs":[{"token":"976","probability":-0.052},{"token":"3575","probability":-3.25}]}"#;
+        let delta: ResponseDelta = serde_json::from_slice(wire).expect("deserialize failed");
+        assert_eq!(delta.tokens, vec![976]);
+        assert_eq!(delta.top_logprobs.len(), 2);
+        assert_eq!(delta.top_logprobs[0].token, "976");
+        assert_eq!(delta.top_logprobs[0].logprob, -0.052);
+        assert_eq!(delta.top_logprobs[1].token, "3575");
+        assert_eq!(delta.top_logprobs[1].logprob, -3.25);
+    }
+
+    #[test]
     fn test_response_delta_deserialize_with_defaults() {
         // Test that missing fields get sensible defaults
         let json = serde_json::json!({
@@ -780,6 +894,82 @@ mod tests {
 
         let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
         assert_eq!(delta.error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn test_listener_shutdown_fails_pending_requests_and_marks_engine_dead() {
+        let socket = Socket::new(Protocol::Sub0).expect("sub socket");
+        let active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        active_requests.lock().unwrap().insert(
+            7,
+            ActiveRequest {
+                sender: tx,
+                remaining_finals: 1,
+            },
+        );
+
+        let engine_dead = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_for_callback = Arc::clone(&events);
+        let callback: EventCallback = Arc::new(move |name: &str, _payload: &Value| {
+            events_for_callback.lock().unwrap().push(name.to_string());
+        });
+
+        let dir = tempdir().expect("tempdir should be available");
+        run_response_listener(
+            socket,
+            Arc::clone(&active_requests),
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&engine_dead),
+            1,
+            dir.path().join("engine.pid"),
+            Some(callback),
+        );
+
+        assert!(engine_dead.load(Ordering::SeqCst));
+        assert!(active_requests.lock().unwrap().is_empty());
+        let delta = rx.try_recv().expect("terminal error delta");
+        assert!(delta.is_final_delta);
+        assert_eq!(delta.finish_reason.as_deref(), Some("error"));
+        assert!(delta.error.is_some());
+        assert_eq!(*events.lock().unwrap(), vec!["engine_died".to_string()]);
+    }
+
+    #[test]
+    fn test_management_exchange_fails_fast_when_engine_flagged_dead() {
+        let socket = Socket::new(Protocol::Req0).expect("req socket");
+        let socket_arc = Mutex::new(Some(socket));
+        let engine_dead = AtomicBool::new(true);
+
+        let result = blocking_management_exchange(
+            &socket_arc,
+            &engine_dead,
+            None,
+            &serde_json::json!({"type": "ping"}),
+            Duration::from_secs(1),
+        );
+
+        assert!(matches!(result, Err(Error::EngineDead)));
+    }
+
+    #[test]
+    fn test_management_exchange_detects_engine_exit_while_awaiting_reply() {
+        let socket = Socket::new(Protocol::Req0).expect("req socket");
+        let socket_arc = Mutex::new(Some(socket));
+        let engine_dead = AtomicBool::new(false);
+        let dir = tempdir().expect("tempdir should be available");
+
+        let result = blocking_management_exchange(
+            &socket_arc,
+            &engine_dead,
+            Some(&dir.path().join("missing.pid")),
+            &serde_json::json!({"type": "ping"}),
+            Duration::from_secs(5),
+        );
+
+        assert!(matches!(result, Err(Error::EngineDead)));
     }
 
     #[test]

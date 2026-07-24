@@ -845,13 +845,18 @@ pub struct OutputTextDoneEvent {
     pub logprobs: Vec<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OutputTokenEvent {
     pub sequence_number: u64,
     pub token_id: i32,
     /// Engine run-decoded text for the delta (faithful decode PIE already
     /// computed); None/empty when the token does not yet complete a UTF-8 run.
     pub content: Option<String>,
+    /// Top-K log probabilities for this sampled position, populated only when
+    /// the request set `top_logprobs` > 0. `token` carries the token id
+    /// rendered as a string (PIE response contract).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub top_logprobs: Vec<crate::ipc::client::TokenLogProb>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1782,6 +1787,7 @@ async fn stream_response_events(
     let mut finish_reason: Option<String> = None;
     let mut usage = ResponseUsage::default();
     let mut pending_raw_content = String::new();
+    let mut saw_final_delta = false;
 
     while let Some(delta) = delta_rx.recv().await {
         if let Some(error) = &delta.error {
@@ -1790,6 +1796,10 @@ async fn stream_response_events(
         }
 
         if stream_tokens {
+            // The autoregressive scheduler streams one sampled token per delta;
+            // top_logprobs (when requested) describe that position, so they ride
+            // on the first token event of the delta.
+            let mut top_logprobs = delta.top_logprobs.clone();
             for token_id in &delta.tokens {
                 let sequence_number = stream_state.next_sequence_number();
                 if event_tx
@@ -1797,6 +1807,7 @@ async fn stream_response_events(
                         sequence_number,
                         token_id: *token_id,
                         content: delta.content.clone(),
+                        top_logprobs: std::mem::take(&mut top_logprobs),
                     }))
                     .await
                     .is_err()
@@ -1848,8 +1859,16 @@ async fn stream_response_events(
         }
 
         if delta.is_final_delta {
+            saw_final_delta = true;
             break;
         }
+    }
+
+    // A stream that ends without a final delta (engine died, sequence dropped)
+    // is a failure, not a short success; PIE terminates every sequence with a
+    // final delta, error or otherwise.
+    if error_detail.is_none() && !saw_final_delta {
+        error_detail = Some("Response channel closed before completion.".to_string());
     }
 
     if let Some(detail) = error_detail {
@@ -1989,6 +2008,13 @@ async fn gather_non_streaming_response(
 
     if let Some(error) = error_detail {
         return Err(ClientError::RequestFailed(error));
+    }
+    // completed_at is only set by a final delta; a channel that closed without
+    // one truncated the response and must not read as a short success.
+    if completed_at.is_none() {
+        return Err(ClientError::RequestFailed(
+            "Response channel closed before completion.".to_string(),
+        ));
     }
 
     let incomplete_details = finish_reason_to_incomplete(finish_reason.as_deref());

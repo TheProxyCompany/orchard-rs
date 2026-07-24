@@ -94,6 +94,7 @@ impl From<crate::error::Error> for ClientError {
             Error::ModelNotFound(s) => ClientError::ModelNotFound(s),
             Error::ModelNotReady(s) => ClientError::ModelNotReady(s),
             Error::NotConnected
+            | Error::EngineDead
             | Error::InvalidResponse
             | Error::Nng(_)
             | Error::Timeout
@@ -379,6 +380,14 @@ impl Client {
                     let handle = runtime_handle.clone();
                     handle.spawn(async move {
                         registry.handle_model_load_failed(&payload).await;
+                    });
+                }
+                "engine_died" => {
+                    let registry = Arc::clone(&registry_for_events);
+                    let payload = payload.clone();
+                    let handle = runtime_handle.clone();
+                    handle.spawn(async move {
+                        registry.handle_engine_died(&payload).await;
                     });
                 }
                 _ => {}
@@ -673,7 +682,11 @@ impl Client {
                             remaining_sequences -= 1;
                         }
                     }
-                    None => break,
+                    None => {
+                        return Err(ClientError::RequestFailed(
+                            "Chat response channel closed before completion".to_string(),
+                        ));
+                    }
                 }
             }
 
@@ -964,7 +977,11 @@ impl Client {
                         finals_received += 1;
                     }
                 }
-                None => break, // Channel closed
+                None => {
+                    return Err(ClientError::RequestFailed(
+                        "Chat response channel closed before completion".to_string(),
+                    ));
+                }
             }
         }
 
