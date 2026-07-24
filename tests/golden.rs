@@ -7,3 +7,6 @@ mod golden_io;
 
 #[path = "golden/golden_path.rs"]
 mod golden_path;
+
+#[path = "golden/drift_repro.rs"]
+mod drift_repro;
