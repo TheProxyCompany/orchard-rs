@@ -5,13 +5,12 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test chat completion with logprobs enabled.
 /// Mirrors: test_logprobs.py::test_chat_completion_with_logprobs
 #[tokio::test]
 async fn test_chat_completion_with_logprobs() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -69,7 +68,6 @@ async fn test_chat_completion_with_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_without_logprobs
 #[tokio::test]
 async fn test_chat_completion_without_logprobs() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -112,10 +110,9 @@ async fn test_chat_completion_without_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_logprobs_streaming
 #[tokio::test]
 async fn test_chat_completion_logprobs_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 5,
             temperature: 1.0,
@@ -160,5 +157,6 @@ async fn test_chat_completion_logprobs_streaming() {
                 panic!("Expected stream, got complete response for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

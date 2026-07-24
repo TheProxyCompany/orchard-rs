@@ -5,16 +5,15 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test stop sequence on "blue" - should output red, white, blue and stop at blue.
 /// Mirrors: test_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
 async fn test_chat_completion_respects_stop_sequence() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
             max_tokens: 32,
@@ -59,5 +58,6 @@ async fn test_chat_completion_respects_stop_sequence() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

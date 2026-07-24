@@ -8,16 +8,15 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test that best_of fan-out returns only the top-n candidates while reflecting total work in usage.
 /// Mirrors: test_best_of.py::test_chat_completion_best_of_selects_top_n
 #[tokio::test]
 async fn test_chat_completion_best_of_selects_top_n() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let best_of = 3;
         let params = SamplingParams {
             max_tokens: 8, // max_completion_tokens in Python
@@ -62,7 +61,8 @@ async fn test_chat_completion_best_of_selects_top_n() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 // test_chat_completion_best_of_validation_less_than_n is HTTP-specific (validates 422 response)

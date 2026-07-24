@@ -8,7 +8,7 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 const SYSTEM_PROMPT_COMPLIANCE_SENTINEL: &str = "7-4-7";
 const SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS: &str =
@@ -40,11 +40,10 @@ async fn collect_stream_events(
 
 #[tokio::test]
 async fn test_responses_non_streaming_string_input() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Say hello in one sentence.");
         request.max_output_tokens = Some(32);
         request.temperature = Some(0.0);
@@ -83,12 +82,12 @@ async fn test_responses_non_streaming_string_input() {
         assert!(usage.input_tokens > 0);
         assert!(usage.output_tokens > 0);
         assert_eq!(usage.total_tokens, usage.input_tokens + usage.output_tokens);
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_non_streaming_message_items() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -154,7 +153,6 @@ async fn test_responses_non_streaming_message_items() {
 
 #[tokio::test]
 async fn test_responses_echo_fields() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -200,11 +198,10 @@ async fn test_responses_echo_fields() {
 
 #[tokio::test]
 async fn test_responses_streaming_event_sequence() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Say hello in one sentence.");
         request.stream = true;
         request.temperature = Some(0.0);
@@ -289,16 +286,16 @@ async fn test_responses_streaming_event_sequence() {
             .copied()
             .collect::<std::collections::HashSet<_>>();
         assert_eq!(sequence_numbers.len(), unique.len());
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_streaming_delta_accumulation() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Count from 1 to 5.");
         request.stream = true;
         request.temperature = Some(0.0);
@@ -339,16 +336,16 @@ async fn test_responses_streaming_delta_accumulation() {
             model_id
         );
         assert_eq!(accumulated, done_text);
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_streaming_completed_snapshot() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Test. Respond with 'test received'");
         request.stream = true;
         request.temperature = Some(0.0);
@@ -390,12 +387,12 @@ async fn test_responses_streaming_completed_snapshot() {
             model_id,
             text
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_incomplete_non_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -432,7 +429,6 @@ async fn test_responses_incomplete_non_streaming() {
 
 #[tokio::test]
 async fn test_responses_incomplete_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -494,11 +490,10 @@ async fn test_responses_incomplete_streaming() {
 
 #[tokio::test]
 async fn test_responses_instructions() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("What is your name?");
         request.instructions = Some(SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS.to_string());
         request.temperature = Some(0.0);
@@ -528,7 +523,8 @@ async fn test_responses_instructions() {
             model_id,
             text
         );
-    }
+    }))
+    .await;
 }
 
 #[cfg(test)]

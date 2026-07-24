@@ -5,11 +5,10 @@
 
 use orchard::{OutputStatus, ResponseOutputItem, ResponsesRequest, ResponsesResult};
 
-use crate::fixture::{get_fixture, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, TEXT_MODELS};
 
 #[tokio::test]
 async fn test_responses_structured_json_schema() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -36,7 +35,8 @@ async fn test_responses_structured_json_schema() {
         }
     }));
 
-    for &model_id in TEXT_MODELS {
+    let request = &request;
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let result = client.aresponses(model_id, request.clone()).await;
         assert!(
             result.is_ok(),
@@ -103,5 +103,6 @@ async fn test_responses_structured_json_schema() {
             .unwrap_or_default()
             .to_lowercase();
         assert!(capital.contains("paris"), "capital should mention paris");
-    }
+    }))
+    .await;
 }

@@ -7,16 +7,15 @@ use std::collections::HashMap;
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test non-streaming multi-candidate responses return the expected number of choices.
 /// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_non_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
             max_tokens: 10,
@@ -75,17 +74,17 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test streaming multi-candidate responses can be reconstructed per candidate index.
 /// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_candidate_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
             max_tokens: 10,
@@ -157,5 +156,6 @@ async fn test_chat_completion_multi_candidate_streaming() {
                 panic!("Expected stream, got complete response for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use futures::future::join_all;
 use orchard::{
     FunctionCallOutputContent, ModalArtifact, OutputFunctionCall, OutputMessage, OutputReasoning,
     OutputStatus, ReasoningConfig, ResponseInputItem, ResponseOutputItem, ResponsesInput,
@@ -9,7 +11,7 @@ use orchard::{
 use serde_json::{json, Value};
 
 use crate::fixture::{
-    get_fixture, volley_slot, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID,
+    fanout, get_fixture, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID,
 };
 use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
@@ -313,22 +315,43 @@ fn generate_image_tool() -> Value {
     )
 }
 
+/// Backstop for a request that wedges (e.g. the engine hangs without dying);
+/// one stuck stream must not park the suite for hours. Fixture setup (engine
+/// start + model preload) stays outside this window.
+const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
+
 async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
     let fixture = get_fixture().await;
-    let result = fixture
-        .client
-        .aresponses(model.checkpoint, request)
-        .await
-        .unwrap_or_else(|err| {
+    tokio::time::timeout(STREAM_TIMEOUT, async {
+        let result = fixture
+            .client
+            .aresponses(model.checkpoint, request)
+            .await
+            .unwrap_or_else(|err| {
+                panic!(
+                    "responses request failed for {}: {err:?}",
+                    model.template_type
+                )
+            });
+        let ResponsesResult::Stream { events: stream, .. } = result else {
+            panic!("expected stream for {}", model.template_type);
+        };
+        let turn = drain_stream(stream).await;
+        if let Some(error) = &turn.error {
             panic!(
-                "responses request failed for {}: {err:?}",
+                "responses stream failed mid-turn for {}: {error}",
                 model.template_type
-            )
-        });
-    let ResponsesResult::Stream { events: stream, .. } = result else {
-        panic!("expected stream for {}", model.template_type);
-    };
-    drain_stream(stream).await
+            );
+        }
+        turn
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "responses stream for {} did not complete within {:?}",
+            model.template_type, STREAM_TIMEOUT
+        )
+    })
 }
 
 fn count(turn: &Turn, event: &'static str) -> usize {
@@ -449,6 +472,15 @@ fn image_part(artifact: &ModalArtifact) -> Value {
     })
 }
 
+/// Best-effort early hydration for a lazily-loaded modal checkpoint
+/// (ideogram-4-fp8 alone hydrates for ~76s). Failures are ignored: warming is
+/// a scheduling hint, and concurrent warms of the same checkpoint can race in
+/// the registry; the modal call itself lazy-loads and surfaces real errors.
+async fn warm_model(model_id: &str) {
+    let fixture = get_fixture().await;
+    let _ = fixture.registry.ensure_loaded(model_id).await;
+}
+
 fn model_by_checkpoint(checkpoint: &str) -> Model {
     *MODELS
         .iter()
@@ -458,111 +490,113 @@ fn model_by_checkpoint(checkpoint: &str) -> Model {
 
 #[tokio::test]
 async fn test_thinking_on_off() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a careful assistant. Answer the user's question correctly.";
     const QUESTION: &str = "What is 17 + 26? Reply with just the number.";
     const ANSWER: &str = "43";
 
-    for &model in MODELS {
-        if !model.thinking.enabled() || model.thinking == Thinking::Required {
-            continue;
-        }
+    // Models are independent of each other: run every model's on/off chain
+    // concurrently; only the on->off pair within a model stays serial.
+    fanout(
+        MODELS
+            .iter()
+            .filter(|model| model.thinking.enabled() && model.thinking != Thinking::Required)
+            .map(|&model| async move {
+                let conversation = vec![message("system", SYSTEM), message("user", QUESTION)];
 
-        let conversation = vec![message("system", SYSTEM), message("user", QUESTION)];
+                let mut on_request = request(conversation.clone());
+                on_request.reasoning = Some(ReasoningConfig::Object {
+                    effort: "medium".to_string(),
+                });
+                let on = run_stream(model, on_request).await;
+                assert_or_record(model.template_type, "thinking_on_off", "on", &on.events);
 
-        let mut on_request = request(conversation.clone());
-        on_request.reasoning = Some(ReasoningConfig::Object {
-            effort: "medium".to_string(),
-        });
-        let on = run_stream(model, on_request).await;
-        assert_or_record(model.template_type, "thinking_on_off", "on", &on.events);
+                assert_response_lifecycle(&on);
+                assert_eq!(
+                    added(&on, "reasoning"),
+                    1,
+                    "on: expected exactly one reasoning block"
+                );
+                assert_eq!(count(&on, "response.reasoning.done"), 1);
+                assert!(
+                    count(&on, "response.reasoning.delta") >= 1,
+                    "on: reasoning produced no deltas"
+                );
+                assert_eq!(
+                    on.reasoning.trim(),
+                    on.reasoning_done.as_deref().unwrap_or_default(),
+                    "on: reasoning deltas != reasoning.done"
+                );
+                assert!(
+                    !on.reasoning.contains("<|") && !on.reasoning.contains("</"),
+                    "on: control leak in reasoning"
+                );
+                let on_reasoning = reasoning_items_added(&on);
+                assert_eq!(
+                    on_reasoning.len(),
+                    1,
+                    "on: expected one reasoning item opened"
+                );
+                assert_eq!(on_reasoning[0].status, OutputStatus::InProgress);
+                assert!(
+                    reasoning_tokens(&on) > 0,
+                    "on: usage reported zero reasoning tokens while thinking"
+                );
+                assert_message_lifecycle(&on, "on");
+                assert!(
+                    on.content_done
+                        .as_deref()
+                        .unwrap_or_default()
+                        .contains(ANSWER),
+                    "on: wrong answer: {:?}",
+                    on.content_done
+                );
 
-        assert_response_lifecycle(&on);
-        assert_eq!(
-            added(&on, "reasoning"),
-            1,
-            "on: expected exactly one reasoning block"
-        );
-        assert_eq!(count(&on, "response.reasoning.done"), 1);
-        assert!(
-            count(&on, "response.reasoning.delta") >= 1,
-            "on: reasoning produced no deltas"
-        );
-        assert_eq!(
-            on.reasoning.trim(),
-            on.reasoning_done.as_deref().unwrap_or_default(),
-            "on: reasoning deltas != reasoning.done"
-        );
-        assert!(
-            !on.reasoning.contains("<|") && !on.reasoning.contains("</"),
-            "on: control leak in reasoning"
-        );
-        let on_reasoning = reasoning_items_added(&on);
-        assert_eq!(
-            on_reasoning.len(),
-            1,
-            "on: expected one reasoning item opened"
-        );
-        assert_eq!(on_reasoning[0].status, OutputStatus::InProgress);
-        assert!(
-            reasoning_tokens(&on) > 0,
-            "on: usage reported zero reasoning tokens while thinking"
-        );
-        assert_message_lifecycle(&on, "on");
-        assert!(
-            on.content_done
-                .as_deref()
-                .unwrap_or_default()
-                .contains(ANSWER),
-            "on: wrong answer: {:?}",
-            on.content_done
-        );
+                let mut off_request = request(conversation);
+                off_request.reasoning = Some(false.into());
+                let off = run_stream(model, off_request).await;
+                assert_or_record(model.template_type, "thinking_on_off", "off", &off.events);
 
-        let mut off_request = request(conversation);
-        off_request.reasoning = Some(false.into());
-        let off = run_stream(model, off_request).await;
-        assert_or_record(model.template_type, "thinking_on_off", "off", &off.events);
-
-        assert_response_lifecycle(&off);
-        assert_eq!(
-            added(&off, "reasoning"),
-            0,
-            "off: thinking still produced a reasoning block"
-        );
-        assert_eq!(
-            count(&off, "response.reasoning.delta"),
-            0,
-            "off: reasoning deltas leaked"
-        );
-        assert_eq!(
-            count(&off, "response.reasoning.done"),
-            0,
-            "off: reasoning.done leaked"
-        );
-        assert!(
-            reasoning_items_added(&off).is_empty(),
-            "off: a reasoning item was opened"
-        );
-        assert_eq!(
-            reasoning_tokens(&off),
-            0,
-            "off: usage charged reasoning tokens with thinking off"
-        );
-        assert_message_lifecycle(&off, "off");
-        assert!(
-            off.content_done
-                .as_deref()
-                .unwrap_or_default()
-                .contains(ANSWER),
-            "off: wrong answer: {:?}",
-            off.content_done
-        );
-    }
+                assert_response_lifecycle(&off);
+                assert_eq!(
+                    added(&off, "reasoning"),
+                    0,
+                    "off: thinking still produced a reasoning block"
+                );
+                assert_eq!(
+                    count(&off, "response.reasoning.delta"),
+                    0,
+                    "off: reasoning deltas leaked"
+                );
+                assert_eq!(
+                    count(&off, "response.reasoning.done"),
+                    0,
+                    "off: reasoning.done leaked"
+                );
+                assert!(
+                    reasoning_items_added(&off).is_empty(),
+                    "off: a reasoning item was opened"
+                );
+                assert_eq!(
+                    reasoning_tokens(&off),
+                    0,
+                    "off: usage charged reasoning tokens with thinking off"
+                );
+                assert_message_lifecycle(&off, "off");
+                assert!(
+                    off.content_done
+                        .as_deref()
+                        .unwrap_or_default()
+                        .contains(ANSWER),
+                    "off: wrong answer: {:?}",
+                    off.content_done
+                );
+            }),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn test_reason_then_structured() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a helpful assistant. Reason about the request, then return the answer as a single JSON object that matches the requested schema exactly.";
     const USER: &str = "Return the capital of France and its population. Use the capital string \"Paris\" and the integer literal 2148327 (no decimal point).";
     let expected = json!({"capital": "Paris", "population": 2148327});
@@ -576,77 +610,79 @@ async fn test_reason_then_structured() {
         "additionalProperties": false,
     });
 
-    for &model in MODELS {
-        if !model.thinking.enabled() {
-            continue;
-        }
+    let expected = &expected;
+    let city_schema = &city_schema;
+    fanout(
+        MODELS
+            .iter()
+            .filter(|model| model.thinking.enabled())
+            .map(|&model| async move {
+                let mut turn1_request =
+                    request(vec![message("system", SYSTEM), message("user", USER)]);
+                turn1_request.text = Some(json!({
+                    "format": {
+                        "type": "json_schema",
+                        "name": "city_info",
+                        "schema": city_schema,
+                        "strict": true,
+                    }
+                }));
+                turn1_request.reasoning = Some(ReasoningConfig::Object {
+                    effort: "medium".to_string(),
+                });
+                let turn1 = run_stream(model, turn1_request).await;
+                assert_or_record(
+                    model.template_type,
+                    "reason_then_structured",
+                    "turn1",
+                    &turn1.events,
+                );
 
-        let mut turn1_request = request(vec![message("system", SYSTEM), message("user", USER)]);
-        turn1_request.text = Some(json!({
-            "format": {
-                "type": "json_schema",
-                "name": "city_info",
-                "schema": city_schema,
-                "strict": true,
-            }
-        }));
-        turn1_request.reasoning = Some(ReasoningConfig::Object {
-            effort: "medium".to_string(),
-        });
-        let turn1 = run_stream(model, turn1_request).await;
-        assert_or_record(
-            model.template_type,
-            "reason_then_structured",
-            "turn1",
-            &turn1.events,
-        );
-
-        assert_response_lifecycle(&turn1);
-        assert_eq!(
-            added(&turn1, "reasoning"),
-            1,
-            "turn1: expected exactly one reasoning block"
-        );
-        assert_eq!(
-            count(&turn1, "response.reasoning.done"),
-            1,
-            "turn1: reasoning did not terminate cleanly"
-        );
-        assert!(count(&turn1, "response.reasoning.delta") >= 1);
-        assert_eq!(
-            turn1.reasoning.trim(),
-            turn1.reasoning_done.as_deref().unwrap_or_default(),
-            "turn1: reasoning deltas != reasoning.done"
-        );
-        assert!(
-            !turn1.reasoning.contains("<|") && !turn1.reasoning.contains("</"),
-            "turn1: control leak in reasoning"
-        );
-        assert_eq!(
-            count(&turn1, "response.function_call_arguments.done"),
-            0,
-            "turn1: unexpected tool call"
-        );
-        assert_message_lifecycle(&turn1, "turn1");
-        let parsed: Value = serde_json::from_str(turn1.content_done.as_deref().unwrap_or_default())
-            .unwrap_or_else(|err| {
-                panic!("{}: invalid structured output: {err}", model.template_type)
-            });
-        assert_eq!(
-            parsed, expected,
-            "{}: structured output != expected: {:?}",
-            model.template_type, turn1.content_done
-        );
-    }
+                assert_response_lifecycle(&turn1);
+                assert_eq!(
+                    added(&turn1, "reasoning"),
+                    1,
+                    "turn1: expected exactly one reasoning block"
+                );
+                assert_eq!(
+                    count(&turn1, "response.reasoning.done"),
+                    1,
+                    "turn1: reasoning did not terminate cleanly"
+                );
+                assert!(count(&turn1, "response.reasoning.delta") >= 1);
+                assert_eq!(
+                    turn1.reasoning.trim(),
+                    turn1.reasoning_done.as_deref().unwrap_or_default(),
+                    "turn1: reasoning deltas != reasoning.done"
+                );
+                assert!(
+                    !turn1.reasoning.contains("<|") && !turn1.reasoning.contains("</"),
+                    "turn1: control leak in reasoning"
+                );
+                assert_eq!(
+                    count(&turn1, "response.function_call_arguments.done"),
+                    0,
+                    "turn1: unexpected tool call"
+                );
+                assert_message_lifecycle(&turn1, "turn1");
+                let parsed: Value =
+                    serde_json::from_str(turn1.content_done.as_deref().unwrap_or_default())
+                        .unwrap_or_else(|err| {
+                            panic!("{}: invalid structured output: {err}", model.template_type)
+                        });
+                assert_eq!(
+                    &parsed, expected,
+                    "{}: structured output != expected: {:?}",
+                    model.template_type, turn1.content_done
+                );
+            }),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn test_reason_then_tool() {
-    let _slot = volley_slot().await;
-    for &model in MODELS {
-        if !model.tools {
-            continue;
-        }
+    fanout(MODELS.iter().filter(|model| model.tools).map(|&model| async move {
         let reasoning = reasoning_for(model);
         let mut conversation = vec![
             message("system", WEATHER_SYSTEM),
@@ -755,18 +791,16 @@ async fn test_reason_then_tool() {
             "{}: answer ignored the tool result: {answer:?}",
             model.template_type
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_tool_result_grounding() {
-    let _slot = volley_slot().await;
     let surprise_result = json!({"temperature": 9, "unit": "celsius", "condition": "snowing"});
 
-    for &model in MODELS {
-        if !model.tools {
-            continue;
-        }
+    let surprise_result = &surprise_result;
+    fanout(MODELS.iter().filter(|model| model.tools).map(|&model| async move {
         let reasoning = reasoning_for(model);
         let mut conversation = vec![
             message("system", WEATHER_SYSTEM),
@@ -884,12 +918,12 @@ async fn test_tool_result_grounding() {
                 model.template_type
             );
         }
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -903,7 +937,13 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
     generator_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let generator = run_stream(gemma, generator_request).await;
+    // Diffusion checkpoints hydrate lazily on first use (ideogram-4-fp8 alone
+    // takes ~76s): warm the generator's model while gemma writes the prompt.
+    let fixture = get_fixture().await;
+    let (generator, ()) = tokio::join!(
+        run_stream(gemma, generator_request),
+        warm_model(IDEOGRAM4_MODEL_ID)
+    );
     assert_or_record("gemma4", "image_tool_self_loop", "turn1", &generator.events);
     assert_or_record(
         "gemma4",
@@ -961,7 +1001,6 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
         "generator prompt lost the requested object: {prompt:?}"
     );
 
-    let fixture = get_fixture().await;
     let artifacts = fixture
         .client
         .agenerate_image(
@@ -1008,7 +1047,29 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
     self_loop_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let self_loop = run_stream(gemma, self_loop_request).await;
+
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What is in this image? Answer with the main object.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+
+    // Both turns consume the already-generated image and nothing from each
+    // other: overlap the gemma self-loop with the moondream verifier.
+    let (self_loop, verifier) = tokio::join!(
+        run_stream(gemma, self_loop_request),
+        run_stream(moondream, verifier_request)
+    );
     assert_or_record("gemma4", "image_tool_self_loop", "turn2", &self_loop.events);
 
     assert_response_lifecycle(&self_loop);
@@ -1028,22 +1089,6 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
         "gemma4 did not ground on the generated image: {self_loop_answer:?}"
     );
 
-    let mut verifier_request = request(vec![ResponseInputItem::Message {
-        role: "user".to_string(),
-        content: json!([
-            {
-                "type": "input_text",
-                "text": "What is in this image? Answer with the main object.",
-            },
-            image,
-        ]),
-        tool_calls: None,
-        tool_call_id: None,
-    }]);
-    verifier_request.reasoning = Some(ReasoningConfig::Object {
-        effort: "medium".to_string(),
-    });
-    let verifier = run_stream(moondream, verifier_request).await;
     assert_or_record(
         "moondream3",
         "image_tool_blind_verifier",
@@ -1066,7 +1111,6 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier_flux() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -1080,7 +1124,11 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
     generator_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let generator = run_stream(gemma, generator_request).await;
+    let fixture = get_fixture().await;
+    let (generator, ()) = tokio::join!(
+        run_stream(gemma, generator_request),
+        warm_model(FLUX2_MODEL_ID)
+    );
     assert_or_record(
         "gemma4",
         "image_tool_self_loop_flux",
@@ -1143,7 +1191,6 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
         "generator prompt lost the requested object: {prompt:?}"
     );
 
-    let fixture = get_fixture().await;
     let artifacts = fixture
         .client
         .agenerate_image(
@@ -1189,7 +1236,29 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
     self_loop_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let self_loop = run_stream(gemma, self_loop_request).await;
+
+    let mut verifier_request = request(vec![ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: json!([
+            {
+                "type": "input_text",
+                "text": "What is in this image? Answer with the main object.",
+            },
+            image,
+        ]),
+        tool_calls: None,
+        tool_call_id: None,
+    }]);
+    verifier_request.reasoning = Some(ReasoningConfig::Object {
+        effort: "medium".to_string(),
+    });
+
+    // Both turns consume the already-generated image and nothing from each
+    // other: overlap the gemma self-loop with the moondream verifier.
+    let (self_loop, verifier) = tokio::join!(
+        run_stream(gemma, self_loop_request),
+        run_stream(moondream, verifier_request)
+    );
     assert_or_record(
         "gemma4",
         "image_tool_self_loop_flux",
@@ -1214,22 +1283,6 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
         "gemma4 did not ground on the Flux-generated image: {self_loop_answer:?}"
     );
 
-    let mut verifier_request = request(vec![ResponseInputItem::Message {
-        role: "user".to_string(),
-        content: json!([
-            {
-                "type": "input_text",
-                "text": "What is in this image? Answer with the main object.",
-            },
-            image,
-        ]),
-        tool_calls: None,
-        tool_call_id: None,
-    }]);
-    verifier_request.reasoning = Some(ReasoningConfig::Object {
-        effort: "medium".to_string(),
-    });
-    let verifier = run_stream(moondream, verifier_request).await;
     assert_or_record(
         "moondream3",
         "image_tool_blind_verifier_flux",
@@ -1252,7 +1305,6 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1268,7 +1320,12 @@ async fn test_image_edit_tool_blind_verifier() {
     generator_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let generator = run_stream(gemma, generator_request).await;
+    let fixture = get_fixture().await;
+    let (generator, (), ()) = tokio::join!(
+        run_stream(gemma, generator_request),
+        warm_model(IDEOGRAM4_MODEL_ID),
+        warm_model(QWEN_IMAGE_EDIT_MODEL_ID)
+    );
     assert_or_record(
         "gemma4",
         "image_edit_tool_blind_verifier",
@@ -1328,7 +1385,6 @@ async fn test_image_edit_tool_blind_verifier() {
         );
     }
 
-    let fixture = get_fixture().await;
     let source = fixture
         .client
         .agenerate_image(
@@ -1433,7 +1489,6 @@ async fn test_image_edit_tool_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier_flux() {
-    let _slot = volley_slot().await;
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1449,7 +1504,12 @@ async fn test_image_edit_tool_blind_verifier_flux() {
     generator_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    let generator = run_stream(gemma, generator_request).await;
+    let fixture = get_fixture().await;
+    let (generator, (), ()) = tokio::join!(
+        run_stream(gemma, generator_request),
+        warm_model(FLUX2_MODEL_ID),
+        warm_model(QWEN_IMAGE_EDIT_MODEL_ID)
+    );
     assert_or_record(
         "gemma4",
         "image_edit_tool_blind_verifier_flux",
@@ -1509,7 +1569,6 @@ async fn test_image_edit_tool_blind_verifier_flux() {
         );
     }
 
-    let fixture = get_fixture().await;
     let source = fixture
         .client
         .agenerate_image(
@@ -1611,59 +1670,69 @@ async fn test_image_edit_tool_blind_verifier_flux() {
     }
 }
 
+async fn run_audio_telephone_chain(tts_label: &str, tts_model_id: &str, phrase: &str) {
+    let fixture = get_fixture().await;
+    let artifacts = fixture
+        .client
+        .agenerate_audio(tts_model_id, phrase, Some(tts_options(tts_label)))
+        .await
+        .unwrap_or_else(|err| panic!("{tts_label} generation failed: {err:?}"));
+
+    assert_eq!(
+        artifacts.len(),
+        1,
+        "{tts_label} returned unexpected artifacts"
+    );
+    let artifact = &artifacts[0];
+    assert_eq!(artifact.modal_type, "audio");
+    assert_eq!(artifact.mime_type, "audio/wav");
+    assert!(
+        artifact.data.starts_with(b"RIFF"),
+        "{tts_label} did not return a WAV"
+    );
+    assert!(
+        artifact.data.len() > 44,
+        "{tts_label} returned a suspiciously small WAV"
+    );
+
+    let pcm = wav_to_float32_pcm(&artifact.data, AUDIO_TELEPHONE_SAMPLE_RATE);
+    assert!(!pcm.is_empty(), "{tts_label} produced no audio samples");
+
+    let pcm = &pcm;
+    let transcriptions = STT_MODELS.map(|(stt_label, stt_model_id)| async move {
+        let transcript = fixture
+            .client
+            .atranscribe_audio(stt_model_id, pcm)
+            .await
+            .unwrap_or_else(|err| {
+                panic!("{tts_label} -> {stt_label} transcription failed: {err:?}")
+            });
+        let normalized = normalize_transcript(&transcript);
+        assert_eq!(
+            normalized, phrase,
+            "{tts_label} -> {stt_label} telephone transcript drifted: {transcript:?}"
+        );
+    });
+    join_all(transcriptions).await;
+}
+
 #[tokio::test]
 async fn test_audio_telephone_tts_to_speech_to_text() {
-    let _slot = volley_slot().await;
-    let fixture = get_fixture().await;
+    // Every (TTS model, phrase) chain is independent, and within a chain the
+    // three STT transcriptions share only the already-generated WAV: run all
+    // twelve chains concurrently and fan each one out across the STT models.
+    // The only serial edge left is TTS -> its own transcriptions.
+    let mut chains = Vec::new();
     for (tts_label, tts_model_id) in TTS_MODELS {
         for phrase in AUDIO_TELEPHONE_PHRASES {
-            let artifacts = fixture
-                .client
-                .agenerate_audio(tts_model_id, phrase, Some(tts_options(tts_label)))
-                .await
-                .unwrap_or_else(|err| panic!("{tts_label} generation failed: {err:?}"));
-
-            assert_eq!(
-                artifacts.len(),
-                1,
-                "{tts_label} returned unexpected artifacts"
-            );
-            let artifact = &artifacts[0];
-            assert_eq!(artifact.modal_type, "audio");
-            assert_eq!(artifact.mime_type, "audio/wav");
-            assert!(
-                artifact.data.starts_with(b"RIFF"),
-                "{tts_label} did not return a WAV"
-            );
-            assert!(
-                artifact.data.len() > 44,
-                "{tts_label} returned a suspiciously small WAV"
-            );
-
-            let pcm = wav_to_float32_pcm(&artifact.data, AUDIO_TELEPHONE_SAMPLE_RATE);
-            assert!(!pcm.is_empty(), "{tts_label} produced no audio samples");
-
-            for (stt_label, stt_model_id) in STT_MODELS {
-                let transcript = fixture
-                    .client
-                    .atranscribe_audio(stt_model_id, &pcm)
-                    .await
-                    .unwrap_or_else(|err| {
-                        panic!("{tts_label} -> {stt_label} transcription failed: {err:?}")
-                    });
-                let normalized = normalize_transcript(&transcript);
-                assert_eq!(
-                    normalized, phrase,
-                    "{tts_label} -> {stt_label} telephone transcript drifted: {transcript:?}"
-                );
-            }
+            chains.push(run_audio_telephone_chain(tts_label, tts_model_id, phrase));
         }
     }
+    fanout(chains).await;
 }
 
 #[tokio::test]
 async fn test_tool_selection() {
-    let _slot = volley_slot().await;
     let distractors = vec![
         tool(
             "get_time",
@@ -1775,10 +1844,9 @@ async fn test_tool_selection() {
         .filter_map(|tool| tool.get("name").and_then(Value::as_str))
         .collect::<HashSet<_>>();
 
-    for &model in MODELS {
-        if !model.tools {
-            continue;
-        }
+    let tools = &tools;
+    let distractor_names = &distractor_names;
+    fanout(MODELS.iter().filter(|model| model.tools).map(|&model| async move {
         let mut turn1_request = request(vec![
             message("system", "You are a helpful assistant with tool calling. You have many tools available; select the single most appropriate one for the request."),
             message("user", "What's the weather in San Francisco?"),
@@ -1848,12 +1916,12 @@ async fn test_tool_selection() {
             model.template_type,
             turn1.field_args
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_tool_chaining() {
-    let _slot = volley_slot().await;
     const KEY: &str = "K7-MAGENTA-9931";
     const CHEST_CONTENTS: &str = "a jade dragon figurine";
     let find_key = tool(
@@ -1870,10 +1938,8 @@ async fn test_tool_chaining() {
     );
     let tools = vec![find_key, unlock_chest];
 
-    for &model in MODELS {
-        if !model.tools {
-            continue;
-        }
+    let tools = &tools;
+    fanout(MODELS.iter().filter(|model| model.tools).map(|&model| async move {
         let reasoning = reasoning_for(model);
         let mut conversation = vec![
             message("system", "You are a helpful assistant with tool calling. Use the tools in the right order, passing each tool's result into the next, then answer the request."),
@@ -2014,231 +2080,240 @@ async fn test_tool_chaining() {
             "{}: answer ignored the chest contents: {answer:?}",
             model.template_type
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_multi_tool() {
-    let _slot = volley_slot().await;
     let tools = vec![weather_tool(), get_time_tool()];
     const SYSTEM: &str = "You are a helpful assistant with tool calling. Call the tools you need to answer the request, then use their results to give the final answer.";
 
-    for &model in MODELS {
-        if !model.tools {
-            continue;
-        }
-        let reasoning = reasoning_for(model);
-        let mut conversation = vec![
-            message("system", SYSTEM),
-            message(
-                "user",
-                "What's the weather in San Francisco and what time is it in Tokyo?",
-            ),
-        ];
-
-        let mut turn1_request = request(conversation.clone());
-        turn1_request.core_tools = tools.clone();
-        turn1_request.tool_choice = Some(json!("required"));
-        turn1_request.reasoning = reasoning.clone();
-        let turn1 = run_stream(model, turn1_request).await;
-        assert_or_record(model.template_type, "multi_tool", "turn1", &turn1.events);
-
-        assert_response_lifecycle(&turn1);
-        assert_optional_reasoning(
-            &turn1,
-            model,
-            "turn1",
-            "expected at most one reasoning block",
-        );
-        assert!(
-            !turn1.counts.contains_key("response.output_text.delta"),
-            "turn1: leaked message text on a tool turn"
-        );
-        let n_calls = added(&turn1, "function_call");
-        assert!(
-            n_calls >= 1,
-            "turn1: expected at least one function_call opened"
-        );
-        assert_eq!(
-            count(&turn1, "response.function_call_arguments.done"),
-            n_calls
-        );
-        assert_eq!(turn1.function_calls.len(), n_calls);
-        let opened = function_call_items_added(&turn1);
-        assert_eq!(
-            opened.len(),
-            n_calls,
-            "turn1: opened function_call count mismatch"
-        );
-        let mut open_ids = HashSet::new();
-        for item in &opened {
-            assert!(
-                ["get_weather", "get_time"].contains(&item.name.as_str()),
-                "turn1: unexpected tool {:?}",
-                item.name
-            );
-            assert_eq!(
-                item.arguments, "",
-                "turn1: function_call must open with empty arguments"
-            );
-            assert_eq!(item.status, OutputStatus::InProgress);
-            open_ids.insert(item.call_id.clone());
-        }
-        assert_eq!(
-            open_ids.len(),
-            n_calls,
-            "turn1: duplicate call_id across opened calls"
-        );
-
-        let mut by_name: HashMap<String, OutputFunctionCall> = HashMap::new();
-        for call in &turn1.function_calls {
-            assert_eq!(call.status, OutputStatus::Completed);
-            assert!(
-                open_ids.contains(&call.call_id),
-                "turn1: done call_id has no matching open"
-            );
-            by_name.insert(call.name.clone(), call.clone());
-        }
-        if let Some(weather) = by_name.get("get_weather") {
-            assert_eq!(
-                parse_arguments(&weather.arguments),
-                json!({"location": "San Francisco"})
-            );
-        }
-        if let Some(time) = by_name.get("get_time") {
-            assert_eq!(
-                parse_arguments(&time.arguments),
-                json!({"timezone": "Tokyo"})
-            );
-        }
-
-        let results = HashMap::from([
-            (
-                "get_weather".to_string(),
-                json!({"temperature": 65, "unit": "fahrenheit", "condition": "foggy"}),
-            ),
-            (
-                "get_time".to_string(),
-                json!({"time": "23:00", "timezone": "Tokyo", "utc_offset": "+09:00"}),
-            ),
-        ]);
-        for call in &turn1.function_calls {
-            conversation.push(function_call(&call.call_id, &call.name, &call.arguments));
-            conversation.push(function_output(&call.call_id, results[&call.name].clone()));
-        }
-
-        let remaining = tools
+    let tools = &tools;
+    fanout(
+        MODELS
             .iter()
-            .filter(|tool| {
-                let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
-                !by_name.contains_key(name)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut turn2_request = request(conversation.clone());
-        turn2_request.core_tools = tools.clone();
-        turn2_request.tool_choice = Some(json!(if remaining.is_empty() {
-            "none"
-        } else {
-            "required"
-        }));
-        turn2_request.reasoning = reasoning.clone();
-        let turn2 = run_stream(model, turn2_request).await;
-        assert_or_record(model.template_type, "multi_tool", "turn2", &turn2.events);
+            .filter(|model| model.tools)
+            .map(|&model| async move {
+                let reasoning = reasoning_for(model);
+                let mut conversation = vec![
+                    message("system", SYSTEM),
+                    message(
+                        "user",
+                        "What's the weather in San Francisco and what time is it in Tokyo?",
+                    ),
+                ];
 
-        assert_response_lifecycle(&turn2);
-        assert_optional_reasoning(
-            &turn2,
-            model,
-            "turn2",
-            "expected at most one reasoning block",
-        );
+                let mut turn1_request = request(conversation.clone());
+                turn1_request.core_tools = tools.clone();
+                turn1_request.tool_choice = Some(json!("required"));
+                turn1_request.reasoning = reasoning.clone();
+                let turn1 = run_stream(model, turn1_request).await;
+                assert_or_record(model.template_type, "multi_tool", "turn1", &turn1.events);
 
-        let final_turn = if remaining.is_empty() {
-            assert_eq!(
-                count(&turn2, "response.function_call_arguments.done"),
-                0,
-                "turn2: unexpected tool call"
-            );
-            assert_message_lifecycle(&turn2, "turn2");
-            assert_eq!(
-                by_name.keys().cloned().collect::<HashSet<_>>(),
-                HashSet::from(["get_weather".to_string(), "get_time".to_string()]),
-                "turn1: parallel arch must emit both calls"
-            );
-            turn2
-        } else {
-            assert!(
-                added(&turn2, "function_call") >= 1,
-                "turn2: expected the remaining tool call"
-            );
-            assert_eq!(
-                count(&turn2, "response.output_text.done"),
-                0,
-                "turn2: leaked message on a tool turn"
-            );
-            for call in &turn2.function_calls {
-                assert_eq!(call.status, OutputStatus::Completed);
-                let remaining_names = remaining
-                    .iter()
-                    .filter_map(|tool| tool.get("name").and_then(Value::as_str))
-                    .collect::<HashSet<_>>();
-                assert!(
-                    remaining_names.contains(call.name.as_str()),
-                    "turn2: unexpected tool {:?}",
-                    call.name
+                assert_response_lifecycle(&turn1);
+                assert_optional_reasoning(
+                    &turn1,
+                    model,
+                    "turn1",
+                    "expected at most one reasoning block",
                 );
-                by_name.insert(call.name.clone(), call.clone());
-                conversation.push(function_call(&call.call_id, &call.name, &call.arguments));
-                conversation.push(function_output(&call.call_id, results[&call.name].clone()));
-            }
-            assert_eq!(
-                parse_arguments(&by_name["get_weather"].arguments),
-                json!({"location": "San Francisco"})
-            );
-            assert_eq!(
-                parse_arguments(&by_name["get_time"].arguments),
-                json!({"timezone": "Asia/Tokyo"})
-            );
+                assert!(
+                    !turn1.counts.contains_key("response.output_text.delta"),
+                    "turn1: leaked message text on a tool turn"
+                );
+                let n_calls = added(&turn1, "function_call");
+                assert!(
+                    n_calls >= 1,
+                    "turn1: expected at least one function_call opened"
+                );
+                assert_eq!(
+                    count(&turn1, "response.function_call_arguments.done"),
+                    n_calls
+                );
+                assert_eq!(turn1.function_calls.len(), n_calls);
+                let opened = function_call_items_added(&turn1);
+                assert_eq!(
+                    opened.len(),
+                    n_calls,
+                    "turn1: opened function_call count mismatch"
+                );
+                let mut open_ids = HashSet::new();
+                for item in &opened {
+                    assert!(
+                        ["get_weather", "get_time"].contains(&item.name.as_str()),
+                        "turn1: unexpected tool {:?}",
+                        item.name
+                    );
+                    assert_eq!(
+                        item.arguments, "",
+                        "turn1: function_call must open with empty arguments"
+                    );
+                    assert_eq!(item.status, OutputStatus::InProgress);
+                    open_ids.insert(item.call_id.clone());
+                }
+                assert_eq!(
+                    open_ids.len(),
+                    n_calls,
+                    "turn1: duplicate call_id across opened calls"
+                );
 
-            let mut turn3_request = request(conversation);
-            turn3_request.core_tools = tools.clone();
-            turn3_request.tool_choice = Some(json!("none"));
-            turn3_request.reasoning = reasoning;
-            let turn3 = run_stream(model, turn3_request).await;
-            assert_or_record(model.template_type, "multi_tool", "turn3", &turn3.events);
-            assert_eq!(turn3.order.first().copied(), Some("response.created"));
-            assert_eq!(turn3.order.last().copied(), Some("done"));
-            assert_eq!(count(&turn3, "response.completed"), 1);
-            assert_optional_reasoning(
-                &turn3,
-                model,
-                "turn3",
-                "expected at most one reasoning block",
-            );
-            assert_eq!(
-                count(&turn3, "response.function_call_arguments.done"),
-                0,
-                "turn3: unexpected tool call"
-            );
-            assert_message_lifecycle(&turn3, "turn3");
-            turn3
-        };
+                let mut by_name: HashMap<String, OutputFunctionCall> = HashMap::new();
+                for call in &turn1.function_calls {
+                    assert_eq!(call.status, OutputStatus::Completed);
+                    assert!(
+                        open_ids.contains(&call.call_id),
+                        "turn1: done call_id has no matching open"
+                    );
+                    by_name.insert(call.name.clone(), call.clone());
+                }
+                if let Some(weather) = by_name.get("get_weather") {
+                    assert_eq!(
+                        parse_arguments(&weather.arguments),
+                        json!({"location": "San Francisco"})
+                    );
+                }
+                if let Some(time) = by_name.get("get_time") {
+                    assert_eq!(
+                        parse_arguments(&time.arguments),
+                        json!({"timezone": "Tokyo"})
+                    );
+                }
 
-        let answer = final_turn
-            .content_done
-            .as_deref()
-            .unwrap_or_default()
-            .to_lowercase();
-        assert!(
-            answer.contains("65") || answer.contains("fog"),
-            "{}: final answer dropped weather result: {answer:?}",
-            model.template_type
-        );
-        assert!(
-            answer.contains("23:00") || answer.contains("11") || answer.contains("tokyo"),
-            "{}: final answer dropped time result: {answer:?}",
-            model.template_type
-        );
-    }
+                let results = HashMap::from([
+                    (
+                        "get_weather".to_string(),
+                        json!({"temperature": 65, "unit": "fahrenheit", "condition": "foggy"}),
+                    ),
+                    (
+                        "get_time".to_string(),
+                        json!({"time": "23:00", "timezone": "Tokyo", "utc_offset": "+09:00"}),
+                    ),
+                ]);
+                for call in &turn1.function_calls {
+                    conversation.push(function_call(&call.call_id, &call.name, &call.arguments));
+                    conversation.push(function_output(&call.call_id, results[&call.name].clone()));
+                }
+
+                let remaining = tools
+                    .iter()
+                    .filter(|tool| {
+                        let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
+                        !by_name.contains_key(name)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let mut turn2_request = request(conversation.clone());
+                turn2_request.core_tools = tools.clone();
+                turn2_request.tool_choice = Some(json!(if remaining.is_empty() {
+                    "none"
+                } else {
+                    "required"
+                }));
+                turn2_request.reasoning = reasoning.clone();
+                let turn2 = run_stream(model, turn2_request).await;
+                assert_or_record(model.template_type, "multi_tool", "turn2", &turn2.events);
+
+                assert_response_lifecycle(&turn2);
+                assert_optional_reasoning(
+                    &turn2,
+                    model,
+                    "turn2",
+                    "expected at most one reasoning block",
+                );
+
+                let final_turn = if remaining.is_empty() {
+                    assert_eq!(
+                        count(&turn2, "response.function_call_arguments.done"),
+                        0,
+                        "turn2: unexpected tool call"
+                    );
+                    assert_message_lifecycle(&turn2, "turn2");
+                    assert_eq!(
+                        by_name.keys().cloned().collect::<HashSet<_>>(),
+                        HashSet::from(["get_weather".to_string(), "get_time".to_string()]),
+                        "turn1: parallel arch must emit both calls"
+                    );
+                    turn2
+                } else {
+                    assert!(
+                        added(&turn2, "function_call") >= 1,
+                        "turn2: expected the remaining tool call"
+                    );
+                    assert_eq!(
+                        count(&turn2, "response.output_text.done"),
+                        0,
+                        "turn2: leaked message on a tool turn"
+                    );
+                    for call in &turn2.function_calls {
+                        assert_eq!(call.status, OutputStatus::Completed);
+                        let remaining_names = remaining
+                            .iter()
+                            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+                            .collect::<HashSet<_>>();
+                        assert!(
+                            remaining_names.contains(call.name.as_str()),
+                            "turn2: unexpected tool {:?}",
+                            call.name
+                        );
+                        by_name.insert(call.name.clone(), call.clone());
+                        conversation.push(function_call(
+                            &call.call_id,
+                            &call.name,
+                            &call.arguments,
+                        ));
+                        conversation
+                            .push(function_output(&call.call_id, results[&call.name].clone()));
+                    }
+                    assert_eq!(
+                        parse_arguments(&by_name["get_weather"].arguments),
+                        json!({"location": "San Francisco"})
+                    );
+                    assert_eq!(
+                        parse_arguments(&by_name["get_time"].arguments),
+                        json!({"timezone": "Asia/Tokyo"})
+                    );
+
+                    let mut turn3_request = request(conversation);
+                    turn3_request.core_tools = tools.clone();
+                    turn3_request.tool_choice = Some(json!("none"));
+                    turn3_request.reasoning = reasoning;
+                    let turn3 = run_stream(model, turn3_request).await;
+                    assert_or_record(model.template_type, "multi_tool", "turn3", &turn3.events);
+                    assert_eq!(turn3.order.first().copied(), Some("response.created"));
+                    assert_eq!(turn3.order.last().copied(), Some("done"));
+                    assert_eq!(count(&turn3, "response.completed"), 1);
+                    assert_optional_reasoning(
+                        &turn3,
+                        model,
+                        "turn3",
+                        "expected at most one reasoning block",
+                    );
+                    assert_eq!(
+                        count(&turn3, "response.function_call_arguments.done"),
+                        0,
+                        "turn3: unexpected tool call"
+                    );
+                    assert_message_lifecycle(&turn3, "turn3");
+                    turn3
+                };
+
+                let answer = final_turn
+                    .content_done
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_lowercase();
+                assert!(
+                    answer.contains("65") || answer.contains("fog"),
+                    "{}: final answer dropped weather result: {answer:?}",
+                    model.template_type
+                );
+                assert!(
+                    answer.contains("23:00") || answer.contains("11") || answer.contains("tokyo"),
+                    "{}: final answer dropped time result: {answer:?}",
+                    model.template_type
+                );
+            }),
+    )
+    .await;
 }

@@ -7,11 +7,17 @@ use std::time::Duration;
 use ctor::dtor;
 use futures::future::try_join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
-use tokio::sync::{Semaphore, SemaphorePermit};
 
 #[dtor]
 fn cleanup_engine() {
-    let _ = InferenceEngine::shutdown(Duration::from_secs(30));
+    // Only clean up an engine this test process actually used. If the fixture
+    // never initialized, no test touched an engine -- and without the
+    // fixture's namespace setup a shutdown here would target the machine's
+    // default engine namespace, killing an engine that belongs to someone
+    // else (e.g. Proxy.app's Grand Central engine).
+    if FIXTURE.get().is_some() {
+        let _ = InferenceEngine::shutdown(Duration::from_secs(30));
+    }
 }
 
 pub(crate) const LLAMA_MODEL_ID: &str = "meta-llama/Llama-3.1-8B-Instruct";
@@ -143,6 +149,30 @@ pub(crate) fn tool_model_ids() -> impl Iterator<Item = &'static str> {
     MODELS.iter().filter(|m| m.tools).map(|m| m.checkpoint)
 }
 
+/// Cap on concurrently in-flight chains a single test fans out across models.
+/// Bounds the request-arrival burst the suite offers the engine at t0: an
+/// uncapped fan-out of every per-model loop (~200 simultaneous requests)
+/// livelocked the IPC layer — RequestPreprocessor::run_loop and every
+/// ResponseProcessor worker spinning at fixed PCs with committed==completed
+/// and no forward progress (pt1 evidence:
+/// /tmp/carbon-prod/trackc_fmod2_wedge_sample.txt). Raise once the engine
+/// survives the uncapped burst.
+pub(crate) const TEST_FANOUT: usize = 4;
+
+/// Drive independent per-model test chains concurrently, at most
+/// [`TEST_FANOUT`] in flight; each chain's internal turn order is untouched.
+pub(crate) async fn fanout<I>(chains: I)
+where
+    I: IntoIterator,
+    I::Item: std::future::Future<Output = ()>,
+{
+    use futures::stream::StreamExt;
+    futures::stream::iter(chains)
+        .buffer_unordered(TEST_FANOUT)
+        .for_each(|()| async {})
+        .await;
+}
+
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
     _engine: InferenceEngine,
@@ -151,30 +181,41 @@ pub(crate) struct TestFixture {
 }
 
 static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
-static VOLLEY: OnceLock<Semaphore> = OnceLock::new();
 
-/// Width-limited slot gating concurrent tests against the shared engine.
-///
-/// Acquire as the first line of every test and hold the permit for the whole
-/// test body. Tests run in parallel, but only `BUCKSHOT_WIDTH` (default 2)
-/// are in flight against the engine at once — unbounded concurrency trips
-/// the GPU watchdog. Mirrors orchard-py/tests/test_buckshot.py.
-pub(crate) async fn volley_slot() -> SemaphorePermit<'static> {
-    let semaphore = VOLLEY.get_or_init(|| {
-        let width = std::env::var("BUCKSHOT_WIDTH")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|&width| width > 0)
-            .unwrap_or(2);
-        Semaphore::new(width)
-    });
-    semaphore
-        .acquire()
-        .await
-        .expect("volley semaphore never closes")
+/// Tests must never operate in the default engine namespace: that namespace
+/// belongs to whatever long-lived engine this machine runs (Proxy.app's
+/// Grand Central engine in production), and test-side engine shutdowns
+/// force-stop the namespace's engine. Unless the caller pinned a namespace
+/// explicitly (pie_cycle.sh exports ORCHARD_CACHE_ROOT), give this test
+/// process a private one before anything resolves engine paths or IPC
+/// endpoints from the environment.
+pub(crate) fn ensure_test_namespace() {
+    if std::env::var_os("ORCHARD_CACHE_ROOT").is_none() {
+        // Keep the name short: the engine listens on a unix socket at
+        // <namespace>/ipc/pie_requests.ipc, and sockaddr_un caps the whole
+        // path at 104 bytes on macOS. The temp dir alone is ~50 bytes; the
+        // previous orchard-rs-test-<pid>-<16-hex-nanos> name pushed the
+        // socket path over the cap and every engine boot died with
+        // "nng_listen ... Address invalid" (the whole rs suite then times
+        // out waiting for a heartbeat that can never come). Pid plus the
+        // low 32 bits of the boot nanos keeps it unique per test process.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let namespace = std::env::temp_dir().join(format!(
+            "orc-{}-{:x}",
+            std::process::id(),
+            (nanos & 0xFFFF_FFFF) as u32
+        ));
+        std::fs::create_dir_all(&namespace).expect("Failed to create test engine namespace");
+        std::env::set_var("ORCHARD_CACHE_ROOT", &namespace);
+    }
 }
 
 fn init_fixture() -> TestFixture {
+    ensure_test_namespace();
+
     if let Err(e) = InferenceEngine::shutdown(Duration::from_secs(30)) {
         panic!(
             "Failed to stop existing engine before starting tests: {}",

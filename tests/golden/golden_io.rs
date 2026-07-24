@@ -24,6 +24,10 @@ pub(crate) struct Turn {
     pub(crate) field_args: HashMap<String, String>,
     pub(crate) generated: String,
     pub(crate) stop_token: Option<String>,
+    /// Message of the stream's `error` event, when the response failed
+    /// mid-stream (engine sequence error or channel closed without a final
+    /// delta). Consumers must not treat such a turn as a complete response.
+    pub(crate) error: Option<String>,
     pub(crate) function_calls: Vec<OutputFunctionCall>,
     pub(crate) items_added: Vec<ResponseOutputItem>,
     pub(crate) items_done: Vec<ResponseOutputItem>,
@@ -78,6 +82,9 @@ pub(crate) async fn drain_stream(mut stream: tokio::sync::mpsc::Receiver<Respons
             }
             ResponseEvent::ResponseCompleted(completed) => {
                 turn.stop_token = completed.response.stop_token.clone();
+            }
+            ResponseEvent::Error(error) => {
+                turn.error = Some(error.error.message.clone());
             }
             ResponseEvent::Done => {
                 turn.events.push(event);
@@ -186,14 +193,14 @@ pub(crate) fn assert_or_record(
     panic!("golden drift {template_type}/{scenario}/{turn}: {detail}");
 }
 
-fn golden_path(template_type: &str, scenario: &str) -> PathBuf {
+pub(crate) fn golden_path(template_type: &str, scenario: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/golden/data")
         .join(template_type)
         .join(format!("{scenario}.json"))
 }
 
-fn normalize(events: &[ResponseEvent]) -> Vec<Value> {
+pub(crate) fn normalize(events: &[ResponseEvent]) -> Vec<Value> {
     let mut ids: HashMap<String, String> = HashMap::new();
     let mut counts: HashMap<String, usize> = HashMap::new();
     events

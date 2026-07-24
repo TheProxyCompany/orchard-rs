@@ -5,13 +5,12 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test that unicode (emoji) payloads round-trip correctly without corruption.
 /// Mirrors: test_unicode_payload.py::test_unicode_payload_round_trip
 #[tokio::test]
 async fn test_unicode_payload_round_trip() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -31,7 +30,9 @@ async fn test_unicode_payload_round_trip() {
     );
     let messages = vec![make_message("user", &prompt)];
 
-    for &model_id in TEXT_MODELS {
+    let params = &params;
+    let messages = &messages;
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let result = client
             .achat(model_id, messages.clone(), params.clone(), true)
             .await;
@@ -91,5 +92,6 @@ async fn test_unicode_payload_round_trip() {
                 panic!("Expected stream, got complete response for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

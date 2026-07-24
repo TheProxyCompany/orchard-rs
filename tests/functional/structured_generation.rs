@@ -5,13 +5,12 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test generation with JSON schema response format.
 /// Mirrors: test_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
 async fn test_chat_completion_structured_json_response() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -57,7 +56,9 @@ async fn test_chat_completion_structured_json_response() {
 
     let messages = vec![make_message("user", &prompt)];
 
-    for &model_id in TEXT_MODELS {
+    let messages = &messages;
+    let params = &params;
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let result = client
             .achat(model_id, messages.clone(), params.clone(), false)
             .await;
@@ -134,5 +135,6 @@ async fn test_chat_completion_structured_json_response() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

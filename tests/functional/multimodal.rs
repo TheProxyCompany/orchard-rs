@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use base64::Engine;
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, volley_slot, VISION_MODELS};
+use crate::fixture::{get_fixture, VISION_MODELS};
 
 fn get_test_assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -59,7 +59,6 @@ fn make_image_message(
 /// Mirrors: test_multimodal.py::test_multimodal_e2e_apple_image
 #[tokio::test]
 async fn test_multimodal_apple_image() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in VISION_MODELS {
@@ -109,7 +108,6 @@ async fn test_multimodal_apple_image() {
 /// Mirrors: test_multimodal.py::test_multimodal_e2e_moondream_image
 #[tokio::test]
 async fn test_multimodal_moondream_image() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in VISION_MODELS {

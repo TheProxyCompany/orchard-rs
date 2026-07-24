@@ -8,7 +8,7 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::{get_fixture, tool_model_ids, volley_slot};
+use crate::fixture::{fanout, get_fixture, tool_model_ids};
 
 fn weather_tool() -> serde_json::Value {
     serde_json::json!({
@@ -63,11 +63,10 @@ fn base_input_items() -> Vec<ResponseInputItem> {
 
 #[tokio::test]
 async fn test_responses_tool_call_non_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for model_id in tool_model_ids() {
+    fanout(tool_model_ids().map(|model_id| async move {
         let request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: false,
@@ -139,16 +138,16 @@ async fn test_responses_tool_call_non_streaming() {
             .and_then(serde_json::Value::as_str)
             .expect("expected string location in tool arguments");
         assert!(!location.is_empty());
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_tool_call_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for model_id in tool_model_ids() {
+    fanout(tool_model_ids().map(|model_id| async move {
         let request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: true,
@@ -248,16 +247,16 @@ async fn test_responses_tool_call_streaming() {
             "expected function_call output_item.done event for {}",
             model_id
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
 async fn test_responses_tool_result_continuation() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for model_id in tool_model_ids() {
+    fanout(tool_model_ids().map(|model_id| async move {
         let first_request = ResponsesRequest {
             input: ResponsesInput::Items(base_input_items()),
             stream: false,
@@ -396,5 +395,6 @@ async fn test_responses_tool_result_continuation() {
             model_id,
             message_text
         );
-    }
+    }))
+    .await;
 }

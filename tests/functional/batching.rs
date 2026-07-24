@@ -8,16 +8,15 @@
 
 use orchard::{BatchChatResult, SamplingParams};
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test homogeneous batched chat completion with identical parameters.
 /// Mirrors: test_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
 async fn test_chat_completion_batched_homogeneous() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 10, // max_completion_tokens in Python
             temperature: 0.0,
@@ -61,7 +60,8 @@ async fn test_chat_completion_batched_homogeneous() {
                 model_id
             );
         }
-    }
+    }))
+    .await;
 }
 
 /// Test batched requests with different content and parameters per conversation.
@@ -71,7 +71,6 @@ async fn test_chat_completion_batched_homogeneous() {
 /// params, so we use uniform parameters but the same prompts.
 #[tokio::test]
 async fn test_chat_completion_batched_heterogeneous() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {

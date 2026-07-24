@@ -5,13 +5,12 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test multi-token non-streaming - "What is the capital of France?" should produce "Paris".
 /// Mirrors: test_multi_token.py::test_chat_completion_multi_token_non_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_token_non_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     for &model_id in TEXT_MODELS {
@@ -83,10 +82,9 @@ async fn test_chat_completion_multi_token_non_streaming() {
 /// Mirrors: test_multi_token.py::test_chat_completion_multi_token_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_token_streaming() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 10,
             temperature: 0.0,
@@ -148,5 +146,6 @@ async fn test_chat_completion_multi_token_streaming() {
                 panic!("Expected stream, got complete response for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

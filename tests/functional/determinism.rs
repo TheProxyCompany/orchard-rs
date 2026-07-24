@@ -5,7 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, ALL_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, ALL_MODELS};
 
 async fn run_multi_candidate_determinism(batch_size: i32) {
     use std::collections::HashMap;
@@ -13,7 +13,7 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in ALL_MODELS {
+    fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 64,
             temperature: 0.0,
@@ -115,7 +115,8 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
                 panic!("Expected stream, got complete response for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 async fn run_sequential_request_determinism() {
@@ -123,7 +124,9 @@ async fn run_sequential_request_determinism() {
     let client = &fixture.client;
     let num_requests = 3;
 
-    for &model_id in ALL_MODELS {
+    // Sequential-identity is a per-model property: the three repeats stay
+    // serial within a model while the models themselves run concurrently.
+    fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let mut first_response: Option<String> = None;
         let mut valid_responses = 0;
 
@@ -191,32 +194,29 @@ async fn run_sequential_request_determinism() {
             "Expected {} valid responses for {}, got {}",
             num_requests, model_id, valid_responses
         );
-    }
+    }))
+    .await;
 }
 
 /// Test multi-candidate determinism - all candidates should be identical with temp=0.
 /// Mirrors: test_determinism.py::test_multi_candidate_determinism
 #[tokio::test]
 async fn test_multi_candidate_determinism_n2() {
-    let _slot = volley_slot().await;
     run_multi_candidate_determinism(2).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n4() {
-    let _slot = volley_slot().await;
     run_multi_candidate_determinism(4).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n8() {
-    let _slot = volley_slot().await;
     run_multi_candidate_determinism(8).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n16() {
-    let _slot = volley_slot().await;
     run_multi_candidate_determinism(16).await;
 }
 
@@ -224,6 +224,5 @@ async fn test_multi_candidate_determinism_n16() {
 /// Mirrors: test_determinism.py::test_sequential_request_determinism
 #[tokio::test]
 async fn test_sequential_request_determinism() {
-    let _slot = volley_slot().await;
     run_sequential_request_determinism().await;
 }

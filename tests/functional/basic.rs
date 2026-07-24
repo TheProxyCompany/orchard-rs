@@ -5,13 +5,12 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, make_message, volley_slot, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_basic.py::test_chat_completion_first_token
 #[tokio::test]
 async fn test_chat_completion_first_token() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
     for &model_id in TEXT_MODELS {
         let params = SamplingParams {
@@ -65,9 +64,8 @@ async fn test_chat_completion_first_token() {
 /// Mirrors: test_basic.py::test_chat_completion_multi_token
 #[tokio::test]
 async fn test_chat_completion_multi_token() {
-    let _slot = volley_slot().await;
     let fixture = get_fixture().await;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 64, // max_completion_tokens in Python
             temperature: 0.0,
@@ -104,5 +102,6 @@ async fn test_chat_completion_multi_token() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }

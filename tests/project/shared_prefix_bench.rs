@@ -193,6 +193,7 @@ async fn test_shared_prefix_turn_by_turn_benchmark() {
         "0".to_string()
     });
 
+    crate::fixture::ensure_test_namespace();
     InferenceEngine::shutdown(Duration::from_secs(30))
         .expect("failed to stop existing engine before benchmark");
     let _engine = InferenceEngine::new().await.expect("failed to start PIE");
