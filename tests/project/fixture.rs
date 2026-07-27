@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ctor::dtor;
 use futures::future::try_join_all;
@@ -16,6 +17,14 @@ fn cleanup_engine() {
     // default engine namespace, killing an engine that belongs to someone
     // else (e.g. Proxy.app's Grand Central engine).
     if FIXTURE.get().is_some() {
+        if let Some(start) = VOLLEY_START.get() {
+            // Mirrors orchard-py's BUCKSHOT wall print: volley only, engine
+            // setup and shutdown excluded, so the harnesses compare directly.
+            println!(
+                "BUCKSHOT wall: {:.1}s (volley only)",
+                start.elapsed().as_secs_f64()
+            );
+        }
         let _ = InferenceEngine::shutdown(Duration::from_secs(30));
     }
 }
@@ -142,6 +151,37 @@ pub(crate) const TEXT_MODELS: &[&str] = &[
 pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
 pub(crate) const ALL_MODELS: &[&str] = TEXT_MODELS;
 
+pub(crate) const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
+pub(crate) const FLUX2_MODEL_ID: &str = "black-forest-labs/FLUX.2-klein-4B";
+pub(crate) const QWEN_IMAGE_EDIT_MODEL_ID: &str = "Qwen/Qwen-Image-Edit";
+pub(crate) const PARAKEET_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v3";
+pub(crate) const QWEN3_TTS_0_6B_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice";
+pub(crate) const QWEN3_TTS_1_7B_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice";
+pub(crate) const QWEN3_ASR_0_6B_MODEL_ID: &str = "Qwen/Qwen3-ASR-0.6B";
+pub(crate) const QWEN3_ASR_1_7B_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
+
+/// Modal (diffusion/TTS/STT) checkpoints the golden suite exercises.
+/// Hydrated serially at fixture init when [`PRELOAD_MODAL_MODELS`] is set:
+/// activating them lazily mid-volley — while chat decode is in flight —
+/// spikes wired memory, and concurrent hydration of several at once is the
+/// documented engine killer (same constraint orchard-py's buckshot preload
+/// obeys). Serial, up-front, on an idle GPU.
+pub(crate) const MODAL_MODELS: &[&str] = &[
+    IDEOGRAM4_MODEL_ID,
+    FLUX2_MODEL_ID,
+    QWEN_IMAGE_EDIT_MODEL_ID,
+    QWEN3_TTS_0_6B_MODEL_ID,
+    QWEN3_TTS_1_7B_MODEL_ID,
+    PARAKEET_MODEL_ID,
+    QWEN3_ASR_0_6B_MODEL_ID,
+    QWEN3_ASR_1_7B_MODEL_ID,
+];
+
+/// Set from a `#[ctor]` in targets whose tests hit modal checkpoints
+/// (golden, buckshot) before any test runs; functional-only runs skip the
+/// multi-minute modal hydration.
+pub(crate) static PRELOAD_MODAL_MODELS: AtomicBool = AtomicBool::new(false);
+
 /// Checkpoints whose profile supports tool calling — the orchard-py matrix
 /// gates tool cases on the same flag (models.py `tools=`), so suites stay
 /// in parity by filtering here instead of looping raw TEXT_MODELS.
@@ -150,17 +190,21 @@ pub(crate) fn tool_model_ids() -> impl Iterator<Item = &'static str> {
 }
 
 /// Cap on concurrently in-flight chains a single test fans out across models.
-/// Bounds the request-arrival burst the suite offers the engine at t0: an
-/// uncapped fan-out of every per-model loop (~200 simultaneous requests)
-/// livelocked the IPC layer — RequestPreprocessor::run_loop and every
-/// ResponseProcessor worker spinning at fixed PCs with committed==completed
-/// and no forward progress (pt1 evidence:
-/// /tmp/carbon-prod/trackc_fmod2_wedge_sample.txt). Raise once the engine
-/// survives the uncapped burst.
-pub(crate) const TEST_FANOUT: usize = 4;
+/// Uncapped by default: the old cap of 4 guarded against an IPC livelock
+/// (RequestPreprocessor/ResponseProcessor spinning with committed==completed,
+/// pt1 evidence: /tmp/carbon-prod/trackc_fmod2_wedge_sample.txt) that
+/// predates engine pacing — orchard-py now fires ~587 concurrent requests in
+/// one volley and the engine batches up to 64 sequences. ORCHARD_TEST_FANOUT
+/// restores a cap as fallback if a burst regression reappears.
+pub(crate) fn test_fanout() -> usize {
+    std::env::var("ORCHARD_TEST_FANOUT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(usize::MAX)
+}
 
 /// Drive independent per-model test chains concurrently, at most
-/// [`TEST_FANOUT`] in flight; each chain's internal turn order is untouched.
+/// [`test_fanout`] in flight; each chain's internal turn order is untouched.
 pub(crate) async fn fanout<I>(chains: I)
 where
     I: IntoIterator,
@@ -168,7 +212,7 @@ where
 {
     use futures::stream::StreamExt;
     futures::stream::iter(chains)
-        .buffer_unordered(TEST_FANOUT)
+        .buffer_unordered(test_fanout())
         .for_each(|()| async {})
         .await;
 }
@@ -181,6 +225,7 @@ pub(crate) struct TestFixture {
 }
 
 static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
+static VOLLEY_START: OnceLock<Instant> = OnceLock::new();
 
 /// Tests must never operate in the default engine namespace: that namespace
 /// belongs to whatever long-lived engine this machine runs (Proxy.app's
@@ -245,8 +290,21 @@ fn init_fixture() -> TestFixture {
         .await
         .expect("Failed to preload test models");
 
+        if PRELOAD_MODAL_MODELS.load(Ordering::Relaxed) {
+            for &model_id in MODAL_MODELS {
+                registry
+                    .ensure_loaded(model_id)
+                    .await
+                    .unwrap_or_else(|err| {
+                        panic!("Failed to preload modal model {model_id}: {err:?}")
+                    });
+            }
+        }
+
         (engine, client, registry)
     });
+
+    let _ = VOLLEY_START.set(Instant::now());
 
     TestFixture {
         _runtime: rt,

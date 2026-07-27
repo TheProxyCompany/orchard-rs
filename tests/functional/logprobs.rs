@@ -13,7 +13,7 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 async fn test_chat_completion_with_logprobs() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 3,
             temperature: 1.0,
@@ -61,7 +61,8 @@ async fn test_chat_completion_with_logprobs() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test that when logprobs is not requested, they are not included.
@@ -70,7 +71,7 @@ async fn test_chat_completion_with_logprobs() {
 async fn test_chat_completion_without_logprobs() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 3,
             temperature: 1.0,
@@ -103,7 +104,8 @@ async fn test_chat_completion_without_logprobs() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test that logprobs work correctly with streaming responses.

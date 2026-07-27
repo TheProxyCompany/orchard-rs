@@ -91,7 +91,7 @@ async fn test_responses_non_streaming_message_items() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let request = ResponsesRequest {
             input: ResponsesInput::Items(vec![orchard::ResponseInputItem::Message {
                 role: "user".to_string(),
@@ -148,7 +148,8 @@ async fn test_responses_non_streaming_message_items() {
             model_id,
             text
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
@@ -156,7 +157,7 @@ async fn test_responses_echo_fields() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Hi");
         request.temperature = Some(0.5);
         request.top_p = Some(0.9);
@@ -193,7 +194,8 @@ async fn test_responses_echo_fields() {
                     .collect()
             )
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
@@ -396,7 +398,7 @@ async fn test_responses_incomplete_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text(
             "Write a very long essay about the history of mathematics.",
         );
@@ -424,7 +426,8 @@ async fn test_responses_incomplete_non_streaming() {
             response.incomplete_details.map(|d| d.reason),
             Some("max_output_tokens".to_string())
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
@@ -432,7 +435,7 @@ async fn test_responses_incomplete_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text(
             "Write a very long essay about the history of mathematics.",
         );
@@ -485,7 +488,8 @@ async fn test_responses_incomplete_streaming() {
                 .map(|d| d.reason.clone()),
             Some("max_output_tokens".to_string())
         );
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]

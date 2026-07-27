@@ -13,7 +13,7 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 async fn test_chat_completion_multi_token_non_streaming() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
             max_tokens: 10,
@@ -75,7 +75,8 @@ async fn test_chat_completion_multi_token_non_streaming() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test multi-token streaming chat completion.

@@ -73,7 +73,7 @@ async fn test_chat_completion_batched_homogeneous() {
 async fn test_chat_completion_batched_heterogeneous() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 4,
             temperature: 0.0,
@@ -107,7 +107,8 @@ async fn test_chat_completion_batched_heterogeneous() {
 
         assert!(responses[0].finish_reason.is_some());
         assert!(responses[1].finish_reason.is_some());
-    }
+    }))
+    .await;
 }
 
 // test_chat_completion_batch_length_mismatch_returns_422 is HTTP-specific (validates

@@ -11,23 +11,22 @@ use orchard::{
 use serde_json::{json, Value};
 
 use crate::fixture::{
-    fanout, get_fixture, Model, Thinking, GEMMA4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID,
+    fanout, get_fixture, Model, Thinking, FLUX2_MODEL_ID, GEMMA4_MODEL_ID, IDEOGRAM4_MODEL_ID,
+    MODELS, MOONDREAM_MODEL_ID, PARAKEET_MODEL_ID, QWEN3_ASR_0_6B_MODEL_ID,
+    QWEN3_ASR_1_7B_MODEL_ID, QWEN3_TTS_0_6B_MODEL_ID, QWEN3_TTS_1_7B_MODEL_ID,
+    QWEN_IMAGE_EDIT_MODEL_ID,
 };
 use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
-const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
-const FLUX2_MODEL_ID: &str = "black-forest-labs/FLUX.2-klein-4B";
-const QWEN_IMAGE_EDIT_MODEL_ID: &str = "Qwen/Qwen-Image-Edit";
-const PARAKEET_MODEL_ID: &str = "mlx-community/parakeet-tdt-0.6b-v3";
 const TTS_MODELS: [(&str, &str); 2] = [
-    ("qwen3_tts_0_6b", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"),
-    ("qwen3_tts_1_7b", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"),
+    ("qwen3_tts_0_6b", QWEN3_TTS_0_6B_MODEL_ID),
+    ("qwen3_tts_1_7b", QWEN3_TTS_1_7B_MODEL_ID),
 ];
 const STT_MODELS: [(&str, &str); 3] = [
     ("parakeet", PARAKEET_MODEL_ID),
-    ("qwen3_asr_0_6b", "Qwen/Qwen3-ASR-0.6B"),
-    ("qwen3_asr_1_7b", "Qwen/Qwen3-ASR-1.7B"),
+    ("qwen3_asr_0_6b", QWEN3_ASR_0_6B_MODEL_ID),
+    ("qwen3_asr_1_7b", QWEN3_ASR_1_7B_MODEL_ID),
 ];
 const AUDIO_TELEPHONE_PHRASES: [&str; 6] = [
     "hello this is a test",
@@ -470,15 +469,6 @@ fn image_part(artifact: &ModalArtifact) -> Value {
         ),
         "detail": "auto",
     })
-}
-
-/// Best-effort early hydration for a lazily-loaded modal checkpoint
-/// (ideogram-4-fp8 alone hydrates for ~76s). Failures are ignored: warming is
-/// a scheduling hint, and concurrent warms of the same checkpoint can race in
-/// the registry; the modal call itself lazy-loads and surfaces real errors.
-async fn warm_model(model_id: &str) {
-    let fixture = get_fixture().await;
-    let _ = fixture.registry.ensure_loaded(model_id).await;
 }
 
 fn model_by_checkpoint(checkpoint: &str) -> Model {
@@ -937,13 +927,9 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
     generator_request.reasoning = Some(ReasoningConfig::Object {
         effort: "medium".to_string(),
     });
-    // Diffusion checkpoints hydrate lazily on first use (ideogram-4-fp8 alone
-    // takes ~76s): warm the generator's model while gemma writes the prompt.
+    // Modal checkpoints are hydrated serially at fixture init (MODAL_MODELS).
     let fixture = get_fixture().await;
-    let (generator, ()) = tokio::join!(
-        run_stream(gemma, generator_request),
-        warm_model(IDEOGRAM4_MODEL_ID)
-    );
+    let generator = run_stream(gemma, generator_request).await;
     assert_or_record("gemma4", "image_tool_self_loop", "turn1", &generator.events);
     assert_or_record(
         "gemma4",
@@ -1125,10 +1111,7 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
         effort: "medium".to_string(),
     });
     let fixture = get_fixture().await;
-    let (generator, ()) = tokio::join!(
-        run_stream(gemma, generator_request),
-        warm_model(FLUX2_MODEL_ID)
-    );
+    let generator = run_stream(gemma, generator_request).await;
     assert_or_record(
         "gemma4",
         "image_tool_self_loop_flux",
@@ -1321,11 +1304,7 @@ async fn test_image_edit_tool_blind_verifier() {
         effort: "medium".to_string(),
     });
     let fixture = get_fixture().await;
-    let (generator, (), ()) = tokio::join!(
-        run_stream(gemma, generator_request),
-        warm_model(IDEOGRAM4_MODEL_ID),
-        warm_model(QWEN_IMAGE_EDIT_MODEL_ID)
-    );
+    let generator = run_stream(gemma, generator_request).await;
     assert_or_record(
         "gemma4",
         "image_edit_tool_blind_verifier",
@@ -1505,11 +1484,7 @@ async fn test_image_edit_tool_blind_verifier_flux() {
         effort: "medium".to_string(),
     });
     let fixture = get_fixture().await;
-    let (generator, (), ()) = tokio::join!(
-        run_stream(gemma, generator_request),
-        warm_model(FLUX2_MODEL_ID),
-        warm_model(QWEN_IMAGE_EDIT_MODEL_ID)
-    );
+    let generator = run_stream(gemma, generator_request).await;
     assert_or_record(
         "gemma4",
         "image_edit_tool_blind_verifier_flux",

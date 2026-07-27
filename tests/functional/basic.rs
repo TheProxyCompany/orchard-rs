@@ -12,7 +12,7 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 #[tokio::test]
 async fn test_chat_completion_first_token() {
     let fixture = get_fixture().await;
-    for &model_id in TEXT_MODELS {
+    fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 1,
             temperature: 1.0,
@@ -57,7 +57,8 @@ async fn test_chat_completion_first_token() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test multi-token generation with deterministic sampling.

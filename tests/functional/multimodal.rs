@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use base64::Engine;
 use orchard::SamplingParams;
 
-use crate::fixture::{get_fixture, VISION_MODELS};
+use crate::fixture::{fanout, get_fixture, VISION_MODELS};
 
 fn get_test_assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -61,7 +61,7 @@ fn make_image_message(
 async fn test_multimodal_apple_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in VISION_MODELS {
+    fanout(VISION_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 50,
             temperature: 0.0,
@@ -101,7 +101,8 @@ async fn test_multimodal_apple_image() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 /// Test image captioning with moondream.jpg - should identify "burger"
@@ -110,7 +111,7 @@ async fn test_multimodal_apple_image() {
 async fn test_multimodal_moondream_image() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
-    for &model_id in VISION_MODELS {
+    fanout(VISION_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             max_tokens: 50,
             temperature: 0.0,
@@ -150,7 +151,8 @@ async fn test_multimodal_moondream_image() {
                 panic!("Expected complete response, got stream for {}", model_id);
             }
         }
-    }
+    }))
+    .await;
 }
 
 #[cfg(test)]

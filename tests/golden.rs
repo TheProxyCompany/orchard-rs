@@ -10,3 +10,8 @@ mod golden_path;
 
 #[path = "golden/drift_repro.rs"]
 mod drift_repro;
+
+#[ctor::ctor]
+fn preload_modal_models() {
+    fixture::PRELOAD_MODAL_MODELS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
