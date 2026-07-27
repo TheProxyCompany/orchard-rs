@@ -340,10 +340,8 @@ impl ModelRegistry {
                             arr.iter()
                                 .filter_map(|x| x.as_i64().map(|n| n as i32))
                                 .collect()
-                        } else if let Some(n) = v.as_i64() {
-                            vec![n as i32]
                         } else {
-                            return None;
+                            vec![v.as_i64()? as i32]
                         };
                         Some((k.clone(), vals))
                     })
@@ -1036,10 +1034,8 @@ impl ModelRegistry {
                         arr.iter()
                             .filter_map(|x| x.as_i64().map(|n| n as i32))
                             .collect()
-                    } else if let Some(n) = v.as_i64() {
-                        vec![n as i32]
                     } else {
-                        return None;
+                        vec![v.as_i64()? as i32]
                     };
                     Some((k.clone(), vals))
                 })
