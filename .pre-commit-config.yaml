@@ -1,3 +1,6 @@
+# Vendored third-party source stays byte-identical to upstream plus explicit
+# backports; style fixers must not touch it.
+exclude: ^vendor/
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v5.0.0
