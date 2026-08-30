@@ -11,6 +11,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_structured_generation.py::test_chat_completion_structured_json_response
 #[tokio::test]
 async fn test_chat_completion_structured_json_response() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_structured_json_response)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

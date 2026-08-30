@@ -6,7 +6,7 @@ on:
 jobs:
   publish:
     runs-on: [self-hosted, terminal-0]
-    timeout-minutes: 30
+    timeout-minutes: 180
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     permissions:
@@ -62,10 +62,29 @@ jobs:
           cd ../proxy-inference-engine
           ./scripts/build.sh -t Release
 
-      - name: Run full Orchard RS suite
+      - name: Run combined Orchard PY and RS Buckshot release proof
         run: |
-          PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test functional
-          PIE_LOCAL_BUILD="$PWD/../proxy-inference-engine/release" cargo test --test golden
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/company-buckshot"
+          rm -rf "$ROOT"
+          git clone --depth 1 "https://${{ secrets.GH_PAT }}@github.com/TheProxyCompany/The-Proxy-Company.git" "$ROOT"
+          git -C "$ROOT" submodule update --init orchard-py Pane Trellis grand-central
+          rm -rf "$ROOT/orchard-rs" "$ROOT/proxy-inference-engine"
+          ln -s "$GITHUB_WORKSPACE" "$ROOT/orchard-rs"
+          ln -s "$(cd ../proxy-inference-engine && pwd)" "$ROOT/proxy-inference-engine"
+          cd "$ROOT/orchard-py"
+          if command -v uv >/dev/null 2>&1; then
+            uv --no-config venv .venv
+            source .venv/bin/activate
+            uv --no-config pip install -e ".[dev]"
+          else
+            python3 -m venv .venv
+            source .venv/bin/activate
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[dev]"
+          fi
+          cd "$ROOT"
+          orchard-py/.venv/bin/python scripts/buckshot_all_clients.py
 
       - name: Publish to crates.io
         env:

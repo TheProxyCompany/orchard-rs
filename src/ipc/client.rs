@@ -10,7 +10,7 @@ use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, Requ
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use nng::options::Options;
-use nng::{Protocol, Socket};
+use nng::{Aio, AioResult, Context, Protocol, Socket};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -31,8 +31,8 @@ const RESPONSE_SOCKET_BUFFER_MESSAGES: i32 = 1024;
 /// Cap on how long a PUSH send may block. With no live peer (engine dead
 /// before the liveness poll notices), nng blocks the send forever otherwise.
 const REQUEST_SEND_TIMEOUT: Duration = Duration::from_secs(30);
-/// Recv slice for management replies; between slices we poll engine liveness
-/// so a reply that will never come fails loudly instead of blocking.
+/// Host-side wait slice for management AIO completion; the NNG receive stays
+/// live across slices while we poll engine liveness.
 const MANAGEMENT_LIVENESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// A single token's log probability info from PIE.
@@ -544,42 +544,80 @@ fn blocking_management_exchange(
         return Err(Error::EngineDead);
     }
 
-    // REQ send also blocks forever when the peer is gone (verified: it parks
-    // in nng_aio_wait), so both directions run in timed slices.
-    socket.set_opt::<nng::options::SendTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
-    socket.set_opt::<nng::options::RecvTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
     let deadline = Instant::now() + timeout;
-
     let data = serde_json::to_vec(command)?;
-    let mut msg = nng::Message::from(data.as_slice());
-    loop {
-        match socket.send(msg) {
-            Ok(()) => break,
-            Err((returned, nng::Error::TimedOut)) => {
-                if engine_is_dead() {
-                    return Err(Error::EngineDead);
-                }
-                if Instant::now() >= deadline {
-                    return Err(Error::Nng(nng::Error::TimedOut));
-                }
-                msg = returned;
-            }
-            Err((_, error)) => return Err(Error::Nng(error)),
+    let context = Context::new(socket)?;
+    let (completion_tx, completion_rx) = std::sync::mpsc::channel();
+    let aio = Aio::new(move |_, result| {
+        let _ = completion_tx.send(result);
+    })?;
+
+    context
+        .send(&aio, nng::Message::from(data.as_slice()))
+        .map_err(|(_, error)| Error::Nng(error))?;
+    match wait_for_management_aio(&aio, &completion_rx, &engine_is_dead, deadline)? {
+        AioResult::Send(Ok(())) => {}
+        AioResult::Send(Err((_, error))) => {
+            return Err(if engine_is_dead() {
+                Error::EngineDead
+            } else {
+                Error::Nng(error)
+            });
+        }
+        _ => {
+            return Err(Error::Internal(
+                "Management AIO returned a non-send result while sending".to_string(),
+            ));
         }
     }
 
+    context.recv(&aio)?;
+    match wait_for_management_aio(&aio, &completion_rx, &engine_is_dead, deadline)? {
+        AioResult::Recv(Ok(response)) => Ok(serde_json::from_slice(&response)?),
+        AioResult::Recv(Err(error)) => Err(if engine_is_dead() {
+            Error::EngineDead
+        } else {
+            Error::Nng(error)
+        }),
+        _ => Err(Error::Internal(
+            "Management AIO returned a non-receive result while receiving".to_string(),
+        )),
+    }
+}
+
+fn wait_for_management_aio<F>(
+    aio: &Aio,
+    completion_rx: &std::sync::mpsc::Receiver<AioResult>,
+    engine_is_dead: &F,
+    deadline: Instant,
+) -> Result<AioResult>
+where
+    F: Fn() -> bool,
+{
     loop {
-        match socket.recv() {
-            Ok(response) => return Ok(serde_json::from_slice(&response)?),
-            Err(nng::Error::TimedOut) => {
-                if engine_is_dead() {
-                    return Err(Error::EngineDead);
-                }
-                if Instant::now() >= deadline {
-                    return Err(Error::Nng(nng::Error::TimedOut));
-                }
+        if engine_is_dead() {
+            aio.cancel();
+            aio.wait();
+            return Err(Error::EngineDead);
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            aio.cancel();
+            aio.wait();
+            return Err(Error::Nng(nng::Error::TimedOut));
+        }
+
+        match completion_rx.recv_timeout(remaining.min(MANAGEMENT_LIVENESS_POLL_INTERVAL)) {
+            Ok(result) => return Ok(result),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                aio.cancel();
+                aio.wait();
+                return Err(Error::Internal(
+                    "Management AIO completion channel disconnected".to_string(),
+                ));
             }
-            Err(error) => return Err(Error::Nng(error)),
         }
     }
 }
@@ -938,6 +976,52 @@ mod tests {
     }
 
     #[test]
+    fn test_management_exchange_survives_delayed_reply() {
+        let address = format!("inproc://orchard-management-delayed-{}", rand_u64());
+        let server = Socket::new(Protocol::Rep0).expect("rep socket");
+        server.listen(&address).expect("rep listen");
+        let client = Socket::new(Protocol::Req0).expect("req socket");
+        client.dial(&address).expect("req dial");
+
+        let server_thread = thread::spawn(move || {
+            for (index, status) in ["delayed", "immediate"].into_iter().enumerate() {
+                let _request = server.recv().expect("server receives request");
+                if index == 0 {
+                    thread::sleep(Duration::from_millis(500));
+                }
+                let response = serde_json::to_vec(&serde_json::json!({"status": status}))
+                    .expect("response serializes");
+                server
+                    .send(nng::Message::from(response.as_slice()))
+                    .expect("server sends reply");
+            }
+        });
+
+        let socket_arc = Mutex::new(Some(client));
+        let engine_dead = AtomicBool::new(false);
+        let delayed = blocking_management_exchange(
+            &socket_arc,
+            &engine_dead,
+            None,
+            &serde_json::json!({"type": "slow_load_model"}),
+            Duration::from_secs(2),
+        )
+        .expect("delayed management reply should succeed");
+        let immediate = blocking_management_exchange(
+            &socket_arc,
+            &engine_dead,
+            None,
+            &serde_json::json!({"type": "ping"}),
+            Duration::from_secs(2),
+        )
+        .expect("socket should remain usable after delayed reply");
+        server_thread.join().expect("server thread joins");
+
+        assert_eq!(delayed["status"], "delayed");
+        assert_eq!(immediate["status"], "immediate");
+    }
+
+    #[test]
     fn test_management_exchange_fails_fast_when_engine_flagged_dead() {
         let socket = Socket::new(Protocol::Req0).expect("req socket");
         let socket_arc = Mutex::new(Some(socket));
@@ -956,20 +1040,38 @@ mod tests {
 
     #[test]
     fn test_management_exchange_detects_engine_exit_while_awaiting_reply() {
-        let socket = Socket::new(Protocol::Req0).expect("req socket");
-        let socket_arc = Mutex::new(Some(socket));
-        let engine_dead = AtomicBool::new(false);
-        let dir = tempdir().expect("tempdir should be available");
+        let address = format!("inproc://orchard-management-engine-exit-{}", rand_u64());
+        let server = Socket::new(Protocol::Rep0).expect("rep socket");
+        server.listen(&address).expect("rep listen");
+        let client = Socket::new(Protocol::Req0).expect("req socket");
+        client.dial(&address).expect("req dial");
 
+        let engine_dead = Arc::new(AtomicBool::new(false));
+        let engine_dead_for_server = Arc::clone(&engine_dead);
+        let server_thread = thread::spawn(move || {
+            let _request = server.recv().expect("server receives request");
+            thread::sleep(Duration::from_millis(100));
+            engine_dead_for_server.store(true, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(500));
+        });
+
+        let socket_arc = Mutex::new(Some(client));
+        let started = Instant::now();
         let result = blocking_management_exchange(
             &socket_arc,
             &engine_dead,
-            Some(&dir.path().join("missing.pid")),
+            None,
             &serde_json::json!({"type": "ping"}),
             Duration::from_secs(5),
         );
+        let elapsed = started.elapsed();
+        server_thread.join().expect("server thread joins");
 
         assert!(matches!(result, Err(Error::EngineDead)));
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "engine death should cancel the in-flight receive promptly; elapsed={elapsed:?}"
+        );
     }
 
     #[test]

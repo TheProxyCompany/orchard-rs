@@ -202,21 +202,45 @@ async fn run_sequential_request_determinism() {
 /// Mirrors: test_determinism.py::test_multi_candidate_determinism
 #[tokio::test]
 async fn test_multi_candidate_determinism_n2() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multi_candidate_determinism_n2)
+    ))
+    .await;
     run_multi_candidate_determinism(2).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n4() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multi_candidate_determinism_n4)
+    ))
+    .await;
     run_multi_candidate_determinism(4).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n8() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multi_candidate_determinism_n8)
+    ))
+    .await;
     run_multi_candidate_determinism(8).await;
 }
 
 #[tokio::test]
 async fn test_multi_candidate_determinism_n16() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multi_candidate_determinism_n16)
+    ))
+    .await;
     run_multi_candidate_determinism(16).await;
 }
 
@@ -224,5 +248,11 @@ async fn test_multi_candidate_determinism_n16() {
 /// Mirrors: test_determinism.py::test_sequential_request_determinism
 #[tokio::test]
 async fn test_sequential_request_determinism() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_sequential_request_determinism)
+    ))
+    .await;
     run_sequential_request_determinism().await;
 }

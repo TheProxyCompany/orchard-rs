@@ -14,6 +14,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_batching.py::test_chat_completion_batched_homogeneous
 #[tokio::test]
 async fn test_chat_completion_batched_homogeneous() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_batched_homogeneous)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
@@ -71,6 +77,12 @@ async fn test_chat_completion_batched_homogeneous() {
 /// params, so we use uniform parameters but the same prompts.
 #[tokio::test]
 async fn test_chat_completion_batched_heterogeneous() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_batched_heterogeneous)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {

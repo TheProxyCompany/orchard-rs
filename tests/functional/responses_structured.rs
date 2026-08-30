@@ -9,6 +9,12 @@ use crate::fixture::{fanout, get_fixture, TEXT_MODELS};
 
 #[tokio::test]
 async fn test_responses_structured_json_schema() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_structured_json_schema)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

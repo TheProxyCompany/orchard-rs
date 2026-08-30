@@ -1,0 +1,138 @@
+{
+  "groups": {
+    "text": [
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "google/gemma-4-E2B-it",
+      "Qwen/Qwen3.5-4B",
+      "moondream/moondream3-preview",
+      "mlx-community/Trinity-Mini-4bit",
+      "LiquidAI/LFM2.5-8B-A1B",
+      "allenai/Olmo-Hybrid-Instruct-DPO-7B",
+      "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "mlx-community/granite-4.1-30b-4bit",
+      "openai/gpt-oss-20b"
+    ],
+    "thinking": [
+      "google/gemma-4-E2B-it",
+      "Qwen/Qwen3.5-4B",
+      "moondream/moondream3-preview",
+      "mlx-community/Trinity-Mini-4bit",
+      "LiquidAI/LFM2.5-8B-A1B",
+      "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "openai/gpt-oss-20b"
+    ],
+    "toggleable-thinking": [
+      "google/gemma-4-E2B-it",
+      "Qwen/Qwen3.5-4B",
+      "moondream/moondream3-preview",
+      "mlx-community/Trinity-Mini-4bit",
+      "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "openai/gpt-oss-20b"
+    ],
+    "tools": [
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "google/gemma-4-E2B-it",
+      "Qwen/Qwen3.5-4B",
+      "mlx-community/Trinity-Mini-4bit",
+      "LiquidAI/LFM2.5-8B-A1B",
+      "allenai/Olmo-Hybrid-Instruct-DPO-7B",
+      "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "mlx-community/granite-4.1-30b-4bit",
+      "openai/gpt-oss-20b"
+    ],
+    "vision": [
+      "google/gemma-4-E2B-it",
+      "moondream/moondream3-preview"
+    ]
+  },
+  "cases": {
+    "basic::test_chat_completion_first_token": {"text": [0]},
+    "basic::test_chat_completion_multi_token": {"text": [0]},
+    "batching::test_chat_completion_batched_heterogeneous": {"text": [0]},
+    "batching::test_chat_completion_batched_homogeneous": {"text": [0]},
+    "best_of::test_chat_completion_best_of_selects_top_n": {"text": [0]},
+    "capabilities::test_moondream_caption_long": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_caption_normal": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_caption_short": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_detect": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_detect_gaze": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_point": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_query_with_spatial_refs": {"moondream/moondream3-preview": [0]},
+    "capabilities::test_moondream_reasoning_grounding": {"moondream/moondream3-preview": [0]},
+    "client::test_client_chat_non_streaming_continuation": {"text": [0]},
+    "client::test_client_chat_non_streaming_plea": {"text": [0]},
+    "client::test_client_chat_streaming_artist": {"text": [0]},
+    "client::test_client_chat_streaming_movie": {"text": [0]},
+    "client::unit_tests::test_make_message": {},
+    "determinism::test_multi_candidate_determinism_n16": {"text": [0]},
+    "determinism::test_multi_candidate_determinism_n2": {"text": [0]},
+    "determinism::test_multi_candidate_determinism_n4": {"text": [0]},
+    "determinism::test_multi_candidate_determinism_n8": {"text": [0]},
+    "determinism::test_sequential_request_determinism": {"text": [0, 1, 2]},
+    "golden_path::test_audio_telephone_tts_to_speech_to_text": {
+      "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": [0, 0, 0, 0, 0, 0],
+      "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": [0, 0, 0, 0, 0, 0],
+      "mlx-community/parakeet-tdt-0.6b-v3": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      "Qwen/Qwen3-ASR-0.6B": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      "Qwen/Qwen3-ASR-1.7B": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    },
+    "golden_path::test_image_edit_tool_blind_verifier": {
+      "google/gemma-4-E2B-it": [0],
+      "ideogram-ai/ideogram-4-fp8": [1],
+      "Qwen/Qwen-Image-Edit": [2],
+      "moondream/moondream3-preview": [3]
+    },
+    "golden_path::test_image_edit_tool_blind_verifier_flux": {
+      "google/gemma-4-E2B-it": [0],
+      "black-forest-labs/FLUX.2-klein-4B": [1],
+      "Qwen/Qwen-Image-Edit": [2],
+      "moondream/moondream3-preview": [3]
+    },
+    "golden_path::test_image_tool_self_loop_and_blind_verifier": {
+      "google/gemma-4-E2B-it": [0, 2],
+      "ideogram-ai/ideogram-4-fp8": [1],
+      "moondream/moondream3-preview": [2]
+    },
+    "golden_path::test_image_tool_self_loop_and_blind_verifier_flux": {
+      "google/gemma-4-E2B-it": [0, 2],
+      "black-forest-labs/FLUX.2-klein-4B": [1],
+      "moondream/moondream3-preview": [2]
+    },
+    "golden_path::test_multi_tool": {"tools": [0, 1, 2]},
+    "golden_path::test_reason_then_structured": {"thinking": [0]},
+    "golden_path::test_reason_then_tool": {"tools": [0, 1]},
+    "golden_path::test_thinking_on_off": {"toggleable-thinking": [0, 0]},
+    "golden_path::test_tool_chaining": {"tools": [0, 1, 2]},
+    "golden_path::test_tool_result_grounding": {"tools": [0, 1]},
+    "golden_path::test_tool_selection": {"tools": [0]},
+    "logprobs::test_chat_completion_logprobs_streaming": {"text": [0]},
+    "logprobs::test_chat_completion_with_logprobs": {"text": [0]},
+    "logprobs::test_chat_completion_without_logprobs": {"text": [0]},
+    "multi_candidate::test_chat_completion_multi_candidate_non_streaming": {"text": [0]},
+    "multi_candidate::test_chat_completion_multi_candidate_streaming": {"text": [0]},
+    "multi_token::test_chat_completion_multi_token_non_streaming": {"text": [0]},
+    "multi_token::test_chat_completion_multi_token_streaming": {"text": [0]},
+    "multimodal::test_multimodal_apple_image": {"vision": [0]},
+    "multimodal::test_multimodal_moondream_image": {"vision": [0]},
+    "multimodal::unit_tests::test_assets_exist": {},
+    "multimodal::unit_tests::test_load_image_base64": {},
+    "multimodal::unit_tests::test_make_image_message": {},
+    "responses_basic::test_responses_echo_fields": {"text": [0]},
+    "responses_basic::test_responses_incomplete_non_streaming": {"text": [0]},
+    "responses_basic::test_responses_incomplete_streaming": {"text": [0]},
+    "responses_basic::test_responses_instructions": {"text": [0]},
+    "responses_basic::test_responses_non_streaming_message_items": {"text": [0]},
+    "responses_basic::test_responses_non_streaming_string_input": {"text": [0]},
+    "responses_basic::test_responses_streaming_completed_snapshot": {"text": [0]},
+    "responses_basic::test_responses_streaming_delta_accumulation": {"text": [0]},
+    "responses_basic::test_responses_streaming_event_sequence": {"text": [0]},
+    "responses_basic::unit_tests::test_fixture_message_helper": {},
+    "responses_structured::test_responses_structured_json_schema": {"text": [0]},
+    "responses_tools::test_responses_tool_call_non_streaming": {"tools": [0]},
+    "responses_tools::test_responses_tool_call_streaming": {"tools": [0]},
+    "responses_tools::test_responses_tool_result_continuation": {"tools": [0, 1]},
+    "stop_sequences::test_chat_completion_respects_stop_sequence": {"text": [0]},
+    "structured_generation::test_chat_completion_structured_json_response": {"text": [0]},
+    "unicode_payload::test_unicode_payload_round_trip": {"text": [0]}
+  }
+}

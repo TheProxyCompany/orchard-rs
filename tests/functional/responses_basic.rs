@@ -40,6 +40,12 @@ async fn collect_stream_events(
 
 #[tokio::test]
 async fn test_responses_non_streaming_string_input() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_non_streaming_string_input)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -88,6 +94,12 @@ async fn test_responses_non_streaming_string_input() {
 
 #[tokio::test]
 async fn test_responses_non_streaming_message_items() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_non_streaming_message_items)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -154,6 +166,12 @@ async fn test_responses_non_streaming_message_items() {
 
 #[tokio::test]
 async fn test_responses_echo_fields() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_echo_fields)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -200,6 +218,12 @@ async fn test_responses_echo_fields() {
 
 #[tokio::test]
 async fn test_responses_streaming_event_sequence() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_streaming_event_sequence)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -294,6 +318,12 @@ async fn test_responses_streaming_event_sequence() {
 
 #[tokio::test]
 async fn test_responses_streaming_delta_accumulation() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_streaming_delta_accumulation)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -344,6 +374,12 @@ async fn test_responses_streaming_delta_accumulation() {
 
 #[tokio::test]
 async fn test_responses_streaming_completed_snapshot() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_streaming_completed_snapshot)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -395,6 +431,12 @@ async fn test_responses_streaming_completed_snapshot() {
 
 #[tokio::test]
 async fn test_responses_incomplete_non_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_incomplete_non_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -432,6 +474,12 @@ async fn test_responses_incomplete_non_streaming() {
 
 #[tokio::test]
 async fn test_responses_incomplete_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_incomplete_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -494,6 +542,12 @@ async fn test_responses_incomplete_streaming() {
 
 #[tokio::test]
 async fn test_responses_instructions() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_instructions)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -537,6 +591,11 @@ mod unit_tests {
 
     #[test]
     fn test_fixture_message_helper() {
+        let _buckshot_case = crate::fixture::admit_buckshot_case(concat!(
+            module_path!(),
+            "::",
+            stringify!(test_fixture_message_helper)
+        ));
         let message = make_message("user", "hello");
         assert_eq!(
             message.get("role").and_then(serde_json::Value::as_str),

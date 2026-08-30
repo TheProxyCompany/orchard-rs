@@ -59,6 +59,12 @@ fn make_image_message(
 /// Mirrors: test_multimodal.py::test_multimodal_e2e_apple_image
 #[tokio::test]
 async fn test_multimodal_apple_image() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multimodal_apple_image)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(VISION_MODELS.iter().map(|&model_id| async move {
@@ -109,6 +115,12 @@ async fn test_multimodal_apple_image() {
 /// Mirrors: test_multimodal.py::test_multimodal_e2e_moondream_image
 #[tokio::test]
 async fn test_multimodal_moondream_image() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_multimodal_moondream_image)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(VISION_MODELS.iter().map(|&model_id| async move {
@@ -161,6 +173,11 @@ mod unit_tests {
 
     #[test]
     fn test_assets_exist() {
+        let _buckshot_case = crate::fixture::admit_buckshot_case(concat!(
+            module_path!(),
+            "::",
+            stringify!(test_assets_exist)
+        ));
         let assets_dir = get_test_assets_dir();
         assert!(
             assets_dir.join("apple.jpg").exists(),
@@ -174,6 +191,11 @@ mod unit_tests {
 
     #[test]
     fn test_load_image_base64() {
+        let _buckshot_case = crate::fixture::admit_buckshot_case(concat!(
+            module_path!(),
+            "::",
+            stringify!(test_load_image_base64)
+        ));
         let base64 = load_image_base64("apple.jpg");
         assert!(!base64.is_empty());
 
@@ -190,6 +212,11 @@ mod unit_tests {
 
     #[test]
     fn test_make_image_message() {
+        let _buckshot_case = crate::fixture::admit_buckshot_case(concat!(
+            module_path!(),
+            "::",
+            stringify!(test_make_image_message)
+        ));
         let msg = make_image_message("user", "Describe this.", "abc123", false);
 
         assert_eq!(msg.get("role").unwrap().as_str(), Some("user"));

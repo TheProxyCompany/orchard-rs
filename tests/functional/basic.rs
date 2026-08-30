@@ -11,6 +11,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_basic.py::test_chat_completion_first_token
 #[tokio::test]
 async fn test_chat_completion_first_token() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_first_token)
+    ))
+    .await;
     let fixture = get_fixture().await;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
@@ -65,6 +71,12 @@ async fn test_chat_completion_first_token() {
 /// Mirrors: test_basic.py::test_chat_completion_multi_token
 #[tokio::test]
 async fn test_chat_completion_multi_token() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_multi_token)
+    ))
+    .await;
     let fixture = get_fixture().await;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {

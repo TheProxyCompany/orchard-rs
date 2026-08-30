@@ -31,6 +31,8 @@ pub use formatter::multimodal::{
 };
 pub use formatter::ChatFormatter;
 
+#[doc(hidden)]
+pub use client::{install_request_attempt_observer, RequestAttemptObserver};
 pub use client::{
     BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, ContentPartAddedEvent,
     ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent,

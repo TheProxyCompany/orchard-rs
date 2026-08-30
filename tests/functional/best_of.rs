@@ -14,6 +14,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_best_of.py::test_chat_completion_best_of_selects_top_n
 #[tokio::test]
 async fn test_chat_completion_best_of_selects_top_n() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_best_of_selects_top_n)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {

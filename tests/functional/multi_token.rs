@@ -11,6 +11,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_multi_token.py::test_chat_completion_multi_token_non_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_token_non_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_multi_token_non_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
@@ -83,6 +89,12 @@ async fn test_chat_completion_multi_token_non_streaming() {
 /// Mirrors: test_multi_token.py::test_chat_completion_multi_token_streaming
 #[tokio::test]
 async fn test_chat_completion_multi_token_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_multi_token_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {

@@ -2264,6 +2264,7 @@ impl Client {
             stream = request.stream,
             "Dispatching responses request to PIE"
         );
+        super::observe_request_attempt(model_id).await?;
         let (_batch_size, stream) = self.ipc.send_batch_request(
             request_id,
             request_model_id,

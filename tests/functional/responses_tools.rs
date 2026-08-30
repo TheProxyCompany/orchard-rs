@@ -63,6 +63,12 @@ fn base_input_items() -> Vec<ResponseInputItem> {
 
 #[tokio::test]
 async fn test_responses_tool_call_non_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_tool_call_non_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -144,6 +150,12 @@ async fn test_responses_tool_call_non_streaming() {
 
 #[tokio::test]
 async fn test_responses_tool_call_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_tool_call_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
@@ -253,6 +265,12 @@ async fn test_responses_tool_call_streaming() {
 
 #[tokio::test]
 async fn test_responses_tool_result_continuation() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_responses_tool_result_continuation)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 

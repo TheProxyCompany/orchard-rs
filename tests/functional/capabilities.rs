@@ -40,6 +40,12 @@ async fn create_moondream_client(registry: Arc<ModelRegistry>) -> MoondreamClien
 /// Mirrors: test_capabilities.py::test_moondream_reasoning_grounding
 #[tokio::test]
 async fn test_moondream_reasoning_grounding() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_reasoning_grounding)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -100,16 +106,34 @@ async fn test_moondream_reasoning_grounding() {
 /// Mirrors: test_capabilities.py::test_moondream_caption
 #[tokio::test]
 async fn test_moondream_caption_normal() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_caption_normal)
+    ))
+    .await;
     run_moondream_caption("normal").await;
 }
 
 #[tokio::test]
 async fn test_moondream_caption_short() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_caption_short)
+    ))
+    .await;
     run_moondream_caption("short").await;
 }
 
 #[tokio::test]
 async fn test_moondream_caption_long() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_caption_long)
+    ))
+    .await;
     run_moondream_caption("long").await;
 }
 
@@ -139,6 +163,12 @@ async fn run_moondream_caption(length: &str) {
 /// Mirrors: test_capabilities.py::test_moondream_detect
 #[tokio::test]
 async fn test_moondream_detect() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_detect)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -162,6 +192,12 @@ async fn test_moondream_detect() {
 /// Mirrors: test_capabilities.py::test_moondream_query_with_spatial_refs
 #[tokio::test]
 async fn test_moondream_query_with_spatial_refs() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_query_with_spatial_refs)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -196,6 +232,12 @@ async fn test_moondream_query_with_spatial_refs() {
 /// Mirrors: test_capabilities.py::test_moondream_point
 #[tokio::test]
 async fn test_moondream_point() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_point)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -219,6 +261,12 @@ async fn test_moondream_point() {
 /// Mirrors: test_capabilities.py::test_moondream_detect_gaze
 #[tokio::test]
 async fn test_moondream_detect_gaze() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_moondream_detect_gaze)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 

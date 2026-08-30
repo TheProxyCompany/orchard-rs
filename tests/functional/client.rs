@@ -121,6 +121,12 @@ async fn run_client_chat_streaming(prompt: &str) {
 /// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_continuation() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_client_chat_non_streaming_continuation)
+    ))
+    .await;
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with exactly five words: alpha beta gamma delta epsilon.",
     )
@@ -131,6 +137,12 @@ async fn test_client_chat_non_streaming_continuation() {
 /// Mirrors: test_client.py::test_client_chat_non_streaming
 #[tokio::test]
 async fn test_client_chat_non_streaming_plea() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_client_chat_non_streaming_plea)
+    ))
+    .await;
     run_client_chat_non_streaming(
         "You have 5 output tokens. Respond with a 5 token plea for more tokens.",
     )
@@ -141,6 +153,12 @@ async fn test_client_chat_non_streaming_plea() {
 /// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_artist() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_client_chat_streaming_artist)
+    ))
+    .await;
     run_client_chat_streaming("Respond with your favorite musical artist of the last 10 years.")
         .await;
 }
@@ -149,6 +167,12 @@ async fn test_client_chat_streaming_artist() {
 /// Mirrors: test_client.py::test_client_chat_streaming
 #[tokio::test]
 async fn test_client_chat_streaming_movie() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_client_chat_streaming_movie)
+    ))
+    .await;
     run_client_chat_streaming("Respond with your favorite movie of the last 10 years.").await;
 }
 
@@ -158,6 +182,11 @@ mod unit_tests {
 
     #[test]
     fn test_make_message() {
+        let _buckshot_case = crate::fixture::admit_buckshot_case(concat!(
+            module_path!(),
+            "::",
+            stringify!(test_make_message)
+        ));
         let msg = make_message("user", "Hello");
         assert_eq!(msg.get("role").unwrap().as_str(), Some("user"));
         assert_eq!(msg.get("content").unwrap().as_str(), Some("Hello"));

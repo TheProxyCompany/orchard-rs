@@ -11,6 +11,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_logprobs.py::test_chat_completion_with_logprobs
 #[tokio::test]
 async fn test_chat_completion_with_logprobs() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_with_logprobs)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
@@ -69,6 +75,12 @@ async fn test_chat_completion_with_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_without_logprobs
 #[tokio::test]
 async fn test_chat_completion_without_logprobs() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_without_logprobs)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
@@ -112,6 +124,12 @@ async fn test_chat_completion_without_logprobs() {
 /// Mirrors: test_logprobs.py::test_chat_completion_logprobs_streaming
 #[tokio::test]
 async fn test_chat_completion_logprobs_streaming() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_chat_completion_logprobs_streaming)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {

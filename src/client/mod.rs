@@ -8,6 +8,8 @@ mod response;
 mod responses;
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -112,6 +114,36 @@ impl From<crate::error::Error> for ClientError {
 }
 
 pub type Result<T> = std::result::Result<T, ClientError>;
+
+/// Async observer invoked immediately before every inference IPC submission.
+/// Release tests install one before creating clients; production leaves it unset.
+#[doc(hidden)]
+pub type RequestAttemptObserver = Arc<
+    dyn Fn(
+            String,
+        )
+            -> Pin<Box<dyn Future<Output = std::result::Result<(), String>> + Send + 'static>>
+        + Send
+        + Sync,
+>;
+
+static REQUEST_ATTEMPT_OBSERVER: OnceLock<RequestAttemptObserver> = OnceLock::new();
+
+#[doc(hidden)]
+pub fn install_request_attempt_observer(observer: RequestAttemptObserver) -> Result<()> {
+    REQUEST_ATTEMPT_OBSERVER.set(observer).map_err(|_| {
+        ClientError::RequestFailed("request-attempt observer already installed".to_string())
+    })
+}
+
+async fn observe_request_attempt(model_id: &str) -> Result<()> {
+    if let Some(observer) = REQUEST_ATTEMPT_OBSERVER.get() {
+        observer(model_id.to_string())
+            .await
+            .map_err(ClientError::RequestFailed)?;
+    }
+    Ok(())
+}
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 
@@ -622,6 +654,7 @@ impl Client {
             stream,
             "Dispatching chat request to PIE"
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             request_model_id,
@@ -932,6 +965,7 @@ impl Client {
             prompt_count = prompt_payloads.len(),
             "Dispatching batched chat request to PIE"
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             request_model_id,
@@ -1047,6 +1081,7 @@ impl Client {
             prompt_count = prompt_payloads.len(),
             "Dispatching batched embedding request to PIE"
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
             request_model_id,
@@ -1102,6 +1137,7 @@ impl Client {
             modal_options,
             sampling_params,
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
             info.model_id.as_str(),
@@ -1158,6 +1194,7 @@ impl Client {
             modal_options,
             sampling_params,
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
             info.model_id.as_str(),
@@ -1214,6 +1251,7 @@ impl Client {
             modal_options,
             sampling_params,
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
             info.model_id.as_str(),
@@ -1268,6 +1306,7 @@ impl Client {
             payload_bytes = prompt_payload.capabilities[0].payload.len(),
             "Dispatching speech-to-text request to PIE"
         );
+        observe_request_attempt(model_id).await?;
         let (_batch_size, rx) = self.ipc.send_batch_request_with_type(
             request_id,
             request_model_id,
@@ -1322,6 +1361,7 @@ impl Client {
             .iter()
             .map(|text| build_prefill_task_prompt_payload(text, task_name))
             .collect();
+        observe_request_attempt(model_id).await?;
         let (_batch_size, mut rx) = self.ipc.send_batch_request_with_type(
             request_id,
             info.model_id.as_str(),

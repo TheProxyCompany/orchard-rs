@@ -11,6 +11,12 @@ use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 /// Mirrors: test_unicode_payload.py::test_unicode_payload_round_trip
 #[tokio::test]
 async fn test_unicode_payload_round_trip() {
+    let _buckshot_case = crate::fixture::admit_buckshot_case_async(concat!(
+        module_path!(),
+        "::",
+        stringify!(test_unicode_payload_round_trip)
+    ))
+    .await;
     let fixture = get_fixture().await;
     let client = &fixture.client;
 
