@@ -1,48 +1,152 @@
 //! IPC endpoint definitions for PIE communication.
 //!
-//! These endpoints mirror the Python/Swift implementations.
-//! PIE uses NNG (nanomsg-next-gen) for high-performance IPC.
+//! These endpoints mirror the engine's `pie::utils::get_ipc_dir()`
+//! (`src/pie/src/utils/platform_utils.cpp`) byte for byte. PIE uses NNG
+//! (nanomsg-next-gen) for high-performance IPC over unix sockets, and
+//! `sockaddr_un` caps the whole socket path at 104 bytes on macOS, so the
+//! engine projects any root that would overflow onto a compact, hashed
+//! directory under `/tmp`. A client that does not apply the same projection
+//! dials a socket the engine never binds and times out waiting for a heartbeat.
 
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
+
+/// PIE's bound on the entire filesystem path of a socket (`IPC_SOCKET_PATH_MAX_BYTES`).
+const MAX_SOCKET_PATH_BYTES: usize = 103;
+/// The longest socket filename the engine ever creates (per-channel response sockets).
+const LONGEST_SOCKET_NAME: &str = "pie_response_ffffffffffffffff.ipc";
+
+const FNV1A64_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV1A64_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(FNV1A64_OFFSET_BASIS, |digest, &byte| {
+        (digest ^ u64::from(byte)).wrapping_mul(FNV1A64_PRIME)
+    })
+}
+
+/// Lexical normalization: drop `.` components and resolve `..` against the
+/// preceding component, like `std::filesystem::path::lexically_normal`.
+fn lexically_normal(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let popped = out.pop();
+                if !popped {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+fn absolute(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    }
+}
+
+/// `std::filesystem::weakly_canonical`: canonicalize the longest existing
+/// prefix, then append and lexically normalize the missing suffix. Falls back
+/// to an absolute, normalized path when even the prefix cannot be resolved.
+fn canonical_path(path: &Path) -> PathBuf {
+    let mut prefix = absolute(path);
+    let mut suffix: Vec<OsString> = Vec::new();
+    while !prefix.exists() {
+        match prefix.file_name() {
+            Some(name) => {
+                suffix.push(name.to_owned());
+                if !prefix.pop() {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    match std::fs::canonicalize(&prefix) {
+        Ok(mut resolved) => {
+            for part in suffix.iter().rev() {
+                resolved.push(part);
+            }
+            lexically_normal(&resolved)
+        }
+        Err(_) => lexically_normal(&absolute(path)),
+    }
+}
+
+fn socket_paths_fit(root: &Path) -> bool {
+    root.join(LONGEST_SOCKET_NAME).as_os_str().len() <= MAX_SOCKET_PATH_BYTES
+}
+
+/// Project a requested root the way PIE does: keep it when every socket path
+/// fits, otherwise use `/tmp/orchard-ipc-<uid>-<fnv1a64 of the canonical root>`.
+fn bounded_ipc_root(candidate: &Path) -> PathBuf {
+    let canonical = canonical_path(candidate);
+    if socket_paths_fit(&canonical) {
+        return canonical;
+    }
+    let digest = fnv1a64(canonical.as_os_str().as_encoded_bytes());
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    canonical_path(Path::new("/tmp")).join(format!("orchard-ipc-{uid}-{digest:016x}"))
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// PIE's cache directory: `ORCHARD_CACHE_ROOT`, else the platform cache
+/// directory under `com.theproxycompany`. Created before use, as PIE does.
+fn cache_root() -> PathBuf {
+    if let Some(root) = non_empty_env("ORCHARD_CACHE_ROOT") {
+        return PathBuf::from(root);
+    }
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    let base = if cfg!(target_os = "macos") {
+        home.join("Library/Caches")
+    } else {
+        non_empty_env("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".cache"))
+    };
+    base.join("com.theproxycompany")
+}
 
 /// Get the IPC root directory for socket files.
 ///
-/// Determines the stable, user-specific root directory for IPC socket files.
-/// This ensures that all Orchard processes communicate through a predictable,
-/// private location, avoiding pollution of system-wide directories like /tmp.
+/// `ORCHARD_IPC_ROOT` (non-empty) is honored first, then
+/// `ORCHARD_CACHE_ROOT/ipc`, then the platform default. Whichever applies is
+/// bounded exactly like the engine bounds it, so both sides always agree.
 pub fn ipc_root() -> PathBuf {
-    // ORCHARD_IPC_ROOT is an escape hatch for development or containerized environments.
-    if let Ok(root) = std::env::var("ORCHARD_IPC_ROOT") {
-        return PathBuf::from(root);
-    }
-
-    if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
-        let path = PathBuf::from(cache_root).join("ipc");
-        std::fs::create_dir_all(&path).ok();
-        return path;
-    }
-
-    // Default to the standard application cache directory.
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-
-    // macOS: ~/Library/Caches, others: ~/.cache
-    let base = if cfg!(target_os = "macos") {
-        let mac_cache = home.join("Library/Caches");
-        if mac_cache.exists() {
-            mac_cache
-        } else {
-            home.join(".cache")
+    let requested = match non_empty_env("ORCHARD_IPC_ROOT") {
+        Some(root) => PathBuf::from(root),
+        None => {
+            let cache = cache_root();
+            // PIE creates its cache directory before projecting the IPC child;
+            // weak canonicalization depends on which prefix exists.
+            let _ = std::fs::create_dir_all(&cache);
+            cache.join("ipc")
         }
-    } else {
-        home.join(".cache")
     };
-
-    let path = base.join("com.theproxycompany/ipc");
-
-    // Ensure directory exists
-    std::fs::create_dir_all(&path).ok();
-
-    path
+    let root = bounded_ipc_root(&requested);
+    if !root.exists() {
+        if std::fs::create_dir_all(&root).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700));
+            }
+        }
+    }
+    root
 }
 
 /// Format a filesystem path into an NNG ipc:// transport URL.
@@ -84,15 +188,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ipc_root_is_valid() {
-        let root = ipc_root();
-        assert!(root.to_string_lossy().contains("com.theproxycompany/ipc"));
+    fn fnv1a64_matches_pie() {
+        // Same digest PIE's platform_utils.cpp produces for these bytes.
+        assert_eq!(fnv1a64(b"abc"), 0xe71f_a219_0541_574b);
+        let long = format!("/private/tmp/{}", "x".repeat(95));
+        assert_eq!(fnv1a64(long.as_bytes()), 0x6afb_dbbb_b309_ece4);
     }
 
     #[test]
-    fn test_urls_are_valid() {
+    fn short_root_is_kept_verbatim_after_canonicalization() {
+        let root = bounded_ipc_root(Path::new("/tmp/orc-abl/com.theproxycompany/ipc"));
+        // /tmp resolves to /private/tmp on macOS; the suffix is preserved.
+        assert!(root.ends_with("orc-abl/com.theproxycompany/ipc"), "{root:?}");
+        assert!(socket_paths_fit(&root));
+    }
+
+    #[test]
+    fn long_root_projects_to_hashed_tmp_directory() {
+        let long = format!("/private/tmp/{}", "x".repeat(95));
+        let root = bounded_ipc_root(Path::new(&long));
+        let uid = unsafe { libc::getuid() };
+        let expected_name = format!("orchard-ipc-{uid}-6afbdbbbb309ece4");
+        assert_eq!(root.file_name().unwrap().to_str().unwrap(), expected_name);
+        assert!(root.starts_with(canonical_path(Path::new("/tmp"))), "{root:?}");
+        assert!(socket_paths_fit(&root));
+    }
+
+    #[test]
+    fn boundary_is_the_full_socket_path_at_103_bytes() {
+        // Build a root under /private/tmp whose longest socket path is exactly 103 bytes,
+        // then one byte longer.
+        let base = canonical_path(Path::new("/tmp"));
+        let fill = MAX_SOCKET_PATH_BYTES
+            - base.as_os_str().len()
+            - 1 // separator before the root name
+            - 1 // separator before the socket name
+            - LONGEST_SOCKET_NAME.len();
+        let fits = base.join("y".repeat(fill));
+        let over = base.join("y".repeat(fill + 1));
+        assert_eq!(bounded_ipc_root(&fits), fits);
+        assert_ne!(bounded_ipc_root(&over), over);
+    }
+
+    #[test]
+    fn missing_suffix_is_normalized_not_resolved() {
+        let candidate = Path::new("/tmp/./orc-missing-a/../orc-missing-b/ipc");
+        let root = canonical_path(candidate);
+        assert!(root.ends_with("orc-missing-b/ipc"), "{root:?}");
+        assert!(!root.to_string_lossy().contains(".."));
+    }
+
+    #[test]
+    fn urls_are_ipc_scheme() {
         assert!(request_url().starts_with("ipc://"));
         assert!(response_url().starts_with("ipc://"));
         assert!(management_url().starts_with("ipc://"));
+        assert!(request_url().len() - "ipc://".len() <= MAX_SOCKET_PATH_BYTES);
     }
 }
