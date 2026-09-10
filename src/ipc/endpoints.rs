@@ -28,14 +28,21 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// Lexical normalization: drop `.` components and resolve `..` against the
 /// preceding component, like `std::filesystem::path::lexically_normal`.
 fn lexically_normal(path: &Path) -> PathBuf {
+    let absolute = path.is_absolute();
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                let popped = out.pop();
-                if !popped {
-                    out.push("..");
+                // `..` at an absolute root is clamped (std::filesystem does the
+                // same); a relative path keeps leading `..` components.
+                let at_root = out.parent().is_none();
+                if at_root {
+                    if !absolute {
+                        out.push("..");
+                    }
+                } else {
+                    out.pop();
                 }
             }
             other => out.push(other.as_os_str()),
@@ -61,15 +68,16 @@ fn canonical_path(path: &Path) -> PathBuf {
     let mut prefix = absolute(path);
     let mut suffix: Vec<OsString> = Vec::new();
     while !prefix.exists() {
-        match prefix.file_name() {
-            Some(name) => {
-                suffix.push(name.to_owned());
-                if !prefix.pop() {
-                    break;
-                }
-            }
+        // Walk whole components, not file_name(): a trailing `..` or `.` must
+        // stay in the suffix so the search continues to the real existing prefix.
+        let last = match prefix.components().next_back() {
+            Some(component) => component.as_os_str().to_owned(),
             None => break,
+        };
+        if !prefix.pop() {
+            break;
         }
+        suffix.push(last);
     }
     match std::fs::canonicalize(&prefix) {
         Ok(mut resolved) => {
@@ -236,6 +244,24 @@ mod tests {
         let root = canonical_path(candidate);
         assert!(root.ends_with("orc-missing-b/ipc"), "{root:?}");
         assert!(!root.to_string_lossy().contains(".."));
+    }
+
+    #[test]
+    fn trailing_parent_dir_still_resolves_the_existing_symlink_prefix() {
+        // /tmp is a symlink to /private/tmp on macOS; the missing child plus a
+        // trailing `..` must not stop the walk before the symlink is resolved.
+        let root = canonical_path(Path::new("/tmp/orc-does-not-exist-zzz/.."));
+        assert_eq!(root, canonical_path(Path::new("/tmp")));
+        let deeper = canonical_path(Path::new("/tmp/orc-missing-a/orc-missing-b/../.."));
+        assert_eq!(deeper, canonical_path(Path::new("/tmp")));
+    }
+
+    #[test]
+    fn parent_dir_is_clamped_at_an_absolute_root() {
+        assert_eq!(lexically_normal(Path::new("/../../tmp")), PathBuf::from("/tmp"));
+        assert_eq!(lexically_normal(Path::new("/a/../../b")), PathBuf::from("/b"));
+        assert_eq!(lexically_normal(Path::new("../x")), PathBuf::from("../x"));
+        assert_eq!(canonical_path(Path::new("/../../tmp")), canonical_path(Path::new("/tmp")));
     }
 
     #[test]
