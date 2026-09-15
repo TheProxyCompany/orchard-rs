@@ -145,13 +145,11 @@ pub fn ipc_root() -> PathBuf {
         }
     };
     let root = bounded_ipc_root(&requested);
-    if !root.exists() {
-        if std::fs::create_dir_all(&root).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700));
-            }
+    if !root.exists() && std::fs::create_dir_all(&root).is_ok() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700));
         }
     }
     root
@@ -207,7 +205,10 @@ mod tests {
     fn short_root_is_kept_verbatim_after_canonicalization() {
         let root = bounded_ipc_root(Path::new("/tmp/orc-abl/com.theproxycompany/ipc"));
         // /tmp resolves to /private/tmp on macOS; the suffix is preserved.
-        assert!(root.ends_with("orc-abl/com.theproxycompany/ipc"), "{root:?}");
+        assert!(
+            root.ends_with("orc-abl/com.theproxycompany/ipc"),
+            "{root:?}"
+        );
         assert!(socket_paths_fit(&root));
     }
 
@@ -218,7 +219,10 @@ mod tests {
         let uid = unsafe { libc::getuid() };
         let expected_name = format!("orchard-ipc-{uid}-6afbdbbbb309ece4");
         assert_eq!(root.file_name().unwrap().to_str().unwrap(), expected_name);
-        assert!(root.starts_with(canonical_path(Path::new("/tmp"))), "{root:?}");
+        assert!(
+            root.starts_with(canonical_path(Path::new("/tmp"))),
+            "{root:?}"
+        );
         assert!(socket_paths_fit(&root));
     }
 
@@ -258,10 +262,19 @@ mod tests {
 
     #[test]
     fn parent_dir_is_clamped_at_an_absolute_root() {
-        assert_eq!(lexically_normal(Path::new("/../../tmp")), PathBuf::from("/tmp"));
-        assert_eq!(lexically_normal(Path::new("/a/../../b")), PathBuf::from("/b"));
+        assert_eq!(
+            lexically_normal(Path::new("/../../tmp")),
+            PathBuf::from("/tmp")
+        );
+        assert_eq!(
+            lexically_normal(Path::new("/a/../../b")),
+            PathBuf::from("/b")
+        );
         assert_eq!(lexically_normal(Path::new("../x")), PathBuf::from("../x"));
-        assert_eq!(canonical_path(Path::new("/../../tmp")), canonical_path(Path::new("/tmp")));
+        assert_eq!(
+            canonical_path(Path::new("/../../tmp")),
+            canonical_path(Path::new("/tmp"))
+        );
     }
 
     #[test]
