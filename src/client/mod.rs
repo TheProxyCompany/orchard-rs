@@ -8,7 +8,7 @@ mod response;
 mod responses;
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -19,20 +19,6 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::defaults;
-
-/// Global runtime for synchronous operations.
-/// Uses current_thread for efficiency - sync callers don't need multi-thread.
-static SYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
-    SYNC_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create sync runtime")
-    })
-}
-
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
@@ -342,7 +328,7 @@ fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Val
 
 /// A high-level client for the Proxy Inference Engine.
 ///
-/// Provides both synchronous and asynchronous interfaces for LLM inference.
+/// Provides an asynchronous interface for LLM inference.
 #[derive(Clone)]
 pub struct Client {
     ipc: Arc<IPCClient>,
@@ -700,36 +686,6 @@ impl Client {
                 selected,
                 total_completion_tokens,
             )))
-        }
-    }
-
-    /// Perform synchronous chat completion (blocking).
-    ///
-    /// Handles nested async contexts properly - safe to call from any context.
-    pub fn chat(
-        &self,
-        model_id: &str,
-        messages: Vec<HashMap<String, serde_json::Value>>,
-        params: SamplingParams,
-    ) -> Result<ClientResponse> {
-        let future = async {
-            match self.achat(model_id, messages, params, false).await? {
-                ChatResult::Complete(response) => Ok(response),
-                ChatResult::Stream(_) => Err(ClientError::RequestFailed(
-                    "Unexpected stream result".into(),
-                )),
-            }
-        };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                // Already in async context - use block_in_place to avoid panic
-                tokio::task::block_in_place(|| handle.block_on(future))
-            }
-            Err(_) => {
-                // Not in async context - use the global sync runtime
-                get_sync_runtime().block_on(future)
-            }
         }
     }
 
@@ -1112,23 +1068,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE audio generation.
-    pub fn generate_audio(
-        &self,
-        model_id: &str,
-        text: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let text = text.to_string();
-        let future = async move { self.agenerate_audio(&model_id, &text, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Generate image artifacts with a native PIE image-generation model.
     pub async fn agenerate_image(
         &self,
@@ -1166,23 +1105,6 @@ impl Client {
             &[prompt_payload],
         )?;
         collect_modal_artifacts(rx).await
-    }
-
-    /// Synchronous wrapper for native PIE image generation.
-    pub fn generate_image(
-        &self,
-        model_id: &str,
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let prompt = prompt.to_string();
-        let future = async move { self.agenerate_image(&model_id, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
     }
 
     /// Edit an input image with a native PIE image-to-image model.
@@ -1224,25 +1146,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE image editing.
-    pub fn edit_image(
-        &self,
-        model_id: &str,
-        image: &[u8],
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let image = image.to_vec();
-        let prompt = prompt.to_string();
-        let future = async move { self.aedit_image(&model_id, &image, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Transcribe float32 PCM audio with a local speech-to-text model.
     pub async fn atranscribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
         if pcm.is_empty() {
@@ -1277,18 +1180,6 @@ impl Client {
         )?;
 
         collect_transcription(rx).await
-    }
-
-    /// Synchronous speech-to-text wrapper.
-    pub fn transcribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
-        let model_id = model_id.to_string();
-        let pcm = pcm.to_vec();
-        let future = async move { self.atranscribe_audio(&model_id, &pcm).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
     }
 
     /// Run a prefill-only task and return the raw response deltas.
