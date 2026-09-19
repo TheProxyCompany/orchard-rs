@@ -55,7 +55,6 @@ thiserror = "2"
 dirs = "5"
 tracing = "0.1.44"
 futures = "0.3"
-async-trait = "0.1"
 rand = "0.8"
 hex = "0.4"
 
