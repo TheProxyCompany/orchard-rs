@@ -3,7 +3,8 @@ use std::sync::Arc;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::Value;
 
-use crate::client::{Client, ClientDelta, ClientError, Result};
+use crate::client::{Client, ClientDelta};
+use crate::error::{Error, Result};
 use crate::model::registry::ModelRegistry;
 
 pub const OPENAI_PRIVACY_FILTER_MODEL_ID: &str = "openai/privacy-filter";
@@ -50,28 +51,22 @@ impl OpenAIPrivacyFilterClient {
             if delta.modal_decoder_id.as_deref() == Some("privacy_filter") {
                 if let Some(payload_b64) = delta.modal_bytes_b64 {
                     let payload = BASE64.decode(payload_b64).map_err(|e| {
-                        ClientError::Multimodal(format!(
-                            "Failed to decode privacy filter payload: {}",
-                            e
-                        ))
+                        Error::Other(format!("Failed to decode privacy filter payload: {}", e))
                     })?;
                     return serde_json::from_slice(&payload).map_err(|e| {
-                        ClientError::Multimodal(format!(
-                            "Failed to parse privacy filter payload: {}",
-                            e
-                        ))
+                        Error::Other(format!("Failed to parse privacy filter payload: {}", e))
                     });
                 }
             }
         }
-        Err(ClientError::RequestFailed(
+        Err(Error::Other(
             "privacy filter response did not include a result payload".to_string(),
         ))
     }
 
     fn check_input_size(text: &str) -> Result<()> {
         if text.len() > Self::MAX_INPUT_BYTES {
-            return Err(ClientError::RequestFailed(format!(
+            return Err(Error::Other(format!(
                 "privacy filter input exceeds {} bytes; callers must chunk larger inputs",
                 Self::MAX_INPUT_BYTES
             )));

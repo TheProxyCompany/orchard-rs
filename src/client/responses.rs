@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::{
-    native_reasoning_settings, pick_seed, tool_choice_to_string, Client, ClientError, Result,
-};
+use super::{native_reasoning_settings, pick_seed, tool_choice_to_string, Client};
+use crate::error::{Error, Result};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 use crate::ipc::serialization::{PromptPayload, ToolCallingTokens};
@@ -2009,12 +2008,12 @@ async fn gather_non_streaming_response(
     }
 
     if let Some(error) = error_detail {
-        return Err(ClientError::RequestFailed(error));
+        return Err(Error::Other(error));
     }
     // completed_at is only set by a final delta; a channel that closed without
     // one truncated the response and must not read as a short success.
     if completed_at.is_none() {
-        return Err(ClientError::RequestFailed(
+        return Err(Error::Other(
             "Response channel closed before completion.".to_string(),
         ));
     }
@@ -2110,11 +2109,10 @@ impl Client {
             native_reasoning_settings(formatter, requested_reasoning, &request_reasoning_effort);
 
         let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(formatter, &messages, request.instructions.as_deref())
-                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+            build_multimodal_messages(formatter, &messages, request.instructions.as_deref())?;
 
         if messages_for_template.is_empty() {
-            return Err(ClientError::RequestFailed(
+            return Err(Error::Other(
                 "Response request must include at least one content segment.".into(),
             ));
         }
@@ -2140,16 +2138,14 @@ impl Client {
         let tool_schemas_chars = tool_schemas_json.chars().count();
         let template_tools = (!tool_schemas.is_empty()).then_some(tool_schemas.as_slice());
 
-        let prompt_text = formatter
-            .apply_template_with_tools(
-                &messages_for_template,
-                true,
-                reasoning_flag,
-                None,
-                reasoning_effort.as_deref(),
-                template_tools,
-            )
-            .map_err(|e| ClientError::Formatter(e.to_string()))?;
+        let prompt_text = formatter.apply_template_with_tools(
+            &messages_for_template,
+            true,
+            reasoning_flag,
+            None,
+            reasoning_effort.as_deref(),
+            template_tools,
+        )?;
 
         let layout_segments = build_multimodal_layout(
             formatter,
@@ -2158,8 +2154,7 @@ impl Client {
             &audio_buffers,
             &capabilities,
             &content_order,
-        )
-        .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+        )?;
 
         let final_prompt = formatter.strip_template_placeholders(&prompt_text);
         tracing::debug!(

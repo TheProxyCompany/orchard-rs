@@ -10,7 +10,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
 use crate::client::response::ClientDelta;
-use crate::client::{Client, ClientError, Result, SamplingParams};
+use crate::client::{Client, SamplingParams};
+use crate::error::{Error, Result};
 use crate::model::registry::ModelRegistry;
 
 /// Model ID for Moondream.
@@ -164,10 +165,10 @@ impl MoondreamClient {
     fn decode_coordinate(payload_b64: &str) -> Result<f64> {
         let raw_bytes = BASE64
             .decode(payload_b64)
-            .map_err(|e| ClientError::Multimodal(format!("Failed to decode base64: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to decode base64: {}", e)))?;
 
         if raw_bytes.len() != 4 {
-            return Err(ClientError::Multimodal(format!(
+            return Err(Error::Other(format!(
                 "Coordinate payload must be 4 bytes; received {} bytes",
                 raw_bytes.len()
             )));
@@ -183,10 +184,10 @@ impl MoondreamClient {
     fn decode_size(payload_b64: &str) -> Result<(f64, f64)> {
         let raw_bytes = BASE64
             .decode(payload_b64)
-            .map_err(|e| ClientError::Multimodal(format!("Failed to decode base64: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to decode base64: {}", e)))?;
 
         if raw_bytes.len() != 8 {
-            return Err(ClientError::Multimodal(format!(
+            return Err(Error::Other(format!(
                 "Size payload must be 8 bytes; received {} bytes",
                 raw_bytes.len()
             )));
@@ -283,7 +284,7 @@ impl MoondreamClient {
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         // Process stream
@@ -474,7 +475,7 @@ impl MoondreamClient {
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut caption_parts: Vec<String> = Vec::new();
@@ -533,7 +534,7 @@ impl MoondreamClient {
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();
@@ -608,7 +609,7 @@ impl MoondreamClient {
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();
@@ -695,7 +696,7 @@ impl MoondreamClient {
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();

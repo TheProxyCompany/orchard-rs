@@ -15,10 +15,10 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::defaults;
+use crate::error::{Error, Result};
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
@@ -50,54 +50,6 @@ pub use responses::{
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
     ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
-
-/// Errors that can occur during client operations.
-#[derive(Error, Debug)]
-pub enum ClientError {
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    #[error("{0}")]
-    ModelNotReady(String),
-
-    #[error("{0}")]
-    Ipc(String),
-
-    #[error("{0}")]
-    Formatter(String),
-
-    #[error("{0}")]
-    Multimodal(String),
-
-    #[error("{0}")]
-    RequestFailed(String),
-}
-
-impl From<crate::error::Error> for ClientError {
-    fn from(err: crate::error::Error) -> Self {
-        use crate::error::Error;
-        match err {
-            Error::ModelNotFound(s) => ClientError::ModelNotFound(s),
-            Error::ModelNotReady(s) => ClientError::ModelNotReady(s),
-            Error::NotConnected
-            | Error::EngineDead
-            | Error::InvalidResponse
-            | Error::Nng(_)
-            | Error::Timeout
-            | Error::ChannelClosed => ClientError::Ipc(err.to_string()),
-            Error::Template(s) => ClientError::Formatter(s),
-            Error::InvalidImageUrl
-            | Error::InvalidBase64
-            | Error::MissingContentType(_, _)
-            | Error::InvalidContent
-            | Error::PlaceholderMismatch(_, _)
-            | Error::EmptyRequest => ClientError::Multimodal(err.to_string()),
-            _ => ClientError::RequestFailed(err.to_string()),
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, ClientError>;
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 
@@ -438,7 +390,7 @@ impl Client {
         if matches!(status, "ok" | "accepted") {
             Ok(())
         } else {
-            Err(ClientError::Ipc(format!(
+            Err(Error::Other(format!(
                 "Cancel request {} failed: {}",
                 request_id, response
             )))
@@ -450,7 +402,7 @@ impl Client {
         self.registry
             .cancel_activation(model_id)
             .await
-            .map_err(ClientError::Ipc)
+            .map_err(Error::Other)
     }
 
     /// Perform asynchronous chat completion.
@@ -534,7 +486,7 @@ impl Client {
                 match rx.recv().await {
                     Some(delta) => {
                         if let Some(message) = delta_error_message(&delta) {
-                            return Err(ClientError::RequestFailed(message));
+                            return Err(Error::Other(message));
                         }
 
                         let candidate_index = delta.candidate_index.unwrap_or(0) as usize;
@@ -571,7 +523,7 @@ impl Client {
                         }
                     }
                     None => {
-                        return Err(ClientError::RequestFailed(
+                        return Err(Error::Other(
                             "Chat response channel closed before completion".to_string(),
                         ));
                     }
@@ -626,7 +578,7 @@ impl Client {
             return Ok(BatchChatResult::Complete(Vec::new()));
         }
         if params_by_prompt.len() != conversations.len() {
-            return Err(ClientError::RequestFailed(format!(
+            return Err(Error::Other(format!(
                 "params_by_prompt length ({}) does not match batch size ({})",
                 params_by_prompt.len(),
                 conversations.len()
@@ -717,7 +669,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(message) = delta_error_message(&delta) {
-                        return Err(ClientError::RequestFailed(message));
+                        return Err(Error::Other(message));
                     }
 
                     let prompt_index = delta.prompt_index.unwrap_or(0);
@@ -733,7 +685,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Chat response channel closed before completion".to_string(),
                     ));
                 }
@@ -753,9 +705,9 @@ impl Client {
     /// Generate an embedding for a single text input.
     pub async fn aembed(&self, model_id: &str, text: &str) -> Result<Vec<f32>> {
         let mut embeddings = self.aembed_batch(model_id, vec![text.to_string()]).await?;
-        embeddings.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Embedding response missing result".to_string())
-        })
+        embeddings
+            .pop()
+            .ok_or_else(|| Error::Other("Embedding response missing result".to_string()))
     }
 
     /// Generate embeddings for multiple text inputs in a single IPC request.
@@ -826,14 +778,12 @@ impl Client {
         let max_output_tokens = match options.as_mut() {
             Some(Value::Object(object)) => match object.remove("max_output_tokens") {
                 Some(value) => value.as_i64().filter(|value| *value >= 0).ok_or_else(|| {
-                    ClientError::RequestFailed(
-                        "max_output_tokens must be a non-negative integer".to_string(),
-                    )
+                    Error::Other("max_output_tokens must be a non-negative integer".to_string())
                 })? as i32,
                 None => 8192,
             },
             Some(_) => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Modal options must be a JSON object".to_string(),
                 ))
             }
@@ -1067,9 +1017,9 @@ impl Client {
         let mut results = self
             .aprefill_task_batch(model_id, vec![text.to_string()], task_name)
             .await?;
-        results.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Prefill task response missing result".to_string())
-        })
+        results
+            .pop()
+            .ok_or_else(|| Error::Other("Prefill task response missing result".to_string()))
     }
 
     /// Run a prefill-only task for multiple texts in one IPC request.
@@ -1103,7 +1053,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(error) = delta.error.clone() {
-                        return Err(ClientError::RequestFailed(error));
+                        return Err(Error::Other(error));
                     }
                     let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
                     let is_final = delta.is_final_delta;
@@ -1116,7 +1066,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Prefill task response channel closed before completion".to_string(),
                     ));
                 }
@@ -1142,11 +1092,10 @@ fn build_chat_payload(
 
     // Build multimodal content (pass instructions if provided)
     let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-        build_multimodal_messages(formatter, messages, params.instructions.as_deref())
-            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+        build_multimodal_messages(formatter, messages, params.instructions.as_deref())?;
 
     if messages_for_template.is_empty() {
-        return Err(ClientError::RequestFailed(
+        return Err(Error::Other(
             "Chat request must include at least one message".into(),
         ));
     }
@@ -1159,16 +1108,14 @@ fn build_chat_payload(
     let template_tools = (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
 
     // Apply template with reasoning flag
-    let prompt_text = formatter
-        .apply_template_with_tools(
-            &messages_for_template,
-            true,
-            reasoning_flag,
-            params.task_name.as_deref(),
-            reasoning_effort.as_deref(),
-            template_tools,
-        )
-        .map_err(|e| ClientError::Formatter(e.to_string()))?;
+    let prompt_text = formatter.apply_template_with_tools(
+        &messages_for_template,
+        true,
+        reasoning_flag,
+        params.task_name.as_deref(),
+        reasoning_effort.as_deref(),
+        template_tools,
+    )?;
 
     // Build layout for multimodal content
     let layout_segments = build_multimodal_layout(
@@ -1178,8 +1125,7 @@ fn build_chat_payload(
         &audio_buffers,
         &capabilities,
         &content_order,
-    )
-    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+    )?;
 
     Ok(PromptPayload {
         prompt: formatter.strip_template_placeholders(&prompt_text),
@@ -1351,7 +1297,7 @@ fn modal_options_object<const N: usize>(
     }
     if let Some(options) = options {
         let Value::Object(options_object) = options else {
-            return Err(ClientError::RequestFailed(
+            return Err(Error::Other(
                 "Modal options must be a JSON object".to_string(),
             ));
         };
@@ -1361,15 +1307,16 @@ fn modal_options_object<const N: usize>(
 }
 
 fn modal_options_json(object: &Map<String, Value>) -> Result<String> {
-    serde_json::to_string(object).map_err(|err| ClientError::RequestFailed(err.to_string()))
+    serde_json::to_string(object).map_err(|err| Error::Other(err.to_string()))
 }
 
 fn modal_option_f64(object: &Map<String, Value>, key: &str) -> Result<Option<f64>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_f64().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a number"))
-        }),
+        Some(value) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a number"))),
     }
 }
 
@@ -1377,12 +1324,12 @@ fn modal_option_i32(object: &Map<String, Value>, key: &str) -> Result<Option<i32
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => {
-            let value = value.as_i64().ok_or_else(|| {
-                ClientError::RequestFailed(format!("modal option '{key}' must be an integer"))
-            })?;
-            i32::try_from(value).map(Some).map_err(|_| {
-                ClientError::RequestFailed(format!("modal option '{key}' is out of range"))
-            })
+            let value = value
+                .as_i64()
+                .ok_or_else(|| Error::Other(format!("modal option '{key}' must be an integer")))?;
+            i32::try_from(value)
+                .map(Some)
+                .map_err(|_| Error::Other(format!("modal option '{key}' is out of range")))
         }
     }
 }
@@ -1394,11 +1341,11 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
             if let Some(value) = value.as_u64() {
                 Ok(Some(value))
             } else if let Some(value) = value.as_i64() {
-                u64::try_from(value).map(Some).map_err(|_| {
-                    ClientError::RequestFailed(format!("modal option '{key}' must be non-negative"))
-                })
+                u64::try_from(value)
+                    .map(Some)
+                    .map_err(|_| Error::Other(format!("modal option '{key}' must be non-negative")))
             } else {
-                Err(ClientError::RequestFailed(format!(
+                Err(Error::Other(format!(
                     "modal option '{key}' must be an integer"
                 )))
             }
@@ -1409,9 +1356,10 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
 fn modal_option_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bool>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a boolean"))
-        }),
+        Some(value) => value
+            .as_bool()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a boolean"))),
     }
 }
 
@@ -1443,14 +1391,13 @@ async fn collect_modal_artifacts(
     let mut artifacts = Vec::new();
     while let Some(delta) = rx.recv().await {
         if let Some(error) = delta.error.clone() {
-            return Err(ClientError::RequestFailed(error));
+            return Err(Error::Other(error));
         }
         if let Some(encoded) = delta.modal_bytes_b64.as_deref() {
             let metadata = match delta.modal_metadata_json.as_deref() {
-                Some(raw) if !raw.is_empty() => Some(
-                    serde_json::from_str(raw)
-                        .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
-                ),
+                Some(raw) if !raw.is_empty() => {
+                    Some(serde_json::from_str(raw).map_err(|err| Error::Other(err.to_string()))?)
+                }
                 _ => None,
             };
             artifacts.push(ModalArtifact {
@@ -1461,14 +1408,14 @@ async fn collect_modal_artifacts(
                 metadata,
                 data: BASE64
                     .decode(encoded)
-                    .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
+                    .map_err(|err| Error::Other(err.to_string()))?,
             });
         }
         if delta.is_final_delta {
             return Ok(artifacts);
         }
     }
-    Err(ClientError::RequestFailed(
+    Err(Error::Other(
         "Modal artifact response channel closed before completion".to_string(),
     ))
 }
@@ -1485,7 +1432,7 @@ async fn collect_embeddings(
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
@@ -1503,7 +1450,7 @@ async fn collect_embeddings(
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Embedding response channel closed before completion".to_string(),
                 ));
             }
@@ -1515,7 +1462,7 @@ async fn collect_embeddings(
         .enumerate()
         .map(|(prompt_index, embedding)| {
             embedding.ok_or_else(|| {
-                ClientError::RequestFailed(format!(
+                Error::Other(format!(
                     "Embedding response missing bytes for prompt_index={}",
                     prompt_index
                 ))
@@ -1527,7 +1474,7 @@ async fn collect_embeddings(
 fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
     let mut chunks = bytes.chunks_exact(std::mem::size_of::<f32>());
     if !chunks.remainder().is_empty() {
-        return Err(ClientError::RequestFailed(format!(
+        return Err(Error::Other(format!(
             "Embedding payload length {} is not divisible by {}",
             bytes.len(),
             std::mem::size_of::<f32>()
@@ -1547,7 +1494,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 if let Some(content) = delta.content {
@@ -1559,7 +1506,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Speech-to-text response channel closed before completion".to_string(),
                 ));
             }
@@ -2222,7 +2169,7 @@ mod tests {
     #[test]
     fn test_decode_embedding_bytes_rejects_partial_float() {
         let error = decode_embedding_bytes(&[0, 0, 128]).expect_err("decode should fail");
-        assert!(matches!(error, ClientError::RequestFailed(_)));
+        assert!(matches!(error, Error::Other(_)));
     }
 
     #[test]
