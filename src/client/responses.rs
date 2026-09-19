@@ -300,6 +300,8 @@ pub enum ResponseInputItem {
         summary: Option<Vec<Value>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         encrypted_content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<Value>,
     },
 }
 
@@ -2997,6 +2999,10 @@ mod tests {
             {"type":"redacted_thinking","data":"opaque-redacted-data"}
         ]}});
         let parsed: OutputReasoning = serde_json::from_value(value.clone()).unwrap();
+        let replay: ResponseInputItem = serde_json::from_value(value.clone()).unwrap();
+        let replay = serde_json::to_value(replay).unwrap();
+        assert_eq!(replay["provider_metadata"], value["provider_metadata"]);
+        assert!(replay.get("encrypted_content").is_none());
         assert!(parsed.encrypted_content.is_none());
         let event = ResponseEvent::OutputItemDone(OutputItemDoneEvent {
             sequence_number: 7,
