@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::{native_reasoning_settings, tool_choice_to_string, Client, ClientError, Result};
+use super::{
+    native_reasoning_settings, pick_seed, tool_choice_to_string, Client, ClientError, Result,
+};
 use crate::formatter::multimodal::{build_multimodal_layout, build_multimodal_messages};
 use crate::ipc::client::{ResponseDelta, ResponseStateEvent};
 use crate::ipc::serialization::{PromptPayload, ToolCallingTokens};
@@ -2182,11 +2184,7 @@ impl Client {
         // Deterministic requests omit the seed so the engine pins its own
         // deterministic default; sending a fresh random seed made every
         // "deterministic" request sample a different trajectory.
-        let rng_seed = if request.deterministic {
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        };
+        let rng_seed = pick_seed(0, request.deterministic);
         let temperature = request.temperature.unwrap_or_else(|| {
             formatter
                 .generation_default_f64("temperature")

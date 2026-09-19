@@ -279,6 +279,19 @@ impl Default for SamplingParams {
     }
 }
 
+/// An explicit (non-zero) seed wins. Otherwise deterministic requests omit the
+/// seed so the engine pins its own deterministic default, and everything else
+/// gets a fresh random one.
+fn pick_seed(seed: u64, deterministic: bool) -> Option<u64> {
+    if seed != 0 {
+        Some(seed)
+    } else if deterministic {
+        None
+    } else {
+        Some(rand::thread_rng().gen::<u64>())
+    }
+}
+
 fn tool_choice_to_string(tool_choice: Option<&Value>) -> String {
     match tool_choice {
         None | Some(Value::Null) => "auto".to_string(),
@@ -553,15 +566,7 @@ impl Client {
         let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
         let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
         // Build PromptPayload with full multimodal data
-        // Generate unique RNG seed if not explicitly provided
-        let rng_seed = if params.rng_seed != 0 {
-            Some(params.rng_seed)
-        } else if params.deterministic {
-            // Omit the seed: the engine pins its deterministic default.
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        };
+        let rng_seed = pick_seed(params.rng_seed, params.deterministic);
 
         let prompt_payload = PromptPayload {
             prompt: final_prompt,
@@ -833,14 +838,7 @@ impl Client {
             );
 
             // Generate unique RNG seed for EACH prompt in batch
-            let rng_seed = if params.rng_seed != 0 {
-                Some(params.rng_seed)
-            } else if params.deterministic {
-                // Omit the seed: the engine pins its deterministic default.
-                None
-            } else {
-                Some(rand::thread_rng().gen::<u64>())
-            };
+            let rng_seed = pick_seed(params.rng_seed, params.deterministic);
             prompt_payloads.push(PromptPayload {
                 prompt: final_prompt,
                 image_buffers,
@@ -1417,13 +1415,7 @@ fn build_modal_artifact_prompt_payload(
         top_p: sampling_params.top_p,
         top_k: sampling_params.top_k,
         min_p: sampling_params.min_p,
-        rng_seed: if sampling_params.rng_seed != 0 {
-            Some(sampling_params.rng_seed)
-        } else if sampling_params.deterministic {
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        },
+        rng_seed: pick_seed(sampling_params.rng_seed, sampling_params.deterministic),
         deterministic: sampling_params.deterministic,
         task_name: Some(task_name.to_string()),
         modal_options_json,
@@ -2007,6 +1999,14 @@ mod tests {
         assert!(params.reasoning.is_none());
         assert!(params.reasoning_effort.is_none());
         assert!(params.instructions.is_none());
+    }
+
+    #[test]
+    fn test_pick_seed() {
+        assert_eq!(pick_seed(7, false), Some(7));
+        assert_eq!(pick_seed(7, true), Some(7));
+        assert_eq!(pick_seed(0, true), None);
+        assert!(pick_seed(0, false).is_some());
     }
 
     #[test]
