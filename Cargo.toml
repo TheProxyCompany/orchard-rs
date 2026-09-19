@@ -46,7 +46,6 @@ base64 = "0.22"
 
 # Utilities
 thiserror = "2"
-dirs = "5"
 tracing = "0.1.44"
 rand = "0.8"
 

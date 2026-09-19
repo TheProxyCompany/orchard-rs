@@ -27,7 +27,7 @@ pub struct EngineFetcher {
 impl EngineFetcher {
     /// Create a new fetcher with the default orchard home directory.
     pub fn new() -> Self {
-        let orchard_home = dirs::home_dir()
+        let orchard_home = std::env::home_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join(".orchard");
         Self::with_home(orchard_home)

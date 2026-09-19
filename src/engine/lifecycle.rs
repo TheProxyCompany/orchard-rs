@@ -70,9 +70,9 @@ impl EnginePaths {
         let cache_dir = if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
             PathBuf::from(cache_root)
         } else {
-            dirs::cache_dir()
-                .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?
-                .join("com.theproxycompany")
+            let home = std::env::home_dir()
+                .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?;
+            crate::ipc::endpoints::platform_cache_dir(&home).join("com.theproxycompany")
         };
 
         Ok(Self {
