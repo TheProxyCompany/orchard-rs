@@ -1352,47 +1352,23 @@ fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
 }
 
 fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
-    let prompt_len = prompt.len();
-
     PromptPayload {
-        prompt,
-        image_buffers: Vec::new(),
-        audio_buffers: Vec::new(),
-        capabilities: Vec::new(),
         layout: vec![LayoutEntry {
             segment_type: "text".to_string(),
-            length: prompt_len,
+            length: prompt.len(),
         }],
-        max_generated_tokens: 0,
+        prompt,
         temperature: defaults::TEMPERATURE,
         top_p: defaults::TOP_P,
         top_k: defaults::TOP_K,
-        min_p: 0.0,
         rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
         num_candidates: 1,
         best_of: Some(1),
         final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
         repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        ..Default::default()
     }
 }
 
@@ -1457,13 +1433,8 @@ fn build_modal_artifact_prompt_payload(
 
 fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
     let audio_payload = encode_float32_pcm_bytes(pcm);
-    let audio_payload_size = audio_payload.len();
 
     PromptPayload {
-        prompt: String::new(),
-        image_buffers: Vec::new(),
-        audio_buffers: vec![audio_payload],
-        capabilities: Vec::new(),
         layout: vec![
             LayoutEntry {
                 segment_type: "text".to_string(),
@@ -1471,39 +1442,11 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
             },
             LayoutEntry {
                 segment_type: "audio".to_string(),
-                length: audio_payload_size,
+                length: audio_payload.len(),
             },
         ],
-        max_generated_tokens: 0,
-        temperature: defaults::TEMPERATURE,
-        top_p: defaults::TOP_P,
-        top_k: defaults::TOP_K,
-        min_p: 0.0,
-        rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
-        num_candidates: 1,
-        best_of: Some(1),
-        final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-        repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
-        tool_choice: "auto".to_string(),
-        min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        audio_buffers: vec![audio_payload],
+        ..build_embedding_prompt_payload(String::new())
     }
 }
 
