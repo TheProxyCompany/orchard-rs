@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fs4::fs_std::FileExt;
 use nng::options::Options;
 use nng::{Protocol, Socket};
 use serde_json::json;
@@ -38,9 +37,9 @@ fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
     let mut sleep = LOCK_BACKOFF_INITIAL;
 
     loop {
-        match lock_file.try_lock_exclusive() {
+        match lock_file.try_lock() {
             Ok(()) => return Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(std::fs::TryLockError::WouldBlock) => {
                 if Instant::now() >= deadline {
                     return Err(Error::LockFailed(format!(
                         "Timed out acquiring engine lock after {:?}",
@@ -50,7 +49,7 @@ fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
                 std::thread::sleep(sleep);
                 sleep = std::cmp::min(sleep * 2, LOCK_BACKOFF_MAX);
             }
-            Err(e) => return Err(Error::LockFailed(e.to_string())),
+            Err(std::fs::TryLockError::Error(e)) => return Err(Error::LockFailed(e.to_string())),
         }
     }
 }

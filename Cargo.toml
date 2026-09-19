@@ -41,9 +41,6 @@ hf-hub = { version = "0.5", features = ["tokio"] }
 minijinja = { version = "2", features = ["json", "preserve_order"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 
-# File locking for cross-process coordination
-fs4 = "0.9"
-
 # Base64 decoding for multimodal content
 base64 = "0.22"
 
