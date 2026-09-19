@@ -1292,6 +1292,82 @@ impl Client {
     }
 
     /// Run a prefill-only task and return the raw response deltas.
+    /// Warm each model's prefix cache with `messages`, concurrently.
+    ///
+    /// Each model prefills the rendered transcript and publishes it to its prefix
+    /// cache, so a later request that extends the transcript on any of them starts
+    /// from a warm cache: the handoff costs only the new tokens. The KV it leaves
+    /// behind is prefill-produced, so even `deterministic` requests may reuse it.
+    /// Call it after a turn completes (spawn it; it does not need to be awaited
+    /// before the conversation continues on another model).
+    ///
+    /// The models must already be loaded. One token is sampled and discarded.
+    pub async fn awarm_prefix(
+        &self,
+        model_ids: &[&str],
+        messages: Vec<HashMap<String, serde_json::Value>>,
+    ) -> Vec<WarmResult> {
+        let mut handles = Vec::with_capacity(model_ids.len());
+        for model_id in model_ids {
+            let client = self.clone();
+            let model_id = (*model_id).to_string();
+            let messages = messages.clone();
+            handles.push(tokio::spawn(async move {
+                let started = std::time::Instant::now();
+                let params = SamplingParams {
+                    max_tokens: 1,
+                    temperature: 0.0,
+                    reasoning: Some(false),
+                    ..Default::default()
+                };
+                let mut result = WarmResult {
+                    model_id: model_id.clone(),
+                    prompt_tokens: 0,
+                    cached_tokens: 0,
+                    elapsed: std::time::Duration::ZERO,
+                    error: None,
+                };
+                match client.achat(&model_id, messages, params, true).await {
+                    Ok(ChatResult::Stream(mut stream)) => {
+                        while let Some(delta) = stream.recv().await {
+                            if let Some(error) = delta.error {
+                                result.error = Some(error);
+                                break;
+                            }
+                            result.prompt_tokens = result
+                                .prompt_tokens
+                                .max(delta.prompt_token_count.unwrap_or(0));
+                            result.cached_tokens = result
+                                .cached_tokens
+                                .max(delta.cached_token_count.unwrap_or(0));
+                            if delta.is_final_delta {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(ChatResult::Complete(_)) => {}
+                    Err(error) => result.error = Some(error.to_string()),
+                }
+                result.elapsed = started.elapsed();
+                result
+            }));
+        }
+        let mut results = Vec::with_capacity(handles.len());
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(error) => results.push(WarmResult {
+                    model_id: String::new(),
+                    prompt_tokens: 0,
+                    cached_tokens: 0,
+                    elapsed: std::time::Duration::ZERO,
+                    error: Some(error.to_string()),
+                }),
+            }
+        }
+        results
+    }
+
     pub async fn aprefill_task(
         &self,
         model_id: &str,
@@ -1764,6 +1840,18 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
             }
         }
     }
+}
+
+/// What warming one model's prefix cache did (see [`Client::awarm_prefix`]).
+#[derive(Debug, Clone)]
+pub struct WarmResult {
+    pub model_id: String,
+    /// Tokens in the rendered transcript for this model.
+    pub prompt_tokens: u32,
+    /// How many of them were already cached (so: `prompt - cached` were prefilled now).
+    pub cached_tokens: u32,
+    pub elapsed: std::time::Duration,
+    pub error: Option<String>,
 }
 
 /// Result of a chat operation.
