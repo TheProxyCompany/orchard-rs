@@ -625,6 +625,10 @@ pub struct OutputReasoning {
     pub content: Vec<ReasoningContent>,
     #[serde(default)]
     pub encrypted_content: Option<String>,
+    /// Provider-scoped replay state (for example, signed Anthropic thinking).
+    /// This is distinct from OpenAI encrypted reasoning content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1033,6 +1037,7 @@ impl StreamingOutputItem {
                 summary: Vec::new(),
                 content: Vec::new(),
                 encrypted_content: None,
+                provider_metadata: None,
             }),
             _ => ResponseOutputItem::Message(OutputMessage {
                 output_type: "message".to_string(),
@@ -1066,6 +1071,7 @@ impl StreamingOutputItem {
                     vec![ReasoningContent::new(self.accumulated_content.clone())]
                 },
                 encrypted_content: None,
+                provider_metadata: None,
             }),
             _ => ResponseOutputItem::Message(OutputMessage {
                 output_type: "message".to_string(),
@@ -1335,6 +1341,7 @@ fn build_output_items(
                         vec![ReasoningContent::new(item.content.clone())]
                     },
                     encrypted_content: None,
+                    provider_metadata: None,
                 }));
             }
             _ => {
@@ -2973,5 +2980,34 @@ mod tests {
         assert_eq!(argument_delta.item_id, started_call.id);
         assert_eq!(argument_delta.field_path.as_deref(), Some("content"));
         assert_eq!(started_call.name, "share_to_party");
+    }
+
+    #[test]
+    fn reasoning_provider_metadata_roundtrips_without_impersonating_encrypted_content() {
+        let legacy = serde_json::json!({"type":"reasoning","id":"reason_1","summary":[],"content":[],"encrypted_content":null});
+        let parsed: OutputReasoning = serde_json::from_value(legacy).unwrap();
+        assert!(parsed.provider_metadata.is_none());
+        assert!(serde_json::to_value(&parsed)
+            .unwrap()
+            .get("provider_metadata")
+            .is_none());
+        let mut value = serde_json::to_value(parsed).unwrap();
+        value["provider_metadata"] = serde_json::json!({"anthropic":{"thinking":[
+            {"type":"thinking","thinking":"Plan","signature":"opaque-signature"},
+            {"type":"redacted_thinking","data":"opaque-redacted-data"}
+        ]}});
+        let parsed: OutputReasoning = serde_json::from_value(value.clone()).unwrap();
+        assert!(parsed.encrypted_content.is_none());
+        let event = ResponseEvent::OutputItemDone(OutputItemDoneEvent {
+            sequence_number: 7,
+            output_index: 0,
+            item: ResponseOutputItem::Reasoning(parsed.clone()),
+        });
+        let encoded = serde_json::to_value(&event).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ResponseEvent>(encoded).unwrap(),
+            event
+        );
+        assert_eq!(serde_json::to_value(parsed).unwrap(), value);
     }
 }
