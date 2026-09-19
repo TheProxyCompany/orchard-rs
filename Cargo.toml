@@ -47,9 +47,6 @@ fs4 = "0.9"
 # Base64 decoding for multimodal content
 base64 = "0.22"
 
-# Regex for placeholder parsing
-regex = "1"
-
 # Utilities
 thiserror = "2"
 dirs = "5"
