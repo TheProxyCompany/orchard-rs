@@ -176,7 +176,7 @@ impl EngineFetcher {
             match self.download_file(url).await {
                 Ok(content) => {
                     if let Some(expected) = expected_sha256 {
-                        let actual = ::hex::encode(Sha256::digest(&content));
+                        let actual = format!("{:x}", Sha256::digest(&content));
                         if actual != expected {
                             return Err(Error::Integrity {
                                 expected: expected.to_string(),
@@ -298,6 +298,14 @@ mod tests {
     fn test_fetcher_creation() {
         let fetcher = EngineFetcher::new();
         assert!(fetcher.orchard_home.ends_with(".orchard"));
+    }
+
+    #[test]
+    fn test_sha256_hex_is_lowercase_and_zero_padded() {
+        assert_eq!(
+            format!("{:x}", Sha256::digest(b"abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

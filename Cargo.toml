@@ -55,7 +55,6 @@ thiserror = "2"
 dirs = "5"
 tracing = "0.1.44"
 rand = "0.8"
-hex = "0.4"
 
 # Unix system calls (Unix only)
 [target.'cfg(unix)'.dependencies]
