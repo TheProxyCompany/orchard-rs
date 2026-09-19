@@ -7,75 +7,34 @@
 //!     cargo run --release --example warm_handoff
 //!   MODE=warm ... (same)
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
+mod common;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-type Message = HashMap<String, serde_json::Value>;
-
-fn msg(role: &str, content: &str) -> Message {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
-
-const QUESTIONS: [&str; 6] = [
-    "In about 80 words, explain why the sky is blue.",
-    "In about 80 words, why are sunsets red?",
-    "In about 80 words, why does the ocean look blue?",
-    "In about 80 words, why is the grass green?",
-    "In about 80 words, why is snow white?",
-    "In about 80 words, summarize everything above in one paragraph.",
-];
+use common::{msg, run_turn, Message, QUESTIONS};
+use orchard::{Client, SamplingParams};
 
 async fn turn(
     client: &Client,
     model: &str,
     messages: Vec<Message>,
-) -> Result<(String, f64, u32, u32), Box<dyn std::error::Error>> {
+) -> Result<(String, f64, usize, usize), common::Error> {
     let params = SamplingParams {
         max_tokens: 140,
         temperature: 0.0,
         reasoning: Some(false),
         ..Default::default()
     };
-    let t = Instant::now();
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
-        unreachable!()
-    };
-    let (mut ttft, mut prompt, mut cached, mut text) = (None, 0, 0, String::new());
-    while let Some(d) = stream.recv().await {
-        if let Some(e) = d.error {
-            return Err(e.into());
-        }
-        if ttft.is_none() && !d.tokens.is_empty() {
-            ttft = Some(t.elapsed().as_secs_f64() * 1000.0);
-        }
-        prompt = prompt.max(d.prompt_token_count.unwrap_or(0));
-        cached = cached.max(d.cached_token_count.unwrap_or(0));
-        if let Some(c) = d.content {
-            text.push_str(&c);
-        }
-        if d.is_final_delta {
-            break;
-        }
-    }
-    Ok((text, ttft.unwrap_or(0.0), prompt, cached))
+    let turn = run_turn(client, model, messages, params, |_| {}).await?;
+    Ok((turn.text, turn.ttft_ms, turn.prompt_tokens, turn.cached))
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), common::Error> {
     let model_a =
         std::env::var("MODEL_A").unwrap_or_else(|_| "meta-llama/Llama-3.1-8B-Instruct".into());
     let model_b = std::env::var("MODEL_B").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
     let warm = std::env::var("MODE").map(|m| m == "warm").unwrap_or(false);
 
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     registry.ensure_loaded(&model_a).await?;
     registry.ensure_loaded(&model_b).await?;
 
@@ -115,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  B prefilled {warmed} tokens in the background across 5 warm-ups");
     }
 
-    transcript.push(msg("user", QUESTIONS[5]));
+    // The closing "summarize everything above" question.
+    transcript.push(msg("user", QUESTIONS[9]));
     let (_, ttft, prompt, cached) = turn(&client, &model_b, transcript).await?;
     println!(
         "HANDOFF to B | prompt {prompt} tok, {cached} cached ({:.0}%) | ttft {ttft:.0} ms",
