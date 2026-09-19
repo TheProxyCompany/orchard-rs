@@ -470,7 +470,6 @@ impl Client {
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
         let request_model_id = info.model_id.as_str();
-        let params = sampling_with_profile_defaults(formatter, &params);
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -487,124 +486,22 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-            formatter,
-            chat_reasoning_requested(formatter, &params),
-            &params.reasoning_effort,
-        );
-
-        // Build multimodal content (pass instructions if provided)
-        let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(formatter, &messages, params.instructions.as_deref())
-                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        if messages_for_template.is_empty() {
-            return Err(ClientError::RequestFailed(
-                "Chat request must include at least one message".into(),
-            ));
-        }
-        tracing::trace!(
-            request_id,
-            model_id = %model_id,
-            messages_for_template = ?messages_for_template,
-            "Chat messages after multimodal expansion"
-        );
-        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-        let template_tools =
-            (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-        // Apply template with reasoning flag
-        let prompt_text = formatter
-            .apply_template_with_tools(
-                &messages_for_template,
-                true,
-                reasoning_flag,
-                params.task_name.as_deref(),
-                reasoning_effort.as_deref(),
-                template_tools,
-            )
-            .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-        // Build layout for multimodal content
-        let layout_segments = build_multimodal_layout(
-            formatter,
-            &prompt_text,
-            &image_buffers,
-            &audio_buffers,
-            &capabilities,
-            &content_order,
-        )
-        .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+        let prompt_payload = build_chat_payload(formatter, &messages, &params)?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
-            prompt_chars = final_prompt.chars().count(),
-            image_count = image_buffers.len(),
-            capability_count = capabilities.len(),
-            layout_segment_count = layout_segments.len(),
+            prompt_chars = prompt_payload.prompt.chars().count(),
+            image_count = prompt_payload.image_buffers.len(),
+            capability_count = prompt_payload.capabilities.len(),
+            layout_segment_count = prompt_payload.layout.len(),
             "Prepared chat prompt payload"
         );
         tracing::trace!(
             request_id,
             model_id = %model_id,
-            prompt = %final_prompt,
+            prompt = %prompt_payload.prompt,
             "Chat prompt sent to PIE"
         );
-
-        // Core tools are rendered in the prompt; active tools drive PSE grammar.
-        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-        let response_format_json = params
-            .response_format
-            .as_ref()
-            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-            .unwrap_or_default();
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-        // Build PromptPayload with full multimodal data
-        let rng_seed = pick_seed(params.rng_seed, params.deterministic);
-
-        let prompt_payload = PromptPayload {
-            prompt: final_prompt,
-            image_buffers,
-            audio_buffers,
-            capabilities: convert_capabilities(&capabilities),
-            layout: convert_layout(&layout_segments),
-            max_generated_tokens: params.max_tokens,
-            temperature: params.temperature,
-            top_p: params.top_p,
-            top_k: params.top_k,
-            min_p: params.min_p,
-            rng_seed,
-            deterministic: params.deterministic,
-            stop_sequences: params.stop.clone(),
-            num_candidates: params.n,
-            best_of: params.best_of,
-            final_candidates: params.final_candidates,
-            frequency_penalty: params.frequency_penalty,
-            presence_penalty: params.presence_penalty,
-            repetition_penalty: params.repetition_penalty,
-            repetition_context_size: params.repetition_context_size,
-            top_logprobs: params.top_logprobs,
-            logit_bias: params.logit_bias.clone(),
-            tool_schemas_json,
-            active_tool_schemas_json,
-            tool_calling_tokens,
-            output_frame_tokens,
-            thinking_tokens,
-            tool_choice,
-            min_tool_calls: 1,
-            max_tool_calls,
-            response_format_json,
-            modal_options_json: String::new(),
-            task_name: params.task_name.clone(),
-            reasoning_effort,
-            prefix_cache: params.prefix_cache,
-        };
 
         // Use unified batch request path (even for single prompts)
         tracing::debug!(
@@ -750,132 +647,36 @@ impl Client {
             "Building batched chat request"
         );
 
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
-            let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
-            let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-                formatter,
-                chat_reasoning_requested(formatter, &params),
-                &params.reasoning_effort,
-            );
-            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-            let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-            let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-            let response_format_json = params
-                .response_format
-                .as_ref()
-                .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-                .unwrap_or_default();
-            let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-            let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-
-            // Build multimodal content (pass instructions if provided)
-            let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-                build_multimodal_messages(formatter, messages, params.instructions.as_deref())
-                    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            if messages_for_template.is_empty() {
-                return Err(ClientError::RequestFailed(
-                    "Chat request must include at least one message".into(),
-                ));
-            }
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
                 messages = ?messages,
-                messages_for_template = ?messages_for_template,
                 "Prepared batch messages for prompt"
             );
-            let template_tools =
-                (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-            // Apply template with reasoning flag
-            let prompt_text = formatter
-                .apply_template_with_tools(
-                    &messages_for_template,
-                    true,
-                    reasoning_flag,
-                    params.task_name.as_deref(),
-                    reasoning_effort.as_deref(),
-                    template_tools,
-                )
-                .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-            // Build layout for multimodal content
-            let layout_segments = build_multimodal_layout(
-                formatter,
-                &prompt_text,
-                &image_buffers,
-                &audio_buffers,
-                &capabilities,
-                &content_order,
-            )
-            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+            let payload = build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])?;
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt_chars = final_prompt.chars().count(),
-                image_count = image_buffers.len(),
-                capability_count = capabilities.len(),
-                layout_segment_count = layout_segments.len(),
+                prompt_chars = payload.prompt.chars().count(),
+                image_count = payload.image_buffers.len(),
+                capability_count = payload.capabilities.len(),
+                layout_segment_count = payload.layout.len(),
                 "Prepared batched prompt payload"
             );
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt = %final_prompt,
+                prompt = %payload.prompt,
                 "Batch prompt sent to PIE"
             );
-
-            // Generate unique RNG seed for EACH prompt in batch
-            let rng_seed = pick_seed(params.rng_seed, params.deterministic);
-            prompt_payloads.push(PromptPayload {
-                prompt: final_prompt,
-                image_buffers,
-                audio_buffers,
-                capabilities: convert_capabilities(&capabilities),
-                layout: convert_layout(&layout_segments),
-                max_generated_tokens: params.max_tokens,
-                temperature: params.temperature,
-                top_p: params.top_p,
-                top_k: params.top_k,
-                min_p: params.min_p,
-                rng_seed,
-                deterministic: params.deterministic,
-                stop_sequences: params.stop.clone(),
-                num_candidates: params.n,
-                best_of: params.best_of,
-                final_candidates: params.final_candidates,
-                frequency_penalty: params.frequency_penalty,
-                presence_penalty: params.presence_penalty,
-                repetition_penalty: params.repetition_penalty,
-                repetition_context_size: params.repetition_context_size,
-                top_logprobs: params.top_logprobs,
-                logit_bias: params.logit_bias.clone(),
-                tool_schemas_json: tool_schemas_json.clone(),
-                active_tool_schemas_json: active_tool_schemas_json.clone(),
-                tool_calling_tokens: tool_calling_tokens.clone(),
-                output_frame_tokens: output_frame_tokens.clone(),
-                thinking_tokens,
-                tool_choice: tool_choice.clone(),
-                min_tool_calls: 1,
-                max_tool_calls,
-                response_format_json: response_format_json.clone(),
-                modal_options_json: String::new(),
-                task_name: params.task_name.clone(),
-                reasoning_effort,
-                prefix_cache: params.prefix_cache,
-            });
+            prompt_payloads.push(payload);
         }
 
         // Send ONE batch request with all prompts
@@ -1323,6 +1124,104 @@ impl Client {
         }
         Ok(deltas_by_prompt)
     }
+}
+
+/// Build the PIE prompt payload for one chat conversation: profile sampling
+/// defaults, multimodal expansion, template, layout, tool schemas and seed.
+fn build_chat_payload(
+    formatter: &crate::formatter::ChatFormatter,
+    messages: &[HashMap<String, Value>],
+    params: &SamplingParams,
+) -> Result<PromptPayload> {
+    let params = sampling_with_profile_defaults(formatter, params);
+    let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+        formatter,
+        chat_reasoning_requested(formatter, &params),
+        &params.reasoning_effort,
+    );
+
+    // Build multimodal content (pass instructions if provided)
+    let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
+        build_multimodal_messages(formatter, messages, params.instructions.as_deref())
+            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+
+    if messages_for_template.is_empty() {
+        return Err(ClientError::RequestFailed(
+            "Chat request must include at least one message".into(),
+        ));
+    }
+    tracing::trace!(
+        messages_for_template = ?messages_for_template,
+        "Chat messages after multimodal expansion"
+    );
+    // Core tools are rendered in the prompt; active tools drive PSE grammar.
+    let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+    let template_tools = (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
+
+    // Apply template with reasoning flag
+    let prompt_text = formatter
+        .apply_template_with_tools(
+            &messages_for_template,
+            true,
+            reasoning_flag,
+            params.task_name.as_deref(),
+            reasoning_effort.as_deref(),
+            template_tools,
+        )
+        .map_err(|e| ClientError::Formatter(e.to_string()))?;
+
+    // Build layout for multimodal content
+    let layout_segments = build_multimodal_layout(
+        formatter,
+        &prompt_text,
+        &image_buffers,
+        &audio_buffers,
+        &capabilities,
+        &content_order,
+    )
+    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
+
+    Ok(PromptPayload {
+        prompt: formatter.strip_template_placeholders(&prompt_text),
+        image_buffers,
+        audio_buffers,
+        capabilities: convert_capabilities(&capabilities),
+        layout: convert_layout(&layout_segments),
+        max_generated_tokens: params.max_tokens,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        top_k: params.top_k,
+        min_p: params.min_p,
+        rng_seed: pick_seed(params.rng_seed, params.deterministic),
+        deterministic: params.deterministic,
+        stop_sequences: params.stop,
+        num_candidates: params.n,
+        best_of: params.best_of,
+        final_candidates: params.final_candidates,
+        frequency_penalty: params.frequency_penalty,
+        presence_penalty: params.presence_penalty,
+        repetition_penalty: params.repetition_penalty,
+        repetition_context_size: params.repetition_context_size,
+        top_logprobs: params.top_logprobs,
+        logit_bias: params.logit_bias,
+        tool_schemas_json: serialize_tool_schemas(&core_tool_schemas),
+        active_tool_schemas_json: serialize_tool_schemas(&active_tool_schemas),
+        tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
+        output_frame_tokens: formatter.get_output_frame_tokens().clone(),
+        thinking_tokens,
+        tool_choice: tool_choice_to_string(params.tool_choice.as_ref()),
+        min_tool_calls: 1,
+        max_tool_calls: params.max_tool_calls.unwrap_or(0).max(0),
+        response_format_json: params
+            .response_format
+            .as_ref()
+            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+            .unwrap_or_default(),
+        modal_options_json: String::new(),
+        task_name: params.task_name,
+        reasoning_effort,
+        prefix_cache: params.prefix_cache,
+    })
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -2260,6 +2159,37 @@ mod tests {
             response.tool_calls[0].arguments,
             serde_json::json!({"content": "hi"})
         );
+    }
+
+    #[test]
+    fn test_build_chat_payload() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+        let params = SamplingParams {
+            rng_seed: 42,
+            max_tokens: 5,
+            ..Default::default()
+        };
+
+        let payload = build_chat_payload(&formatter, &messages, &params).unwrap();
+
+        assert!(payload.prompt.contains("hello"));
+        assert_eq!(payload.layout.len(), 1);
+        assert_eq!(payload.layout[0].length, payload.prompt.len());
+        assert_eq!(payload.max_generated_tokens, 5);
+        assert_eq!(payload.rng_seed, Some(42));
+        assert_eq!(payload.tool_choice, "auto");
+        assert_eq!(payload.min_tool_calls, 1);
+        assert!(build_chat_payload(&formatter, &[], &params).is_err());
     }
 
     #[test]
