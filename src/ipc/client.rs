@@ -214,11 +214,6 @@ impl IPCClient {
         Arc::clone(&self.management_socket)
     }
 
-    /// Set the event callback for handling engine events.
-    pub fn set_event_callback(&mut self, callback: EventCallback) {
-        self.event_callback = Some(callback);
-    }
-
     /// Connect to PIE IPC endpoints.
     pub fn connect(&mut self) -> Result<()> {
         let engine_pid_file = current_engine_pid_file()
@@ -455,19 +450,6 @@ impl IPCClient {
         })
         .await
         .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
-    }
-
-    /// Send a management command synchronously (blocking).
-    ///
-    /// Prefer `send_management_command_async` in async contexts.
-    pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
-        blocking_management_exchange(
-            &self.management_socket,
-            &self.engine_dead,
-            self.engine_pid_file.as_deref(),
-            command,
-            timeout,
-        )
     }
 
     /// Start the response listener thread.

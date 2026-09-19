@@ -135,20 +135,6 @@ impl EngineFetcher {
             .filter(|s| !s.is_empty())
     }
 
-    /// Check if an update is available.
-    pub async fn check_for_updates(&self, channel: &str) -> Option<String> {
-        let installed = self.get_installed_version()?;
-
-        let manifest = self.fetch_manifest(channel).await.ok()?;
-        let latest = manifest.get("latest").and_then(|v| v.as_str())?;
-
-        if latest != installed {
-            Some(latest.to_string())
-        } else {
-            None
-        }
-    }
-
     async fn fetch_manifest(&self, channel: &str) -> Result<serde_json::Value> {
         let installed = self
             .get_installed_version()
