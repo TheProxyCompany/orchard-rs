@@ -535,24 +535,6 @@ impl InferenceEngine {
         tracing::info!("Engine PID {} stopped", pid);
         Ok(())
     }
-
-    /// Generate a unique response channel ID for this client.
-    ///
-    /// Format: (PID << 32) | random_32_bits
-    /// Uses true randomness to avoid collisions between rapid successive calls.
-    pub fn generate_response_channel_id() -> u64 {
-        use rand::Rng;
-
-        let pid = std::process::id() as u64 & 0xFFFFFFFF;
-        let random: u32 = rand::thread_rng().gen();
-
-        let channel_id = (pid << 32) | (random as u64);
-        if channel_id == 0 {
-            1
-        } else {
-            channel_id
-        }
-    }
 }
 
 impl Drop for InferenceEngine {
@@ -579,33 +561,6 @@ mod tests {
                 .cache_dir
                 .to_string_lossy()
                 .contains("com.theproxycompany"));
-        }
-    }
-
-    #[test]
-    fn test_generate_channel_id_uniqueness() {
-        use std::collections::HashSet;
-
-        // Generate 1000 channel IDs in rapid succession
-        let ids: HashSet<u64> = (0..1000)
-            .map(|_| InferenceEngine::generate_response_channel_id())
-            .collect();
-
-        // All IDs must be unique (HashSet dedupes)
-        assert_eq!(
-            ids.len(),
-            1000,
-            "Channel IDs must be unique across rapid calls"
-        );
-
-        // All IDs must be non-zero
-        assert!(!ids.contains(&0), "Channel ID must never be zero");
-
-        // All IDs should have the current PID in upper 32 bits
-        let expected_pid = std::process::id() as u64 & 0xFFFFFFFF;
-        for id in &ids {
-            let id_pid = id >> 32;
-            assert_eq!(id_pid, expected_pid, "Upper 32 bits must be current PID");
         }
     }
 }
