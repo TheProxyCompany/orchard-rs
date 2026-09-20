@@ -1019,4 +1019,39 @@ mod tests {
         assert_eq!(delta.state_events[0].event_type, "item_started");
         assert_eq!(delta.state_events[1].delta, "hello");
     }
+
+    #[test]
+    fn test_a_peer_gone_before_the_handshake_does_not_deafen_a_listener() {
+        // A peer that connects and is gone before NNG's handshake, as an
+        // engine killed while dialling a client's endpoint is. NNG 1.4.0 took
+        // the resulting "closed" for its own listener closing and never
+        // accepted again (upstream #1518): later peers still connected, and
+        // what they sent was never received.
+        let dir = tempfile::Builder::new()
+            .prefix("orc-")
+            .tempdir_in("/tmp")
+            .expect("tempdir should be available");
+        let path = dir.path().join("listener.ipc");
+        let url = format!("ipc://{}", path.display());
+        let listener = Socket::new(Protocol::Pull0).expect("pull socket");
+        listener
+            .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_secs(5)))
+            .expect("recv timeout");
+        listener.listen(&url).expect("listen");
+
+        // Whether NNG sees "closed" depends on the peer closing before NNG
+        // writes its half of the handshake, which a single try can miss.
+        for _ in 0..3 {
+            drop(std::os::unix::net::UnixStream::connect(&path).expect("connect"));
+            thread::sleep(Duration::from_millis(150));
+        }
+
+        let peer = Socket::new(Protocol::Push0).expect("push socket");
+        peer.dial(&url).expect("dial");
+        peer.send(b"delta".as_slice())
+            .map_err(|(_, error)| error)
+            .expect("send");
+        let received = listener.recv().expect("the listener still accepts");
+        assert_eq!(received.as_slice(), b"delta");
+    }
 }
