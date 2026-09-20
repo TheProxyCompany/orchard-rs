@@ -570,6 +570,16 @@ impl ResponsesRequest {
                         ResponseInputItem::Reasoning {
                             summary, content, ..
                         } => {
+                            // Reasoning opens a model turn: after an answer or a call it
+                            // belongs to the next one.
+                            if messages.last().is_some_and(|m| {
+                                m["content"] != ""
+                                    || m.contains_key("tool_calls")
+                                    || m.contains_key("reasoning_content")
+                            }) {
+                                open_turn = false;
+                            }
+
                             let text = content
                                 .iter()
                                 .chain(summary.iter())
@@ -2655,6 +2665,51 @@ mod tests {
             serde_json::json!({"model": "m", "tokens": [1, 2, 3], "thinking": true})
         );
         assert!(!messages[3].contains_key("generation"));
+    }
+
+    #[test]
+    fn test_reasoning_stays_with_its_own_turn_when_turns_follow_each_other() {
+        let reasoning = |text: &str| ResponseInputItem::Reasoning {
+            summary: None,
+            content: Some(vec![
+                serde_json::json!({"type": "reasoning_text", "text": text}),
+            ]),
+            encrypted_content: None,
+            provider_metadata: None,
+        };
+        let answer = |text: &str| ResponseInputItem::Message {
+            role: "assistant".to_string(),
+            content: Value::String(text.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let mut request = ResponsesRequest::from_text("unused");
+        request.input = ResponsesInput::Items(vec![
+            reasoning("first thought"),
+            answer("first answer"),
+            reasoning("second thought"),
+            answer("second answer"),
+            reasoning("third thought, no answer yet"),
+        ]);
+
+        let turns: Vec<_> = request
+            .to_messages()
+            .iter()
+            .map(|m| {
+                (
+                    m["reasoning_content"].as_str().unwrap().to_string(),
+                    m["content"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            turns,
+            [
+                ("first thought".to_string(), "first answer".to_string()),
+                ("second thought".to_string(), "second answer".to_string()),
+                ("third thought, no answer yet".to_string(), String::new()),
+            ]
+        );
     }
 
     #[test]
