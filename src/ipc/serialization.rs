@@ -228,10 +228,12 @@ pub fn parse_response_delta(data: &[u8]) -> Result<Value> {
 /// This is the correct implementation that sends all prompts in ONE IPC message,
 /// allowing the engine to schedule them together efficiently.
 ///
-/// The request asks for the engine's flow-controlled response route: its
-/// deltas are pushed to `pie_response_<response_channel_id in hex>.ipc`, where
-/// the sender must already be listening (`IPCClient::connect` does), and are
-/// not published on the PUB/SUB endpoint.
+/// With `lossless_responses` the request asks for the engine's
+/// flow-controlled response route: its deltas are pushed to
+/// `pie_response_<response_channel_id in hex>.ipc`, where the sender must
+/// already be listening (`IPCClient::connect` does), and are not published on
+/// the PUB/SUB endpoint. Without it the request is the one every engine
+/// knows, answered over PUB/SUB. `IPCClient` decides which to send.
 #[allow(clippy::too_many_arguments)]
 pub fn build_batch_request_payload(
     request_id: u64,
@@ -239,6 +241,7 @@ pub fn build_batch_request_payload(
     model_path: &str,
     request_type: RequestType,
     response_channel_id: u64,
+    lossless_responses: bool,
     prompts: &[PromptPayload],
 ) -> Result<Vec<u8>> {
     if prompts.is_empty() {
@@ -421,20 +424,22 @@ pub fn build_batch_request_payload(
     }
 
     // Build full metadata
-    let metadata = json!({
+    let mut metadata = json!({
         "request_id": request_id,
         "model_id": model_id,
         "model_path": model_path,
         "request_type": request_type as i32,
         "request_channel_id": 0,
         "response_channel_id": response_channel_id,
+        "prompts": prompt_metadata_list,
+    });
+    if lossless_responses {
         // The engine's flow-controlled response route: it pushes this
         // request's deltas to the sender's own endpoint instead of publishing
         // them, so none is dropped when the sender falls behind. The engine
         // compares the exact string and takes anything else to mean PUB/SUB.
-        "response_transport": "pull_v1",
-        "prompts": prompt_metadata_list,
-    });
+        metadata["response_transport"] = json!("pull_v1");
+    }
 
     // Use compact JSON serialization (no spaces, matching Python)
     let metadata_bytes = serialize_json_compact(&metadata)?;
@@ -581,6 +586,7 @@ mod tests {
             "/path/to/model",
             RequestType::Generation,
             12345,
+            false,
             &[prompt],
         )
         .unwrap();
@@ -600,24 +606,32 @@ mod tests {
     }
 
     #[test]
-    fn test_every_request_asks_for_the_lossless_response_route() {
+    fn test_a_request_asks_for_the_lossless_response_route_only_when_told_to() {
         for request_type in [RequestType::Generation, RequestType::Embedding] {
-            let payload = build_batch_request_payload(
-                1,
-                "test-model",
-                "/path/to/model",
-                request_type,
-                0xabc,
-                &[PromptPayload::default()],
-            )
-            .unwrap();
+            for lossless_responses in [true, false] {
+                let payload = build_batch_request_payload(
+                    1,
+                    "test-model",
+                    "/path/to/model",
+                    request_type,
+                    0xabc,
+                    lossless_responses,
+                    &[PromptPayload::default()],
+                )
+                .unwrap();
 
-            let length = u32::from_le_bytes(payload[..4].try_into().unwrap()) as usize;
-            let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-            // The engine compares this exact string and takes anything else
-            // to mean PUB/SUB, which drops deltas when the client falls behind.
-            assert_eq!(metadata["response_transport"], "pull_v1");
-            assert_eq!(metadata["response_channel_id"], 0xabc);
+                let length = u32::from_le_bytes(payload[..4].try_into().unwrap()) as usize;
+                let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+                assert_eq!(metadata["response_channel_id"], 0xabc);
+                if lossless_responses {
+                    // The engine compares this exact string and takes
+                    // anything else to mean PUB/SUB.
+                    assert_eq!(metadata["response_transport"], "pull_v1");
+                } else {
+                    // The request every engine knows, field for field.
+                    assert!(metadata.get("response_transport").is_none());
+                }
+            }
         }
     }
 
@@ -634,6 +648,7 @@ mod tests {
             "/path/to/model",
             RequestType::Generation,
             12345,
+            false,
             &[prompt],
         )
         .unwrap();
@@ -659,6 +674,7 @@ mod tests {
             "/path/to/privacy-filter",
             RequestType::PrefillTask,
             12345,
+            false,
             &[prompt],
         )
         .unwrap();
@@ -693,6 +709,7 @@ mod tests {
             "/path/to/privacy-filter",
             RequestType::PrefillTask,
             12345,
+            false,
             &prompts,
         )
         .unwrap();
@@ -724,6 +741,7 @@ mod tests {
             "/path/to/model",
             RequestType::Generation,
             12345,
+            false,
             &[prompt],
         )
         .unwrap();
@@ -759,6 +777,7 @@ mod tests {
             "/path/to/model",
             RequestType::Generation,
             12345,
+            false,
             &prompts,
         )
         .unwrap();

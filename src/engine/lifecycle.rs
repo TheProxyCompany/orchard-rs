@@ -92,13 +92,25 @@ struct GlobalContext {
     ref_count: AtomicU32,
     initialized: AtomicBool,
     pid_file: Mutex<Option<PathBuf>>,
+    /// Pid of the engine this process launched; 0 when it only ever attached
+    /// to engines that were already running.
+    launched_engine_pid: AtomicU32,
 }
 
 static GLOBAL_CONTEXT: GlobalContext = GlobalContext {
     ref_count: AtomicU32::new(0),
     initialized: AtomicBool::new(false),
     pid_file: Mutex::new(None),
+    launched_engine_pid: AtomicU32::new(0),
 };
+
+/// Whether the engine `pid_file` names is one this process launched itself,
+/// as opposed to an engine that was already running and that it shares with
+/// clients it knows nothing about.
+pub(crate) fn engine_launched_by_this_process(pid_file: &std::path::Path) -> bool {
+    let launched = GLOBAL_CONTEXT.launched_engine_pid.load(Ordering::SeqCst);
+    launched != 0 && read_pid_file(pid_file) == Some(launched)
+}
 
 pub(crate) fn current_engine_pid_file() -> Option<PathBuf> {
     GLOBAL_CONTEXT
@@ -332,6 +344,12 @@ impl InferenceEngine {
         }
 
         // Update global context
+        if launched_engine {
+            GLOBAL_CONTEXT.launched_engine_pid.store(
+                read_pid_file(&self.paths.pid_file).unwrap_or(0),
+                Ordering::SeqCst,
+            );
+        }
         GLOBAL_CONTEXT.ref_count.fetch_add(1, Ordering::SeqCst);
         GLOBAL_CONTEXT.initialized.store(true, Ordering::SeqCst);
         set_current_engine_pid_file(Some(self.paths.pid_file.clone()));
@@ -580,6 +598,33 @@ mod tests {
                 .to_string_lossy()
                 .contains("com.theproxycompany"));
         }
+    }
+
+    #[test]
+    fn test_only_the_engine_this_process_launched_counts_as_its_own() {
+        let dir = tempfile::tempdir().expect("tempdir should be available");
+        let pid_file = dir.path().join("engine.pid");
+        write_pid_file(&pid_file, 4242).expect("pid file");
+
+        // Attached to a running engine: nothing was launched here.
+        assert!(!engine_launched_by_this_process(&pid_file));
+
+        GLOBAL_CONTEXT
+            .launched_engine_pid
+            .store(4242, Ordering::SeqCst);
+        assert!(engine_launched_by_this_process(&pid_file));
+
+        // The engine this process launched is gone and another process
+        // started the one the pid file names now.
+        write_pid_file(&pid_file, 4243).expect("pid file");
+        assert!(!engine_launched_by_this_process(&pid_file));
+        assert!(!engine_launched_by_this_process(
+            &dir.path().join("missing.pid")
+        ));
+
+        GLOBAL_CONTEXT
+            .launched_engine_pid
+            .store(0, Ordering::SeqCst);
     }
 
     #[test]

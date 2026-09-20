@@ -2,16 +2,27 @@
 //!
 //! Uses NNG sockets with a dedicated listener thread for response handling.
 //!
-//! Response deltas do not travel over PUB/SUB: that pattern drops the oldest
-//! queued messages, silently on both sides, once a subscriber is about a
-//! thousand messages behind, which shortens a reply with no error anywhere.
-//! Every request asks for the engine's flow-controlled route instead
-//! (`"response_transport": "pull_v1"`): this client listens on its own PULL
-//! endpoint, the engine dials it and PUSHes this client's deltas, and a client
-//! that falls behind makes the engine wait instead of losing anything.
-//! PUB/SUB still carries the engine's broadcast events.
+//! PUB/SUB drops the oldest queued messages, silently on both sides, once a
+//! subscriber is about a thousand messages behind, which shortens a reply with
+//! no error anywhere. So requests ask for the engine's flow-controlled route
+//! instead (`"response_transport": "pull_v1"`): this client listens on its own
+//! PULL endpoint, the engine dials it and PUSHes this client's deltas, and a
+//! client that falls behind makes the engine wait instead of losing anything.
+//!
+//! They ask only where that is safe for the engine. An engine keeps a socket,
+//! a thread and a queue per client on that route, and one that does not reap
+//! them leaks all three, plus the undelivered deltas, for every client process
+//! that goes away, until it stops. So a request asks for the route when the
+//! engine advertises `lossless_responses` (it reaps stalled routes with an
+//! explicit error and reports a response endpoint it cannot reach), or when
+//! this process launched the engine itself, which bounds the leak to this one
+//! client for the life of that engine. Otherwise requests go out as they
+//! always did and are answered over PUB/SUB, which also still carries the
+//! engine's broadcast events.
 
-use crate::engine::lifecycle::{current_engine_pid_file, EnginePaths};
+use crate::engine::lifecycle::{
+    current_engine_pid_file, engine_launched_by_this_process, EnginePaths,
+};
 use crate::engine::multiprocess::{pid_is_alive, read_pid_file};
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{
@@ -50,6 +61,11 @@ const REQUEST_SEND_TIMEOUT: Duration = Duration::from_secs(30);
 /// Recv slice for management replies; between slices we poll engine liveness
 /// so a reply that will never come fails loudly instead of blocking.
 const MANAGEMENT_LIVENESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// The capability an engine lists in a load_model reply and in a
+/// `model_loaded` event, with value 1, once it reaps a stalled response route
+/// with an explicit error and reports a response endpoint it cannot reach.
+const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 
 /// Longest wait for a request's first delta before the request fails.
 ///
@@ -228,6 +244,10 @@ pub struct IPCClient {
     engine_pid_file: Option<PathBuf>,
     event_callback: Option<EventCallback>,
     delta_timeouts: DeltaTimeouts,
+    /// This process launched the engine it is connected to.
+    own_engine: bool,
+    /// The engine has advertised `lossless_responses`.
+    engine_advertises_lossless: Arc<AtomicBool>,
 }
 
 /// How long a request may wait on a silent engine: for its first delta, and
@@ -283,6 +303,8 @@ impl IPCClient {
                 first: DEFAULT_FIRST_DELTA_TIMEOUT,
                 between: DEFAULT_DELTA_TIMEOUT,
             },
+            own_engine: false,
+            engine_advertises_lossless: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -320,19 +342,31 @@ impl IPCClient {
         let engine_pid_file = current_engine_pid_file()
             .or_else(|| EnginePaths::new().ok().map(|paths| paths.pid_file))
             .ok_or_else(|| Error::Internal("Cannot determine engine PID file path".into()))?;
-        self.connect_in(&ipc_root(), engine_pid_file)
+        let own_engine = engine_launched_by_this_process(&engine_pid_file);
+        self.connect_in(&ipc_root(), engine_pid_file, own_engine)
     }
 
-    fn connect_in(&mut self, ipc_root: &Path, engine_pid_file: PathBuf) -> Result<()> {
+    fn connect_in(
+        &mut self,
+        ipc_root: &Path,
+        engine_pid_file: PathBuf,
+        own_engine: bool,
+    ) -> Result<()> {
         if self.response_socket.is_some() {
             // Our endpoint is still bound: a second listen on it would fail.
             self.disconnect();
         }
         remove_stale_response_endpoints(ipc_root);
+        self.own_engine = own_engine;
+        // What an earlier engine advertised says nothing about this one.
+        self.engine_advertises_lossless
+            .store(false, Ordering::SeqCst);
 
-        // Response socket (PULL). It listens before the request socket exists:
-        // the engine dials this endpoint on a request's first delta, and drops
-        // the deltas it produces while nothing listens there.
+        // Response socket (PULL). It listens whether or not requests will ask
+        // for it, and before the request socket exists: what the engine
+        // advertises is only known after the first load_model, and the engine
+        // dials this endpoint on a request's first delta and drops the deltas
+        // it produces while nothing listens there.
         let response_socket = Socket::new(Protocol::Pull0)?;
         response_socket.set_opt::<nng::options::RecvMaxSize>(0)?;
         response_socket.listen(&as_ipc_url(response_route_path(
@@ -350,9 +384,10 @@ impl IPCClient {
         event_socket.set_opt::<nng::options::RecvBufferSize>(EVENT_SOCKET_BUFFER_MESSAGES)?;
         event_socket
             .set_opt::<nng::options::protocol::pubsub::Subscribe>(EVENT_TOPIC_PREFIX.to_vec())?;
-        // An engine older than the flow-controlled route ignores the request
-        // for it and answers here, on our response topic. Without this
-        // subscription every request to such an engine would time out.
+        // A request that does not ask for the flow-controlled route is
+        // answered here, on our response topic, and so is one that asked an
+        // engine too old to know the route. Without this subscription those
+        // requests would never be answered.
         event_socket.set_opt::<nng::options::protocol::pubsub::Subscribe>(
             format!("resp:{:x}:", self.response_channel_id).into_bytes(),
         )?;
@@ -485,6 +520,7 @@ impl IPCClient {
             model_path,
             request_type,
             self.response_channel_id,
+            self.own_engine || self.engine_advertises_lossless.load(Ordering::SeqCst),
             prompts,
         )?;
         tracing::debug!(
@@ -569,6 +605,7 @@ impl IPCClient {
         let socket_arc = Arc::clone(&self.management_socket);
         let engine_dead = Arc::clone(&self.engine_dead);
         let engine_pid_file = self.engine_pid_file.clone();
+        let engine_advertises_lossless = Arc::clone(&self.engine_advertises_lossless);
 
         tokio::task::spawn_blocking(move || {
             blocking_management_exchange(
@@ -577,6 +614,7 @@ impl IPCClient {
                 engine_pid_file.as_deref(),
                 &command,
                 timeout,
+                &engine_advertises_lossless,
             )
         })
         .await
@@ -593,6 +631,7 @@ impl IPCClient {
             self.engine_pid_file.as_deref(),
             command,
             timeout,
+            &self.engine_advertises_lossless,
         )
     }
 
@@ -630,6 +669,7 @@ impl IPCClient {
             let active_requests = Arc::clone(&self.active_requests);
             let should_stop = Arc::clone(&self.should_stop);
             let event_callback = self.event_callback.clone();
+            let engine_advertises_lossless = Arc::clone(&self.engine_advertises_lossless);
             let handle = thread::Builder::new()
                 .name("orchard-ipc-events".to_string())
                 .spawn(move || {
@@ -639,6 +679,7 @@ impl IPCClient {
                         should_stop,
                         response_channel_id,
                         event_callback,
+                        engine_advertises_lossless,
                     );
                 });
             match handle {
@@ -679,6 +720,7 @@ fn blocking_management_exchange(
     engine_pid_file: Option<&Path>,
     command: &Value,
     timeout: Duration,
+    engine_advertises_lossless: &AtomicBool,
 ) -> Result<Value> {
     let guard = socket_arc.lock().unwrap_or_else(|e| e.into_inner());
     let socket = guard.as_ref().ok_or(Error::NotConnected)?;
@@ -717,7 +759,17 @@ fn blocking_management_exchange(
 
     loop {
         match socket.recv() {
-            Ok(response) => return Ok(serde_json::from_slice(&response)?),
+            Ok(response) => {
+                let reply: Value = serde_json::from_slice(&response)?;
+                // A load_model reply for a model that is already up carries
+                // the capabilities; a load that was only accepted brings
+                // them in its `model_loaded` event.
+                note_engine_capabilities(
+                    reply.pointer("/data/load_model/capabilities"),
+                    engine_advertises_lossless,
+                );
+                return Ok(reply);
+            }
             Err(nng::Error::TimedOut) => {
                 if engine_is_dead() {
                     return Err(Error::EngineDead);
@@ -728,6 +780,19 @@ fn blocking_management_exchange(
             }
             Err(error) => return Err(Error::Nng(error)),
         }
+    }
+}
+
+/// Remember that the engine advertises `lossless_responses` when
+/// `capabilities` (name to integers, from a load_model reply or a
+/// `model_loaded` event) lists it with value 1.
+fn note_engine_capabilities(capabilities: Option<&Value>, engine_advertises_lossless: &AtomicBool) {
+    let advertised = capabilities
+        .and_then(|capabilities| capabilities.get(LOSSLESS_RESPONSES_CAPABILITY))
+        .map(|value| value.get(0).unwrap_or(value))
+        .and_then(Value::as_i64);
+    if advertised == Some(1) {
+        engine_advertises_lossless.store(true, Ordering::SeqCst);
     }
 }
 
@@ -937,6 +1002,7 @@ fn run_event_listener(
     should_stop: Arc<AtomicBool>,
     response_channel_id: u64,
     event_callback: Option<EventCallback>,
+    engine_advertises_lossless: Arc<AtomicBool>,
 ) {
     let response_topic = format!("resp:{:x}:", response_channel_id);
     let response_topic_bytes = response_topic.as_bytes();
@@ -948,14 +1014,18 @@ fn run_event_listener(
             Ok(msg) => {
                 let data = msg.as_slice();
                 if data.starts_with(EVENT_TOPIC_PREFIX) {
-                    handle_engine_event(data, &event_callback);
+                    handle_engine_event(data, &event_callback, &engine_advertises_lossless);
                 } else if let Some(json_data) = data.strip_prefix(response_topic_bytes) {
-                    if !warned_about_lossy_route {
+                    // An engine that advertises the lossless route publishes
+                    // here only what it could not push to our endpoint.
+                    if !warned_about_lossy_route
+                        && !engine_advertises_lossless.load(Ordering::SeqCst)
+                    {
                         warned_about_lossy_route = true;
                         tracing::warn!(
-                            "PIE answered over PUB/SUB: it predates the flow-controlled \
-                             response route, so deltas can be lost whenever this process \
-                             falls behind. Update the engine."
+                            "PIE answers over PUB/SUB, where deltas are lost without an \
+                             error whenever this process falls behind: it does not \
+                             advertise lossless_responses. Update the engine."
                         );
                     }
                     route_response_delta(json_data, &active_requests, response_channel_id);
@@ -1003,7 +1073,11 @@ fn remove_stale_response_endpoints(ipc_root: &Path) {
 }
 
 /// Handle an engine event (telemetry, model_loaded, etc.)
-fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
+fn handle_engine_event(
+    data: &[u8],
+    event_callback: &Option<EventCallback>,
+    engine_advertises_lossless: &AtomicBool,
+) {
     // Event format: __PIE_EVENT__:<event_name>\x00<json_body>
     let parts: Vec<&[u8]> = data.splitn(2, |&b| b == 0).collect();
     if parts.len() != 2 {
@@ -1032,6 +1106,11 @@ fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
 
     if event_name != "telemetry" {
         tracing::debug!("Received engine event: {}", event_name);
+    }
+    if event_name == "model_loaded" {
+        // Before the callback: it wakes the caller that waits for this model,
+        // and that caller's first request must already see the capability.
+        note_engine_capabilities(payload.get("capabilities"), engine_advertises_lossless);
     }
 
     // Dispatch to callback if registered
@@ -1234,6 +1313,7 @@ mod tests {
             None,
             &serde_json::json!({"type": "ping"}),
             Duration::from_secs(1),
+            &AtomicBool::new(false),
         );
 
         assert!(matches!(result, Err(Error::EngineDead)));
@@ -1252,6 +1332,7 @@ mod tests {
             Some(&dir.path().join("missing.pid")),
             &serde_json::json!({"type": "ping"}),
             Duration::from_secs(5),
+            &AtomicBool::new(false),
         );
 
         assert!(matches!(result, Err(Error::EngineDead)));
@@ -1318,7 +1399,7 @@ mod tests {
         knows_pull_route: bool,
         requests: Socket,
         publisher: Socket,
-        _management: Socket,
+        management: Socket,
         routes: HashMap<u64, Socket>,
     }
 
@@ -1342,7 +1423,7 @@ mod tests {
                 knows_pull_route: true,
                 requests,
                 publisher,
-                _management: management,
+                management,
                 routes: HashMap::new(),
             }
         }
@@ -1398,6 +1479,15 @@ mod tests {
             }
         }
 
+        /// Answer the next management command with `reply`.
+        fn answer_management(&self, reply: &Value) {
+            self.management.recv().expect("a management command");
+            self.management
+                .send(serde_json::to_vec(reply).unwrap().as_slice())
+                .map_err(|(_, error)| error)
+                .expect("reply");
+        }
+
         fn publish_event(&self, name: &str, payload: &Value) {
             let mut message = EVENT_TOPIC_PREFIX.to_vec();
             message.extend_from_slice(name.as_bytes());
@@ -1415,10 +1505,63 @@ mod tests {
             .expect("tempdir should be available")
     }
 
+    /// Connect to an engine this process launched itself, which is asked for
+    /// the lossless route whatever it advertises.
     fn connect(client: &mut IPCClient, root: &Path) {
+        connect_as(client, root, true);
+    }
+
+    /// Connect to an engine that was already running.
+    fn connect_shared(client: &mut IPCClient, root: &Path) {
+        connect_as(client, root, false);
+    }
+
+    fn connect_as(client: &mut IPCClient, root: &Path, own_engine: bool) {
         let pid_file = root.join("engine.pid");
         std::fs::write(&pid_file, format!("{}\n", std::process::id())).expect("pid file");
-        client.connect_in(root, pid_file).expect("connect");
+        client
+            .connect_in(root, pid_file, own_engine)
+            .expect("connect");
+    }
+
+    /// Name and payload of every event a client handled.
+    type RecordedEvents = Arc<Mutex<Vec<(String, Value)>>>;
+
+    /// A client that records the engine's events, and those events.
+    fn client_recording_events() -> (IPCClient, RecordedEvents) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_for_callback = Arc::clone(&events);
+        let client =
+            IPCClient::with_event_callback(Arc::new(move |name: &str, payload: &Value| {
+                events_for_callback
+                    .lock()
+                    .unwrap()
+                    .push((name.to_string(), payload.clone()));
+            }));
+        (client, events)
+    }
+
+    /// Publish `payload` as `name` until the client has handled it: PUB/SUB
+    /// does not queue for a subscriber it has not seen yet.
+    fn publish_until_handled(
+        engine: &FakeEngine,
+        events: &RecordedEvents,
+        name: &str,
+        payload: &Value,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let handled = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(seen_name, seen)| seen_name == name && seen == payload)
+        };
+        while !handled() {
+            assert!(Instant::now() < deadline, "the event never arrived");
+            engine.publish_event(name, payload);
+            thread::sleep(Duration::from_millis(5));
+        }
     }
 
     fn send(client: &IPCClient, request_id: u64) -> mpsc::UnboundedReceiver<ResponseDelta> {
@@ -1673,6 +1816,121 @@ mod tests {
         let request = engine.next_request();
         engine.answer(&request, 3);
         assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_an_engine_this_process_launched_is_asked_for_the_lossless_route() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        // No capability was ever advertised: launching the engine is enough.
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        assert_eq!(request["response_transport"], "pull_v1");
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_a_shared_engine_is_asked_for_the_lossless_route_once_a_model_loaded_event_advertises_it(
+    ) {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let (mut client, events) = client_recording_events();
+        connect_shared(&mut client, dir.path());
+
+        // A model of an engine that does not advertise the capability: the
+        // request is the one on main, and its answer comes over PUB/SUB.
+        let older = serde_json::json!({"model_id": "a", "capabilities": {"answer": [3]}});
+        publish_until_handled(&engine, &events, "model_loaded", &older);
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        assert!(request.get("response_transport").is_none(), "{request}");
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+
+        let reaping = serde_json::json!({
+            "model_id": "b",
+            "capabilities": {"answer": [3], "lossless_responses": [1]},
+        });
+        publish_until_handled(&engine, &events, "model_loaded", &reaping);
+        let mut deltas = send(&client, 2);
+        let request = engine.next_request();
+        assert_eq!(request["response_transport"], "pull_v1");
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_a_shared_engine_is_asked_for_the_lossless_route_once_a_load_model_reply_advertises_it()
+    {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect_shared(&mut client, dir.path());
+
+        let load_model = |engine: FakeEngine, client: &IPCClient, value: Value| {
+            let reply = serde_json::json!({
+                "status": "ok",
+                "data": {"load_model": {
+                    "runtime_started": true,
+                    "capabilities": {"answer": [3], "lossless_responses": value},
+                }},
+            });
+            let engine = thread::spawn(move || {
+                engine.answer_management(&reply);
+                engine
+            });
+            client
+                .send_management_command(
+                    &serde_json::json!({"type": "load_model"}),
+                    Duration::from_secs(5),
+                )
+                .expect("load_model reply");
+            engine.join().expect("engine thread")
+        };
+
+        // Listed, but not with the value that promises reaping.
+        engine = load_model(engine, &client, serde_json::json!([0]));
+        let _deltas = send(&client, 1);
+        let request = engine.next_request();
+        assert!(request.get("response_transport").is_none(), "{request}");
+
+        engine = load_model(engine, &client, serde_json::json!([1]));
+        let mut deltas = send(&client, 2);
+        let request = engine.next_request();
+        assert_eq!(request["response_transport"], "pull_v1");
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+
+        // What one engine advertised says nothing about the next one.
+        client.disconnect();
+        connect_shared(&mut client, dir.path());
+        let _deltas = send(&client, 3);
+        let request = engine.next_request();
+        assert!(request.get("response_transport").is_none(), "{request}");
+    }
+
+    #[test]
+    fn test_only_lossless_responses_with_value_one_counts_as_advertised() {
+        let advertised = |capabilities: Value| {
+            let flag = AtomicBool::new(false);
+            note_engine_capabilities(Some(&capabilities), &flag);
+            flag.load(Ordering::SeqCst)
+        };
+        // The engine writes every capability as a list of integers.
+        assert!(advertised(serde_json::json!({"lossless_responses": [1]})));
+        assert!(advertised(serde_json::json!({"lossless_responses": 1})));
+        assert!(!advertised(serde_json::json!({"lossless_responses": [0]})));
+        assert!(!advertised(serde_json::json!({"lossless_responses": []})));
+        assert!(!advertised(serde_json::json!({"lossless_responses": "1"})));
+        assert!(!advertised(serde_json::json!({"answer": [1]})));
+
+        let flag = AtomicBool::new(false);
+        note_engine_capabilities(None, &flag);
+        assert!(!flag.load(Ordering::SeqCst));
     }
 
     /// The error delta that ends `deltas`, and the contents before it.
