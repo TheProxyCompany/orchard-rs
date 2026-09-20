@@ -1112,9 +1112,14 @@ mod tests {
             )
             .unwrap();
             let formatter = ChatFormatter::new(model_dir.path()).unwrap();
-            let thinking = formatter.supports_native_thinking();
+            let keeps_reasoning = formatter.supports_native_thinking();
             // The client renames `assistant` to `agent` before rendering; both must work.
-            for role in ["assistant", "agent"] {
+            for (role, thinking) in [
+                ("assistant", false),
+                ("assistant", true),
+                ("agent", false),
+                ("agent", true),
+            ] {
                 let reply = |content: &str, reasoning: &str| reply_as(role, content, reasoning);
                 let two_turns = [
                     message("system", "Be brief."),
@@ -1137,14 +1142,14 @@ mod tests {
                     .unwrap();
                 if !longer.starts_with(&shorter) {
                     broken.push(format!(
-                    "{model_type} as {role}: an earlier turn renders differently once later messages exist"
+                    "{model_type} as {role}, thinking {thinking}: an earlier turn renders differently once later messages exist"
                 ));
                 }
-                if thinking
+                if keeps_reasoning
                     && !(longer.contains("FIRST-REASONING") && longer.contains("SECOND-REASONING"))
                 {
                     broken.push(format!(
-                        "{model_type} as {role}: reasoning dropped from an earlier turn"
+                        "{model_type} as {role}, thinking {thinking}: reasoning dropped from an earlier turn"
                     ));
                 }
             }
