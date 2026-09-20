@@ -2,6 +2,8 @@
 //! identical turn 2 with the prefix cache disabled, and compare generated token ids.
 //!
 //!   MODEL=allenai/Olmo-Hybrid-Instruct-DPO-7B cargo run --release --example two_turn_check
+//!
+//! Exits non-zero unless the RESULT is identical.
 
 mod common;
 
@@ -53,6 +55,14 @@ async fn turn(
         per_token,
         first_top,
     ))
+}
+
+/// The exit status follows the RESULT line.
+fn verdict(differing: usize) -> Result<(), Box<dyn std::error::Error>> {
+    if differing > 0 {
+        return Err("the warm turn differs from the cache-off turn".into());
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -128,5 +138,18 @@ async fn main() -> Result<(), common::Error> {
             );
         }
     }
-    Ok(())
+    // Only a reproducible run promises the same tokens: an ordinary turn may reuse KV the
+    // model produced while decoding, which differs from prefilled KV in the last bits.
+    verdict(usize::from(
+        std::env::var("DETERMINISTIC").is_ok() && warm != cold,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_differing_run_fails_the_process() {
+        assert!(super::verdict(0).is_ok());
+        assert!(super::verdict(1).is_err());
+    }
 }

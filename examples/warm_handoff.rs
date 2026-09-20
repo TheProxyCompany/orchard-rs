@@ -12,18 +12,23 @@ mod common;
 use common::{msg, run_turn, Message, QUESTIONS};
 use orchard::{Client, SamplingParams};
 
+/// What every turn is sampled with. The warm-ups get the same params, so they render
+/// the prompt the handoff turn will.
+fn turn_params() -> SamplingParams {
+    SamplingParams {
+        max_tokens: 140,
+        temperature: 0.0,
+        reasoning: Some(false),
+        ..Default::default()
+    }
+}
+
 async fn turn(
     client: &Client,
     model: &str,
     messages: Vec<Message>,
 ) -> Result<(String, f64, usize, usize), common::Error> {
-    let params = SamplingParams {
-        max_tokens: 140,
-        temperature: 0.0,
-        reasoning: Some(false),
-        ..Default::default()
-    };
-    let turn = run_turn(client, model, messages, params, |_| {}).await?;
+    let turn = run_turn(client, model, messages, turn_params(), |_| {}).await?;
     Ok((turn.text, turn.ttft_ms, turn.prompt_tokens, turn.cached))
 }
 
@@ -57,7 +62,9 @@ async fn main() -> Result<(), common::Error> {
             // Fire and forget: B catches up on the transcript while the user reads.
             let (client, model_b, snapshot) = (client.clone(), model_b.clone(), transcript.clone());
             warmers.push(tokio::spawn(async move {
-                client.awarm_prefix(&[&model_b], snapshot).await
+                client
+                    .awarm_prefix(&[&model_b], snapshot, turn_params())
+                    .await
             }));
         }
     }

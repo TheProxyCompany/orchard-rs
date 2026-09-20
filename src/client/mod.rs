@@ -941,7 +941,6 @@ impl Client {
         collect_transcription(rx).await
     }
 
-    /// Run a prefill-only task and return the raw response deltas.
     /// Warm each model's prefix cache with `messages`, concurrently.
     ///
     /// Each model prefills the rendered transcript and publishes it to its prefix
@@ -951,25 +950,29 @@ impl Client {
     /// Call it after a turn completes (spawn it; it does not need to be awaited
     /// before the conversation continues on another model).
     ///
-    /// The models must already be loaded. One token is sampled and discarded.
+    /// Pass the `params` the real turn will use. Tools, instructions and the
+    /// reasoning settings are part of the rendered prompt, and a warm-up that
+    /// renders a different prompt leaves nothing the turn can reuse. Only the
+    /// output budget is overridden: one token, one candidate.
+    ///
+    /// The models must already be loaded: one that is not gets an error result, it is
+    /// not downloaded or loaded here. One token is sampled and discarded.
     pub async fn awarm_prefix(
         &self,
         model_ids: &[&str],
         messages: Vec<HashMap<String, serde_json::Value>>,
+        params: SamplingParams,
     ) -> Vec<WarmResult> {
+        let params = warm_params(params);
         let mut handles = Vec::with_capacity(model_ids.len());
         for model_id in model_ids {
             let client = self.clone();
             let model_id = (*model_id).to_string();
             let messages = messages.clone();
-            handles.push(tokio::spawn(async move {
+            let params = params.clone();
+            let task_model_id = model_id.clone();
+            let handle = tokio::spawn(async move {
                 let started = std::time::Instant::now();
-                let params = SamplingParams {
-                    max_tokens: 1,
-                    temperature: 0.0,
-                    reasoning: Some(false),
-                    ..Default::default()
-                };
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
                     prompt_tokens: 0,
@@ -977,6 +980,11 @@ impl Client {
                     elapsed: std::time::Duration::ZERO,
                     error: None,
                 };
+                // achat would download and load a missing model; a warm-up must not.
+                if client.registry.get_if_ready(&model_id).await.is_none() {
+                    result.error = Some(format!("Model '{model_id}' is not loaded"));
+                    return result;
+                }
                 match client.achat(&model_id, messages, params, true).await {
                     Ok(ChatResult::Stream(mut stream)) => {
                         while let Some(delta) = stream.recv().await {
@@ -1000,24 +1008,13 @@ impl Client {
                 }
                 result.elapsed = started.elapsed();
                 result
-            }));
+            });
+            handles.push((task_model_id, handle));
         }
-        let mut results = Vec::with_capacity(handles.len());
-        for handle in handles {
-            match handle.await {
-                Ok(result) => results.push(result),
-                Err(error) => results.push(WarmResult {
-                    model_id: String::new(),
-                    prompt_tokens: 0,
-                    cached_tokens: 0,
-                    elapsed: std::time::Duration::ZERO,
-                    error: Some(error.to_string()),
-                }),
-            }
-        }
-        results
+        join_warm_tasks(handles).await
     }
 
+    /// Run a prefill-only task and return the raw response deltas.
     pub async fn aprefill_task(
         &self,
         model_id: &str,
@@ -1534,6 +1531,38 @@ pub struct WarmResult {
     pub cached_tokens: u32,
     pub elapsed: std::time::Duration,
     pub error: Option<String>,
+}
+
+/// The params a warm-up sends: the turn's own, cut down to one sampled token.
+fn warm_params(params: SamplingParams) -> SamplingParams {
+    SamplingParams {
+        max_tokens: 1,
+        n: 1,
+        best_of: None,
+        final_candidates: None,
+        ..params
+    }
+}
+
+/// One result per warm task, in order. A task that panicked or was cancelled has no
+/// result of its own, so its model id travels next to its handle.
+async fn join_warm_tasks(
+    handles: Vec<(String, tokio::task::JoinHandle<WarmResult>)>,
+) -> Vec<WarmResult> {
+    let mut results = Vec::with_capacity(handles.len());
+    for (model_id, handle) in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(error) => results.push(WarmResult {
+                model_id,
+                prompt_tokens: 0,
+                cached_tokens: 0,
+                elapsed: std::time::Duration::ZERO,
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+    results
 }
 
 /// Result of a chat operation.
@@ -2231,6 +2260,91 @@ mod tests {
                 vec!["request_id", "model_id", "prompt_index"],
             ]
         );
+    }
+
+    #[test]
+    fn test_warm_params_keep_what_renders_the_prompt() {
+        let turn = SamplingParams {
+            max_tokens: 512,
+            temperature: 0.7,
+            n: 4,
+            best_of: Some(8),
+            final_candidates: Some(2),
+            core_tools: vec![serde_json::json!({"name": "lookup"})],
+            reasoning_effort: Some("high".to_string()),
+            instructions: Some("Answer in French.".to_string()),
+            task_name: Some("caption".to_string()),
+            ..Default::default()
+        };
+
+        let warm = warm_params(turn.clone());
+
+        // One token, one candidate.
+        assert_eq!(warm.max_tokens, 1);
+        assert_eq!(warm.n, 1);
+        assert_eq!(warm.best_of, None);
+        assert_eq!(warm.final_candidates, None);
+        // Everything that renders the prompt is the turn's, `reasoning: None` included.
+        assert_eq!(warm.reasoning, None);
+        assert_eq!(warm.reasoning_effort, turn.reasoning_effort);
+        assert_eq!(warm.instructions, turn.instructions);
+        assert_eq!(warm.task_name, turn.task_name);
+        assert_eq!(warm.core_tools, turn.core_tools);
+        // And nothing else moved either.
+        let expected = SamplingParams {
+            max_tokens: 1,
+            n: 1,
+            best_of: None,
+            final_candidates: None,
+            ..turn
+        };
+        assert_eq!(
+            serde_json::to_value(&warm).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_failed_warm_task_still_names_its_model() {
+        let cancelled = tokio::spawn(std::future::pending::<WarmResult>());
+        cancelled.abort();
+        let panicked = tokio::spawn(async { panic!("warm task panicked") });
+
+        let results = join_warm_tasks(vec![
+            ("org/cancelled".to_string(), cancelled),
+            ("org/panicked".to_string(), panicked),
+        ])
+        .await;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].model_id, "org/cancelled");
+        assert_eq!(results[1].model_id, "org/panicked");
+        assert!(results.iter().all(|result| result.error.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_warm_prefix_refuses_a_model_that_is_not_loaded() {
+        let client = Client::new(
+            Arc::new(IPCClient::new()),
+            Arc::new(ModelRegistry::new().unwrap()),
+        );
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hi")),
+        ])];
+
+        let results = client
+            .awarm_prefix(
+                &["orchard-tests/never-loaded"],
+                messages,
+                SamplingParams::default(),
+            )
+            .await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].model_id, "orchard-tests/never-loaded");
+        let error = results[0].error.as_deref().expect("should be refused");
+        assert!(error.contains("is not loaded"), "{error}");
     }
 
     #[test]
