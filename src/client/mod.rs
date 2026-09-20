@@ -4,6 +4,7 @@
 
 mod moondream;
 mod privacy_filter;
+mod replay;
 mod response;
 mod responses;
 
@@ -14,7 +15,7 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tokio::sync::mpsc;
 
 use crate::defaults;
@@ -405,6 +406,59 @@ impl Client {
             .map_err(Error::Other)
     }
 
+    /// The assistant message to append to the conversation for a finished reply.
+    ///
+    /// Besides the visible text it keeps the reply's reasoning and tool calls, and a
+    /// `generation` record with the exact token ids the model produced. Sent back on
+    /// the next turn to the same model, the reply is replayed id for id, so the engine
+    /// reuses its cached keys and values for all of it. Any other model reads the text.
+    ///
+    /// `deltas` are the reply's deltas: the ones a stream yielded, or a complete
+    /// response's `deltas`. `params` are the ones the request was made with.
+    pub async fn assistant_message<D: Into<ClientDelta>>(
+        &self,
+        model_id: &str,
+        params: &SamplingParams,
+        deltas: impl IntoIterator<Item = D>,
+    ) -> Result<HashMap<String, Value>> {
+        let deltas: Vec<ClientDelta> = deltas.into_iter().map(Into::into).collect();
+        let deltas = deltas.as_slice();
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
+        let (thinking, _, _) = native_reasoning_settings(
+            formatter,
+            chat_reasoning_requested(formatter, params),
+            &params.reasoning_effort,
+        );
+        let (reasoning, tool_calls) = aggregate_structured_items(deltas);
+        let tokens: Vec<i32> = deltas
+            .iter()
+            .flat_map(|delta| delta.tokens.iter().copied())
+            .collect();
+
+        let mut message = HashMap::from([
+            ("role".to_string(), json!("assistant")),
+            ("content".to_string(), json!(aggregate_message_text(deltas))),
+        ]);
+        if !reasoning.is_empty() {
+            message.insert("reasoning_content".into(), json!(reasoning.join("\n")));
+        }
+        if !tool_calls.is_empty() {
+            let calls: Vec<Value> = tool_calls
+                .iter()
+                .map(|call| json!({"type": "function", "function": {"name": call.name, "arguments": call.arguments}}))
+                .collect();
+            message.insert("tool_calls".into(), json!(calls));
+        }
+        if !tokens.is_empty() {
+            message.insert(
+                "generation".into(),
+                json!({"model": info.model_id, "tokens": tokens, "thinking": thinking}),
+            );
+        }
+        Ok(message)
+    }
+
     /// Perform asynchronous chat completion.
     ///
     /// # Arguments
@@ -438,7 +492,8 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let prompt_payload = build_chat_payload(formatter, &messages, &params)?;
+        let replay_model = info.takes_token_segments().then_some(request_model_id);
+        let prompt_payload = build_chat_payload(formatter, &messages, &params, replay_model)?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -610,7 +665,13 @@ impl Client {
                 messages = ?messages,
                 "Prepared batch messages for prompt"
             );
-            let payload = build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])?;
+            let payload = build_chat_payload(
+                formatter,
+                messages,
+                &params_by_prompt[prompt_index],
+                info.takes_token_segments()
+                    .then_some(info.model_id.as_str()),
+            )?;
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
@@ -1078,12 +1139,17 @@ impl Client {
 
 /// Build the PIE prompt payload for one chat conversation: profile sampling
 /// defaults, multimodal expansion, template, layout, tool schemas and seed.
+/// `replay_model` is the model being asked when its engine takes token segments: replies
+/// that model generated earlier in the conversation are then sent as their token ids.
 fn build_chat_payload(
     formatter: &crate::formatter::ChatFormatter,
     messages: &[HashMap<String, Value>],
     params: &SamplingParams,
+    replay_model: Option<&str>,
 ) -> Result<PromptPayload> {
     let params = sampling_with_profile_defaults(formatter, params);
+    let (messages, replays) = replay::take_replays(messages, replay_model);
+    let messages = messages.as_slice();
     let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
         formatter,
         chat_reasoning_requested(formatter, &params),
@@ -1127,12 +1193,18 @@ fn build_chat_payload(
         &content_order,
     )?;
 
+    let (prompt, layout, token_segments) = replay::splice_replays(
+        &formatter.strip_template_placeholders(&prompt_text),
+        &convert_layout(&layout_segments),
+        &replays,
+    );
     Ok(PromptPayload {
-        prompt: formatter.strip_template_placeholders(&prompt_text),
+        prompt,
         image_buffers,
         audio_buffers,
         capabilities: convert_capabilities(&capabilities),
-        layout: convert_layout(&layout_segments),
+        layout,
+        token_segments,
         max_generated_tokens: params.max_tokens,
         temperature: params.temperature,
         top_p: params.top_p,
@@ -2127,7 +2199,7 @@ mod tests {
             ..Default::default()
         };
 
-        let payload = build_chat_payload(&formatter, &messages, &params).unwrap();
+        let payload = build_chat_payload(&formatter, &messages, &params, None).unwrap();
 
         assert!(payload.prompt.contains("hello"));
         assert_eq!(payload.layout.len(), 1);
@@ -2136,7 +2208,7 @@ mod tests {
         assert_eq!(payload.rng_seed, Some(42));
         assert_eq!(payload.tool_choice, "auto");
         assert_eq!(payload.min_tool_calls, 1);
-        assert!(build_chat_payload(&formatter, &[], &params).is_err());
+        assert!(build_chat_payload(&formatter, &[], &params, None).is_err());
     }
 
     #[test]

@@ -968,6 +968,76 @@ mod tests {
         }
     }
 
+    /// A reply the model generated comes back as a `generated` marker. Every chat profile
+    /// must render the conversation so far exactly as it was when that reply was
+    /// generated, then the marker, then the rest: only then is the next prompt the last
+    /// prompt plus the reply, which is what lets the engine reuse all of its cache.
+    #[test]
+    fn test_a_replayed_reply_extends_the_prompt_it_answered() {
+        let message = |role: &str, content: &str| {
+            HashMap::from([
+                ("role".to_string(), serde_json::json!(role)),
+                ("content".to_string(), serde_json::json!(content)),
+            ])
+        };
+        let profiles = [
+            "llama",
+            "gemma3",
+            "gemma4",
+            "gemma4u",
+            "qwen3_5",
+            "lfm2",
+            "lfm2_moe",
+            "olmo_hybrid",
+            "nemotron_h",
+            "granite_switch",
+            "gpt_oss",
+            "proxy_i",
+            "afmoe",
+            "glm4_moe",
+            "laguna",
+        ];
+        let mut broken = Vec::new();
+        for model_type in profiles {
+            let model_dir = tempdir().unwrap();
+            std::fs::write(
+                model_dir.path().join("config.json"),
+                serde_json::json!({"model_type": model_type}).to_string(),
+            )
+            .unwrap();
+            let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+            for thinking in [false, true] {
+                let asked = [
+                    message("system", "Be brief."),
+                    message("user", "first question"),
+                ];
+                let first = formatter
+                    .apply_template(&asked, true, thinking, None, None)
+                    .unwrap();
+
+                let mut reply = message("assistant", "ignored: the marker stands for the reply");
+                reply.insert("generated".into(), serde_json::json!("\u{e000}0\u{e001}"));
+                reply.insert("generated_thinking".into(), serde_json::json!(thinking));
+                let mut next = asked.to_vec();
+                next.extend([reply, message("user", "second question")]);
+                // The next turn may be asked in either mode; the earlier one must not move.
+                for next_thinking in [false, true] {
+                    let second = formatter
+                        .apply_template(&next, true, next_thinking, None, None)
+                        .unwrap();
+                    if !second.starts_with(&format!("{first}\u{e000}0\u{e001}")) {
+                        broken.push(format!("{model_type} (generated with thinking={thinking}, next asked with thinking={next_thinking})"));
+                    }
+                }
+            }
+        }
+        assert!(
+            broken.is_empty(),
+            "profiles that do not replay a generated reply in place:\n{}",
+            broken.join("\n")
+        );
+    }
+
     #[test]
     fn test_granite_switch_profile_inserts_adapter_tokens() {
         let model_dir = tempdir().unwrap();

@@ -2216,6 +2216,7 @@ impl Client {
             audio_buffers,
             capabilities: super::convert_capabilities(&capabilities),
             layout: super::convert_layout(&layout_segments),
+            token_segments: Vec::new(),
             max_generated_tokens: request.max_output_tokens.unwrap_or(0),
             temperature,
             top_p,
