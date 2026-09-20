@@ -1025,12 +1025,27 @@ mod tests {
                 reply.insert("generated_thinking".into(), serde_json::json!(thinking));
                 let mut next = asked.to_vec();
                 next.extend([reply, message("user", "second question")]);
-                // The next turn may be asked in either mode; the earlier one must not move.
+                // Some models switch thinking at the head of the prompt (Gemma 4 writes
+                // `<|think|>` into the system turn), so the conversation re-renders in the
+                // next request's mode. The generation prompt the reply answered stays as asked.
+                let conversation = |mode| {
+                    formatter
+                        .apply_template(&asked, false, mode, None, None)
+                        .unwrap()
+                };
+                let asked_prompt = first
+                    .strip_prefix(&conversation(thinking))
+                    .expect("the generation prompt is a suffix of the conversation")
+                    .to_string();
                 for next_thinking in [false, true] {
                     let second = formatter
                         .apply_template(&next, true, next_thinking, None, None)
                         .unwrap();
-                    if !second.starts_with(&format!("{first}\u{e000}0\u{e001}")) {
+                    let expected = format!(
+                        "{}{asked_prompt}\u{e000}0\u{e001}",
+                        conversation(next_thinking)
+                    );
+                    if !second.starts_with(&expected) {
                         broken.push(format!("{model_type} (generated with thinking={thinking}, next asked with thinking={next_thinking})"));
                     }
                 }
@@ -1585,7 +1600,7 @@ mod tests {
         assert!(rendered.starts_with("<|im_start|>system\n# Tools"));
         assert!(rendered.contains("Follow the test instruction."));
         assert!(rendered.contains("<|im_start|>user\nUse lookup.<|im_end|>\n"));
-        assert!(rendered.contains("<|im_start|>assistant\nCalling lookup.\n<tool_call>\n"));
+        assert!(rendered.contains("<|im_start|>assistant\n<think>\nNeed lookup.\n</think>\n\nCalling lookup.\n<tool_call>\n"));
         assert!(rendered.contains("\"name\":\"lookup\""));
         assert!(rendered.contains("\"arguments\":{\"query\": \"orchard\"}"));
         assert!(!rendered.contains("<function="));
