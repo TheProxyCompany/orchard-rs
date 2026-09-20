@@ -11,7 +11,10 @@ pub mod model;
 
 pub use error::{Error, Result};
 
-pub use ipc::client::{EventCallback, IPCClient, ResponseDelta, TokenLogProb};
+pub use ipc::client::{
+    EventCallback, IPCClient, ResponseDelta, TokenLogProb, DEFAULT_DELTA_TIMEOUT,
+    DEFAULT_FIRST_DELTA_TIMEOUT,
+};
 pub use ipc::endpoints;
 pub use ipc::serialization::{
     build_batch_request_payload, CapabilityEntry, LayoutEntry, PromptPayload, RequestType,
