@@ -438,7 +438,9 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let prompt_payload = build_chat_payload(formatter, &messages, &params)?;
+        // The span gives build_chat_payload's trace event the request it belongs to.
+        let prompt_payload = tracing::trace_span!("chat_payload", request_id, model_id = %model_id)
+            .in_scope(|| build_chat_payload(formatter, &messages, &params))?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -610,7 +612,15 @@ impl Client {
                 messages = ?messages,
                 "Prepared batch messages for prompt"
             );
-            let payload = build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])?;
+            let payload = tracing::trace_span!(
+                "chat_payload",
+                request_id,
+                model_id = %model_id,
+                prompt_index
+            )
+            .in_scope(|| {
+                build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])
+            })?;
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
@@ -2137,6 +2147,90 @@ mod tests {
         assert_eq!(payload.tool_choice, "auto");
         assert_eq!(payload.min_tool_calls, 1);
         assert!(build_chat_payload(&formatter, &[], &params).is_err());
+    }
+
+    /// Records the field names of the span build_chat_payload's trace event fires in.
+    #[derive(Default)]
+    struct PayloadEventSpans {
+        spans: std::sync::Mutex<Vec<Vec<&'static str>>>,
+        entered: std::sync::Mutex<Vec<u64>>,
+        seen: Arc<std::sync::Mutex<Vec<Vec<&'static str>>>>,
+    }
+
+    impl tracing::Subscriber for PayloadEventSpans {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, attrs: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            let mut spans = self.spans.lock().unwrap();
+            spans.push(attrs.metadata().fields().iter().map(|f| f.name()).collect());
+            tracing::span::Id::from_u64(spans.len() as u64)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            if event
+                .metadata()
+                .fields()
+                .field("messages_for_template")
+                .is_some()
+            {
+                let fields = match self.entered.lock().unwrap().last() {
+                    Some(id) => self.spans.lock().unwrap()[*id as usize - 1].clone(),
+                    None => Vec::new(),
+                };
+                self.seen.lock().unwrap().push(fields);
+            }
+        }
+        fn enter(&self, id: &tracing::span::Id) {
+            self.entered.lock().unwrap().push(id.into_u64());
+        }
+        fn exit(&self, _: &tracing::span::Id) {
+            self.entered.lock().unwrap().pop();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chat_payload_trace_event_carries_request_fields() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let model_id = model_dir.path().to_str().unwrap();
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        registry.schedule_model(model_id, false).await.unwrap();
+        registry.mark_ready(model_id).await;
+        let client = Client::new(Arc::new(IPCClient::new()), registry);
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let _guard = tracing::subscriber::set_default(PayloadEventSpans {
+            seen: Arc::clone(&seen),
+            ..Default::default()
+        });
+
+        // Both calls build the payload and then stop at the unconnected socket.
+        let single = client
+            .achat(model_id, messages.clone(), SamplingParams::default(), false)
+            .await;
+        assert!(matches!(single, Err(Error::NotConnected)));
+        let batch = client
+            .achat_batch(model_id, vec![messages], SamplingParams::default(), false)
+            .await;
+        assert!(matches!(batch, Err(Error::NotConnected)));
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                vec!["request_id", "model_id"],
+                vec!["request_id", "model_id", "prompt_index"],
+            ]
+        );
     }
 
     #[test]
