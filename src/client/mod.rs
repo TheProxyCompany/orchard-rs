@@ -1291,7 +1291,6 @@ impl Client {
         }
     }
 
-    /// Run a prefill-only task and return the raw response deltas.
     /// Warm each model's prefix cache with `messages`, concurrently.
     ///
     /// Each model prefills the rendered transcript and publishes it to its prefix
@@ -1368,6 +1367,7 @@ impl Client {
         results
     }
 
+    /// Run a prefill-only task and return the raw response deltas.
     pub async fn aprefill_task(
         &self,
         model_id: &str,
