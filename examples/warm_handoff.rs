@@ -31,19 +31,25 @@ const QUESTIONS: [&str; 6] = [
     "In about 80 words, summarize everything above in one paragraph.",
 ];
 
+/// What every turn is sampled with. The warm-ups get the same params, so they render
+/// the prompt the handoff turn will.
+fn turn_params() -> SamplingParams {
+    SamplingParams {
+        max_tokens: 140,
+        temperature: 0.0,
+        reasoning: Some(false),
+        ..Default::default()
+    }
+}
+
 async fn turn(
     client: &Client,
     model: &str,
     messages: Vec<Message>,
 ) -> Result<(String, f64, u32, u32), Box<dyn std::error::Error>> {
-    let params = SamplingParams {
-        max_tokens: 140,
-        temperature: 0.0,
-        reasoning: Some(false),
-        ..Default::default()
-    };
     let t = Instant::now();
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
+    let ChatResult::Stream(mut stream) = client.achat(model, messages, turn_params(), true).await?
+    else {
         unreachable!()
     };
     let (mut ttft, mut prompt, mut cached, mut text) = (None, 0, 0, String::new());
@@ -98,7 +104,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Fire and forget: B catches up on the transcript while the user reads.
             let (client, model_b, snapshot) = (client.clone(), model_b.clone(), transcript.clone());
             warmers.push(tokio::spawn(async move {
-                client.awarm_prefix(&[&model_b], snapshot).await
+                client
+                    .awarm_prefix(&[&model_b], snapshot, turn_params())
+                    .await
             }));
         }
     }

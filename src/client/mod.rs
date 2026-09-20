@@ -1300,25 +1300,27 @@ impl Client {
     /// Call it after a turn completes (spawn it; it does not need to be awaited
     /// before the conversation continues on another model).
     ///
+    /// Pass the `params` the real turn will use. Tools, instructions and the
+    /// reasoning settings are part of the rendered prompt, and a warm-up that
+    /// renders a different prompt leaves nothing the turn can reuse. Only the
+    /// output budget is overridden: one token, one candidate.
+    ///
     /// The models must already be loaded. One token is sampled and discarded.
     pub async fn awarm_prefix(
         &self,
         model_ids: &[&str],
         messages: Vec<HashMap<String, serde_json::Value>>,
+        params: SamplingParams,
     ) -> Vec<WarmResult> {
+        let params = warm_params(params);
         let mut handles = Vec::with_capacity(model_ids.len());
         for model_id in model_ids {
             let client = self.clone();
             let model_id = (*model_id).to_string();
             let messages = messages.clone();
+            let params = params.clone();
             handles.push(tokio::spawn(async move {
                 let started = std::time::Instant::now();
-                let params = SamplingParams {
-                    max_tokens: 1,
-                    temperature: 0.0,
-                    reasoning: Some(false),
-                    ..Default::default()
-                };
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
                     prompt_tokens: 0,
@@ -1852,6 +1854,17 @@ pub struct WarmResult {
     pub cached_tokens: u32,
     pub elapsed: std::time::Duration,
     pub error: Option<String>,
+}
+
+/// The params a warm-up sends: the turn's own, cut down to one sampled token.
+fn warm_params(params: SamplingParams) -> SamplingParams {
+    SamplingParams {
+        max_tokens: 1,
+        n: 1,
+        best_of: None,
+        final_candidates: None,
+        ..params
+    }
 }
 
 /// Result of a chat operation.
@@ -2425,6 +2438,48 @@ mod tests {
         assert_eq!(
             response.tool_calls[0].arguments,
             serde_json::json!({"content": "hi"})
+        );
+    }
+
+    #[test]
+    fn test_warm_params_keep_what_renders_the_prompt() {
+        let turn = SamplingParams {
+            max_tokens: 512,
+            temperature: 0.7,
+            n: 4,
+            best_of: Some(8),
+            final_candidates: Some(2),
+            core_tools: vec![serde_json::json!({"name": "lookup"})],
+            reasoning_effort: Some("high".to_string()),
+            instructions: Some("Answer in French.".to_string()),
+            task_name: Some("caption".to_string()),
+            ..Default::default()
+        };
+
+        let warm = warm_params(turn.clone());
+
+        // One token, one candidate.
+        assert_eq!(warm.max_tokens, 1);
+        assert_eq!(warm.n, 1);
+        assert_eq!(warm.best_of, None);
+        assert_eq!(warm.final_candidates, None);
+        // Everything that renders the prompt is the turn's, `reasoning: None` included.
+        assert_eq!(warm.reasoning, None);
+        assert_eq!(warm.reasoning_effort, turn.reasoning_effort);
+        assert_eq!(warm.instructions, turn.instructions);
+        assert_eq!(warm.task_name, turn.task_name);
+        assert_eq!(warm.core_tools, turn.core_tools);
+        // And nothing else moved either.
+        let expected = SamplingParams {
+            max_tokens: 1,
+            n: 1,
+            best_of: None,
+            final_candidates: None,
+            ..turn
+        };
+        assert_eq!(
+            serde_json::to_value(&warm).unwrap(),
+            serde_json::to_value(&expected).unwrap()
         );
     }
 
