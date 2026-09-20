@@ -299,8 +299,20 @@ pub enum ResponseInputItem {
     Reasoning {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         summary: Option<Vec<Value>>,
+        /// The reasoning text, as `{"type": "reasoning_text", "text": ...}` parts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<Value>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         encrypted_content: Option<String>,
+    },
+    /// A response's `generation` record, sent back just before the output items of that
+    /// response. Asked of the same model again, the turn is replayed as these exact
+    /// token ids, so the engine reuses its cache for all of it. Proxy extension.
+    Generation {
+        model: String,
+        tokens: Vec<i32>,
+        #[serde(default)]
+        thinking: bool,
     },
 }
 
@@ -469,7 +481,23 @@ impl ResponsesRequest {
                 vec![message]
             }
             ResponsesInput::Items(items) => {
-                let mut messages = Vec::new();
+                // The reasoning, message and function calls of one response are one
+                // assistant turn, as they were when the model generated them.
+                let mut messages: Vec<HashMap<String, Value>> = Vec::new();
+                let mut open_turn = false;
+                fn turn<'a>(
+                    messages: &'a mut Vec<HashMap<String, Value>>,
+                    open_turn: &mut bool,
+                ) -> &'a mut HashMap<String, Value> {
+                    if !*open_turn {
+                        messages.push(HashMap::from([
+                            ("role".to_string(), Value::String("assistant".to_string())),
+                            ("content".to_string(), Value::String(String::new())),
+                        ]));
+                        *open_turn = true;
+                    }
+                    messages.last_mut().expect("just pushed")
+                }
                 for item in items {
                     match item {
                         ResponseInputItem::Message {
@@ -477,7 +505,8 @@ impl ResponsesRequest {
                             content,
                             tool_calls,
                             tool_call_id,
-                        } => {
+                        } if role != "assistant" => {
+                            open_turn = false;
                             let mut message = HashMap::new();
                             message.insert("role".to_string(), Value::String(role.clone()));
                             message.insert("content".to_string(), content.clone());
@@ -493,29 +522,42 @@ impl ResponsesRequest {
                             }
                             messages.push(message);
                         }
+                        ResponseInputItem::Message {
+                            content,
+                            tool_calls,
+                            ..
+                        } => {
+                            // A second message in a row starts the next turn.
+                            if open_turn && messages.last().is_some_and(|m| m["content"] != "") {
+                                open_turn = false;
+                            }
+                            let message = turn(&mut messages, &mut open_turn);
+                            message.insert("content".to_string(), content.clone());
+                            if let Some(calls) = tool_calls {
+                                message
+                                    .insert("tool_calls".to_string(), Value::Array(calls.clone()));
+                            }
+                        }
                         ResponseInputItem::FunctionCall {
                             call_id,
                             name,
                             arguments,
                         } => {
-                            let mut message = HashMap::new();
-                            message
-                                .insert("role".to_string(), Value::String("assistant".to_string()));
-                            message.insert("content".to_string(), Value::String(String::new()));
-                            message.insert(
-                                "tool_calls".to_string(),
-                                Value::Array(vec![serde_json::json!({
-                                    "id": call_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": name,
-                                        "arguments": arguments,
-                                    }
-                                })]),
-                            );
-                            messages.push(message);
+                            let call = serde_json::json!({
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": name, "arguments": arguments},
+                            });
+                            match turn(&mut messages, &mut open_turn)
+                                .entry("tool_calls".to_string())
+                                .or_insert_with(|| Value::Array(Vec::new()))
+                            {
+                                Value::Array(calls) => calls.push(call),
+                                other => *other = Value::Array(vec![call]),
+                            }
                         }
                         ResponseInputItem::FunctionCallOutput { call_id, output } => {
+                            open_turn = false;
                             let mut message = HashMap::new();
                             message.insert("role".to_string(), Value::String("tool".to_string()));
                             message.insert("content".to_string(), output.to_message_content());
@@ -523,8 +565,31 @@ impl ResponsesRequest {
                                 .insert("tool_call_id".to_string(), Value::String(call_id.clone()));
                             messages.push(message);
                         }
-                        ResponseInputItem::Reasoning { .. } => {
-                            // Reasoning items are not directly representable in template messages.
+                        ResponseInputItem::Reasoning {
+                            summary, content, ..
+                        } => {
+                            let text = content
+                                .iter()
+                                .chain(summary.iter())
+                                .flatten()
+                                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            if !text.is_empty() {
+                                turn(&mut messages, &mut open_turn)
+                                    .insert("reasoning_content".to_string(), Value::String(text));
+                            }
+                        }
+                        ResponseInputItem::Generation {
+                            model,
+                            tokens,
+                            thinking,
+                        } => {
+                            open_turn = false;
+                            turn(&mut messages, &mut open_turn).insert(
+                                "generation".to_string(),
+                                serde_json::json!({"model": model, "tokens": tokens, "thinking": thinking}),
+                            );
                         }
                     }
                 }
@@ -731,6 +796,11 @@ pub struct ResponseObject {
     /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
     #[serde(default)]
     pub stop_token: Option<String>,
+    /// What the model generated, as `{model, tokens, thinking}`. Send it back as a
+    /// `generation` input item ahead of this response's output items and the next
+    /// request replays the turn id for id. Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -753,6 +823,11 @@ pub struct ResponseSnapshot {
     /// Decoded text of that stop token (e.g. "<|eom_id|>"). Proxy extension.
     #[serde(default)]
     pub stop_token: Option<String>,
+    /// What the model generated, as `{model, tokens, thinking}`. Send it back as a
+    /// `generation` input item ahead of this response's output items and the next
+    /// request replays the turn id for id. Proxy extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1096,6 +1171,24 @@ struct ResponseStreamState {
     usage: Option<ResponseUsage>,
     stop_token_id: Option<i32>,
     stop_token: Option<String>,
+    generation: GenerationRecord,
+}
+
+/// What a response's `generation` field is built from: the model asked, the thinking
+/// mode of the request, and every token id as it streams.
+#[derive(Debug, Clone, Default)]
+struct GenerationRecord {
+    model: String,
+    thinking: bool,
+    tokens: Vec<i32>,
+}
+
+impl GenerationRecord {
+    fn to_value(&self) -> Option<Value> {
+        (!self.tokens.is_empty()).then(|| {
+            serde_json::json!({"model": self.model, "tokens": self.tokens, "thinking": self.thinking})
+        })
+    }
 }
 
 impl ResponseStreamState {
@@ -1112,6 +1205,7 @@ impl ResponseStreamState {
             usage: None,
             stop_token_id: None,
             stop_token: None,
+            generation: GenerationRecord::default(),
         }
     }
 
@@ -1165,6 +1259,10 @@ impl ResponseStreamState {
             usage: self.usage.clone(),
             stop_token_id: self.stop_token_id,
             stop_token: self.stop_token.clone(),
+            // Whole only once the response is: snapshots before that leave it out.
+            generation: (self.status != OutputStatus::InProgress)
+                .then(|| self.generation.to_value())
+                .flatten(),
         }
     }
 }
@@ -1759,8 +1857,10 @@ async fn stream_response_events(
     response_id: String,
     model: String,
     stream_tokens: bool,
+    generation: GenerationRecord,
 ) {
     let mut stream_state = ResponseStreamState::new(response_id, model);
+    stream_state.generation = generation;
 
     if event_tx
         .send(ResponseEvent::ResponseCreated(ResponseCreatedEvent {
@@ -1796,6 +1896,7 @@ async fn stream_response_events(
             break;
         }
 
+        stream_state.generation.tokens.extend(&delta.tokens);
         if stream_tokens {
             // The autoregressive scheduler streams one sampled token per delta;
             // top_logprobs (when requested) describe that position, so they ride
@@ -1958,6 +2059,7 @@ async fn gather_non_streaming_response(
     model: &str,
     request: &ResponsesRequest,
     raw_tool_call_tokens: Option<&ToolCallingTokens>,
+    mut generation: GenerationRecord,
 ) -> Result<ResponseObject> {
     let created_at = current_timestamp();
     let mut completed_at: Option<i64> = None;
@@ -1989,6 +2091,7 @@ async fn gather_non_streaming_response(
         }
 
         update_usage_from_delta(&delta, &mut usage);
+        generation.tokens.extend(&delta.tokens);
 
         if let Some(reason) = &delta.finish_reason {
             finish_reason = Some(reason.to_lowercase());
@@ -2064,6 +2167,7 @@ async fn gather_non_streaming_response(
         text: request.text.clone(),
         stop_token_id,
         stop_token,
+        generation: generation.to_value(),
     })
 }
 
@@ -2084,7 +2188,8 @@ impl Client {
             stream = request.stream,
             "Building responses request"
         );
-        let messages = request.to_messages();
+        let replay_model = info.takes_token_segments().then_some(request_model_id);
+        let (messages, replays) = super::replay::take_replays(&request.to_messages(), replay_model);
         tracing::trace!(
             request_id,
             model_id = %model_id,
@@ -2156,7 +2261,11 @@ impl Client {
             &content_order,
         )?;
 
-        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+        let (final_prompt, layout, token_segments) = super::replay::splice_replays(
+            &formatter.strip_template_placeholders(&prompt_text),
+            &super::convert_layout(&layout_segments),
+            &replays,
+        );
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -2215,8 +2324,8 @@ impl Client {
             image_buffers,
             audio_buffers,
             capabilities: super::convert_capabilities(&capabilities),
-            layout: super::convert_layout(&layout_segments),
-            token_segments: Vec::new(),
+            layout,
+            token_segments,
             max_generated_tokens: request.max_output_tokens.unwrap_or(0),
             temperature,
             top_p,
@@ -2265,6 +2374,11 @@ impl Client {
             &[prompt_payload],
         )?;
 
+        let generation = GenerationRecord {
+            model: request_model_id.to_string(),
+            thinking: reasoning_flag,
+            tokens: Vec::new(),
+        };
         if request.stream {
             let (event_tx, event_rx) = mpsc::channel(256);
             tokio::spawn(stream_response_events(
@@ -2273,6 +2387,7 @@ impl Client {
                 generate_response_id(),
                 model_id.to_string(),
                 request.stream_tokens,
+                generation,
             ));
             Ok(ResponsesResult::Stream {
                 request_id,
@@ -2286,9 +2401,14 @@ impl Client {
             } else {
                 Some(formatter.get_tool_calling_tokens())
             };
-            let response =
-                gather_non_streaming_response(stream, model_id, &request, raw_tool_call_tokens)
-                    .await?;
+            let response = gather_non_streaming_response(
+                stream,
+                model_id,
+                &request,
+                raw_tool_call_tokens,
+                generation,
+            )
+            .await?;
             Ok(ResponsesResult::Complete(Box::new(response)))
         }
     }
@@ -2312,6 +2432,7 @@ mod tests {
             usage: None,
             stop_token_id: None,
             stop_token: None,
+            generation: None,
         };
 
         let event = ResponseEvent::ResponseCreated(ResponseCreatedEvent {
@@ -2410,6 +2531,69 @@ mod tests {
             messages[0].get("role").and_then(Value::as_str),
             Some("user")
         );
+    }
+
+    #[test]
+    fn test_one_model_turn_is_one_assistant_message_with_its_reasoning_and_record() {
+        let user = |text: &str| ResponseInputItem::Message {
+            role: "user".to_string(),
+            content: Value::String(text.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let answer = |text: &str| ResponseInputItem::Message {
+            role: "assistant".to_string(),
+            content: Value::String(text.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let mut request = ResponsesRequest::from_text("unused");
+        request.input = ResponsesInput::Items(vec![
+            user("weather?"),
+            ResponseInputItem::Generation {
+                model: "m".to_string(),
+                tokens: vec![1, 2, 3],
+                thinking: true,
+            },
+            ResponseInputItem::Reasoning {
+                summary: None,
+                content: Some(vec![
+                    serde_json::json!({"type": "reasoning_text", "text": "look it up"}),
+                ]),
+                encrypted_content: None,
+            },
+            answer("Checking."),
+            ResponseInputItem::FunctionCall {
+                call_id: "call_1".to_string(),
+                name: "get_weather".to_string(),
+                arguments: "{}".to_string(),
+            },
+            ResponseInputItem::FunctionCallOutput {
+                call_id: "call_1".to_string(),
+                output: "65F".into(),
+            },
+            answer("65F."),
+            answer("A second answer in a row is its own turn."),
+        ]);
+
+        let messages = request.to_messages();
+        let roles: Vec<_> = messages
+            .iter()
+            .map(|m| m["role"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            roles,
+            ["user", "assistant", "tool", "assistant", "assistant"]
+        );
+        let turn = &messages[1];
+        assert_eq!(turn["content"], "Checking.");
+        assert_eq!(turn["reasoning_content"], "look it up");
+        assert_eq!(turn["tool_calls"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            turn["generation"],
+            serde_json::json!({"model": "m", "tokens": [1, 2, 3], "thinking": true})
+        );
+        assert!(!messages[3].contains_key("generation"));
     }
 
     #[test]
