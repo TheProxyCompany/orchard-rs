@@ -56,6 +56,13 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// Whether the engine that loaded this model accepts `tokens` layout segments.
+    pub fn takes_token_segments(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|c| c.contains_key("token_segments"))
+    }
+
     pub fn require_formatter(&self) -> std::result::Result<&ChatFormatter, crate::error::Error> {
         self.formatter.as_deref().ok_or_else(|| {
             crate::error::Error::ModelNotReady(format!(

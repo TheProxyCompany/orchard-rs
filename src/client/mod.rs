@@ -1140,6 +1140,7 @@ fn build_chat_payload(
         audio_buffers,
         capabilities: convert_capabilities(&capabilities),
         layout: convert_layout(&layout_segments),
+        token_segments: Vec::new(),
         max_generated_tokens: params.max_tokens,
         temperature: params.temperature,
         top_p: params.top_p,
