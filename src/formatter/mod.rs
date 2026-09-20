@@ -1011,7 +1011,14 @@ mod tests {
             )
             .unwrap();
             let formatter = ChatFormatter::new(model_dir.path()).unwrap();
-            for thinking in [false, true] {
+            // The client renames `assistant` to `agent` before rendering; both must work.
+            let cases = [
+                (false, "assistant"),
+                (true, "assistant"),
+                (false, "agent"),
+                (true, "agent"),
+            ];
+            for (thinking, role) in cases {
                 let asked = [
                     message("system", "Be brief."),
                     message("user", "first question"),
@@ -1020,7 +1027,7 @@ mod tests {
                     .apply_template(&asked, true, thinking, None, None)
                     .unwrap();
 
-                let mut reply = message("assistant", "ignored: the marker stands for the reply");
+                let mut reply = message(role, "ignored: the marker stands for the reply");
                 reply.insert("generated".into(), serde_json::json!("\u{e000}0\u{e001}"));
                 reply.insert("generated_thinking".into(), serde_json::json!(thinking));
                 let mut next = asked.to_vec();
@@ -1046,7 +1053,7 @@ mod tests {
                         conversation(next_thinking)
                     );
                     if !second.starts_with(&expected) {
-                        broken.push(format!("{model_type} (generated with thinking={thinking}, next asked with thinking={next_thinking})"));
+                        broken.push(format!("{model_type} as {role} (generated with thinking={thinking}, next asked with thinking={next_thinking})"));
                     }
                 }
             }
@@ -1069,8 +1076,8 @@ mod tests {
                 ("content".to_string(), serde_json::json!(content)),
             ])
         };
-        let reply = |content: &str, reasoning: &str| {
-            let mut reply = message("assistant", content);
+        let reply_as = |role: &str, content: &str, reasoning: &str| {
+            let mut reply = message(role, content);
             reply.insert("reasoning_content".into(), serde_json::json!(reasoning));
             reply
         };
@@ -1106,36 +1113,40 @@ mod tests {
             .unwrap();
             let formatter = ChatFormatter::new(model_dir.path()).unwrap();
             let thinking = formatter.supports_native_thinking();
-            let two_turns = [
-                message("system", "Be brief."),
-                message("user", "first question"),
-                reply("first answer", "FIRST-REASONING"),
-                message("user", "second question"),
-            ];
-            let mut three_turns = two_turns.to_vec();
-            three_turns.extend([
-                reply("second answer", "SECOND-REASONING"),
-                message("user", "third question"),
-            ]);
+            // The client renames `assistant` to `agent` before rendering; both must work.
+            for role in ["assistant", "agent"] {
+                let reply = |content: &str, reasoning: &str| reply_as(role, content, reasoning);
+                let two_turns = [
+                    message("system", "Be brief."),
+                    message("user", "first question"),
+                    reply("first answer", "FIRST-REASONING"),
+                    message("user", "second question"),
+                ];
+                let mut three_turns = two_turns.to_vec();
+                three_turns.extend([
+                    reply("second answer", "SECOND-REASONING"),
+                    message("user", "third question"),
+                ]);
 
-            // Rendered without a generation prompt, the shorter conversation is where the longer one starts.
-            let shorter = formatter
-                .apply_template(&two_turns, false, thinking, None, None)
-                .unwrap();
-            let longer = formatter
-                .apply_template(&three_turns, false, thinking, None, None)
-                .unwrap();
-            if !longer.starts_with(&shorter) {
-                broken.push(format!(
-                    "{model_type}: an earlier turn renders differently once later messages exist"
+                // Rendered without a generation prompt, the shorter conversation is where the longer one starts.
+                let shorter = formatter
+                    .apply_template(&two_turns, false, thinking, None, None)
+                    .unwrap();
+                let longer = formatter
+                    .apply_template(&three_turns, false, thinking, None, None)
+                    .unwrap();
+                if !longer.starts_with(&shorter) {
+                    broken.push(format!(
+                    "{model_type} as {role}: an earlier turn renders differently once later messages exist"
                 ));
-            }
-            if thinking
-                && !(longer.contains("FIRST-REASONING") && longer.contains("SECOND-REASONING"))
-            {
-                broken.push(format!(
-                    "{model_type}: reasoning dropped from an earlier turn"
-                ));
+                }
+                if thinking
+                    && !(longer.contains("FIRST-REASONING") && longer.contains("SECOND-REASONING"))
+                {
+                    broken.push(format!(
+                        "{model_type} as {role}: reasoning dropped from an earlier turn"
+                    ));
+                }
             }
         }
         assert!(broken.is_empty(), "{}", broken.join("\n"));

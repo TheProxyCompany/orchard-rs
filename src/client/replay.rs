@@ -21,13 +21,23 @@ const MARK_OPEN: char = '\u{E000}';
 const MARK_CLOSE: char = '\u{E001}';
 
 /// Replace each assistant message's `generation` record with a marker for the template
-/// (`generated`) and the thinking mode it was generated in (`generated_thinking`), returning the ids the
-/// markers stand for. `model` is the model being asked, when its engine takes token
-/// segments; records from any other model are dropped and the message renders as text.
+/// (`generated`) and the thinking mode it was generated in (`generated_thinking`),
+/// returning the ids the markers stand for. `model` is the model being asked, when its
+/// engine takes token segments. A record from any other model, or one that is not a
+/// non-empty list of token ids, is dropped and the message renders as text; so is every
+/// record when the conversation already contains a marker character, since text that
+/// looks like a marker must never be swapped for ids.
 pub(super) fn take_replays(
     messages: &[Message],
     model: Option<&str>,
 ) -> (Vec<Message>, Vec<Vec<i32>>) {
+    let marker_free = || {
+        !messages
+            .iter()
+            .flat_map(|m| m.values())
+            .any(|v| v.to_string().contains(MARK_OPEN))
+    };
+    let model = model.filter(|_| marker_free());
     let mut replays = Vec::new();
     let messages = messages
         .iter()
@@ -36,18 +46,17 @@ pub(super) fn take_replays(
             let Some(generation) = message.remove("generation") else {
                 return message;
             };
-            let tokens: Vec<i32> = generation
-                .get("tokens")
-                .and_then(Value::as_array)
-                .map(|ids| {
-                    ids.iter()
-                        .filter_map(|id| id.as_i64().map(|id| id as i32))
-                        .collect()
-                })
-                .unwrap_or_default();
             let same_model =
                 model.is_some() && generation.get("model").and_then(Value::as_str) == model;
-            if same_model && !tokens.is_empty() {
+            let tokens = generation
+                .get("tokens")
+                .and_then(Value::as_array)
+                .and_then(|ids| {
+                    ids.iter()
+                        .map(|id| id.as_u64().and_then(|id| i32::try_from(id).ok()))
+                        .collect::<Option<Vec<i32>>>()
+                });
+            if let Some(tokens) = tokens.filter(|tokens| same_model && !tokens.is_empty()) {
                 message.insert(
                     "generated".into(),
                     json!(format!("{MARK_OPEN}{}{MARK_CLOSE}", replays.len())),
@@ -65,12 +74,17 @@ pub(super) fn take_replays(
 }
 
 /// Cut the markers out of the prompt text and put a `tokens` segment where each one was.
-/// Returns the prompt, the layout, and the token segments in layout order.
+/// Returns the prompt, the layout, and the token segments in layout order. Markers are
+/// taken in order, once each; anything else stays in the text around it, and a request
+/// with nothing to replay comes back exactly as it went in.
 pub(super) fn splice_replays(
     prompt: &str,
     layout: &[LayoutEntry],
     replays: &[Vec<i32>],
 ) -> (String, Vec<LayoutEntry>, Vec<Vec<i32>>) {
+    if replays.is_empty() {
+        return (prompt.to_string(), layout.to_vec(), Vec::new());
+    }
     let mut text = String::with_capacity(prompt.len());
     let (mut spliced, mut token_segments) = (Vec::with_capacity(layout.len()), Vec::new());
     let mut cursor = 0;
@@ -79,7 +93,7 @@ pub(super) fn splice_replays(
             spliced.push(entry.clone());
             continue;
         }
-        let mut rest = &prompt[cursor..cursor + entry.length];
+        let segment = &prompt[cursor..cursor + entry.length];
         cursor += entry.length;
         let mut push_text = |part: &str, spliced: &mut Vec<LayoutEntry>| {
             if !part.is_empty() {
@@ -90,25 +104,35 @@ pub(super) fn splice_replays(
                 });
             }
         };
-        while let Some((before, marked)) = rest.split_once(MARK_OPEN) {
-            // Anything that is not a marker this request made stays as text.
-            let replay = marked.split_once(MARK_CLOSE).and_then(|(index, after)| {
-                Some((replays.get(index.parse::<usize>().ok()?)?, after))
-            });
-            let Some((ids, after)) = replay else {
-                push_text(&rest[..before.len() + MARK_OPEN.len_utf8()], &mut spliced);
-                rest = marked;
-                continue;
-            };
-            push_text(before, &mut spliced);
-            spliced.push(LayoutEntry {
-                segment_type: "tokens".into(),
-                length: ids.len(),
-            });
-            token_segments.push(ids.clone());
-            rest = after;
+        let (mut run_start, mut scan) = (0, 0);
+        while let Some(open) = segment[scan..].find(MARK_OPEN).map(|at| scan + at) {
+            let digits_start = open + MARK_OPEN.len_utf8();
+            let digits = segment[digits_start..]
+                .bytes()
+                .take(9)
+                .take_while(u8::is_ascii_digit)
+                .count();
+            let close = digits_start + digits;
+            let next = token_segments.len();
+            let ids = segment[close..]
+                .starts_with(MARK_CLOSE)
+                .then(|| segment[digits_start..close].parse::<usize>().ok())
+                .flatten()
+                .filter(|index| *index == next)
+                .and_then(|index| replays.get(index));
+            scan = digits_start;
+            if let Some(ids) = ids {
+                push_text(&segment[run_start..open], &mut spliced);
+                spliced.push(LayoutEntry {
+                    segment_type: "tokens".into(),
+                    length: ids.len(),
+                });
+                token_segments.push(ids.clone());
+                run_start = close + MARK_CLOSE.len_utf8();
+                scan = run_start;
+            }
         }
-        push_text(rest, &mut spliced);
+        push_text(&segment[run_start..], &mut spliced);
     }
     (text, spliced, token_segments)
 }
@@ -164,15 +188,62 @@ mod tests {
     }
 
     #[test]
-    fn marker_characters_a_user_typed_are_left_alone() {
-        let prompt = format!("a{MARK_OPEN}9{MARK_CLOSE}b{MARK_OPEN}c");
-        let layout = [LayoutEntry {
-            segment_type: "text".into(),
-            length: prompt.len(),
-        }];
-        let (text, layout, token_segments) = splice_replays(&prompt, &layout, &[vec![1]]);
-        assert_eq!(text, prompt);
-        assert!(token_segments.is_empty());
-        assert_eq!(layout.iter().map(|e| e.length).sum::<usize>(), prompt.len());
+    fn a_record_that_is_not_a_clean_list_of_token_ids_stays_text() {
+        for tokens in [
+            json!([]),
+            json!([7, -1]),
+            json!([7, 2_147_483_648u64]),
+            json!([7, "8"]),
+            json!([7, 8.5]),
+            json!("7"),
+        ] {
+            let history = [assistant(json!({"model": "m", "tokens": tokens}))];
+            let (messages, replays) = take_replays(&history, Some("m"));
+            assert!(
+                replays.is_empty() && !messages[0].contains_key("generated"),
+                "{tokens}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_marker_character_in_the_conversation_turns_replay_off() {
+        let mut typed = assistant(json!({"model": "m", "tokens": [7]}));
+        typed.insert(
+            "content".into(),
+            json!([{"type": "text", "text": format!("x{MARK_OPEN}0{MARK_CLOSE}")}]),
+        );
+        let (messages, replays) = take_replays(&[typed], Some("m"));
+        assert!(replays.is_empty() && !messages[0].contains_key("generated"));
+    }
+
+    #[test]
+    fn only_the_next_marker_in_order_is_spliced_and_nothing_else_moves() {
+        let layout = |prompt: &str| {
+            vec![LayoutEntry {
+                segment_type: "text".into(),
+                length: prompt.len(),
+            }]
+        };
+        // Nothing to replay: the request is untouched, stray marker characters included.
+        let stray = format!("a{MARK_OPEN}9{MARK_CLOSE}b{MARK_OPEN}c");
+        let (text, entries, ids) = splice_replays(&stray, &layout(&stray), &[]);
+        assert_eq!(
+            (text.as_str(), entries.len(), ids.len()),
+            (stray.as_str(), 1, 0)
+        );
+        // Out of order, repeated, unterminated and over-long markers stay inside the text.
+        let prompt = format!(
+            "{MARK_OPEN}1{MARK_CLOSE}a{MARK_OPEN}0{MARK_CLOSE}b{MARK_OPEN}0{MARK_CLOSE}{MARK_OPEN}{}{MARK_CLOSE}{MARK_OPEN}1",
+            "9".repeat(5000)
+        );
+        let (text, entries, ids) = splice_replays(&prompt, &layout(&prompt), &[vec![1], vec![2]]);
+        assert_eq!(ids, vec![vec![1]]);
+        let shape: Vec<_> = entries.iter().map(|e| e.segment_type.as_str()).collect();
+        assert_eq!(shape, ["text", "tokens", "text"]);
+        assert_eq!(
+            text.len() + format!("{MARK_OPEN}0{MARK_CLOSE}").len(),
+            prompt.len()
+        );
     }
 }
