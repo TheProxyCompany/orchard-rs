@@ -2,6 +2,8 @@
 //! identical turn 2 with the prefix cache disabled, and compare generated token ids.
 //!
 //!   MODEL=allenai/Olmo-Hybrid-Instruct-DPO-7B cargo run --release --example two_turn_check
+//!
+//! Exits non-zero unless the RESULT is identical.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -79,6 +81,14 @@ async fn turn(
     ))
 }
 
+/// The exit status follows the RESULT line.
+fn verdict(differing: usize) -> Result<(), Box<dyn std::error::Error>> {
+    if differing > 0 {
+        return Err("the warm turn differs from the cache-off turn".into());
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
@@ -154,5 +164,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
-    Ok(())
+    verdict(usize::from(warm != cold))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_differing_run_fails_the_process() {
+        assert!(super::verdict(0).is_ok());
+        assert!(super::verdict(1).is_err());
+    }
 }

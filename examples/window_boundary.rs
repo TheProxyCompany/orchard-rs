@@ -5,6 +5,8 @@
 //! attention window.
 //!
 //!   MODEL=google/gemma-4-E2B-it cargo run --release --example window_boundary
+//!
+//! Exits non-zero when any run differs from its cache-off run.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -62,6 +64,15 @@ async fn run(
     Ok((ids, prompt_tokens as usize, cached as usize, tops))
 }
 
+/// The exit status follows the RESULT line. Whether the boundary resume was exercised
+/// is information only.
+fn verdict(mismatches: usize) -> Result<(), Box<dyn std::error::Error>> {
+    if mismatches > 0 {
+        return Err(format!("{mismatches} prompt lengths differ from the cache-off run").into());
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
@@ -114,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             run(&client, &model, messages.clone(), true).await?;
         let (cold, _, _, cold_tops) = run(&client, &model, messages, false).await?;
         let same = warm == cold;
-        mismatches += usize::from(!same);
+        mismatches += usize::from(!same || first != cold);
         hit_boundary |= cached % page == page - 1;
         println!(
             "{prompt:>10} | {cached:>10} | {:>14} | {}",
@@ -161,5 +172,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "was NOT exercised"
         }
     );
-    Ok(())
+    verdict(mismatches)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_differing_run_fails_the_process() {
+        assert!(super::verdict(0).is_ok());
+        assert!(super::verdict(1).is_err());
+    }
 }
