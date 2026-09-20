@@ -53,7 +53,7 @@ pub(super) fn take_replays(
                     json!(format!("{MARK_OPEN}{}{MARK_CLOSE}", replays.len())),
                 );
                 message.insert(
-                    "thinking".into(),
+                    "generated_thinking".into(),
                     generation.get("thinking").cloned().unwrap_or(json!(false)),
                 );
                 replays.push(tokens);
