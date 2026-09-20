@@ -117,15 +117,20 @@ fn cache_root() -> PathBuf {
     if let Some(root) = non_empty_env("ORCHARD_CACHE_ROOT") {
         return PathBuf::from(root);
     }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    let base = if cfg!(target_os = "macos") {
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    platform_cache_dir(&home).join("com.theproxycompany")
+}
+
+/// The per-user cache directory: `~/Library/Caches` on macOS, else
+/// `XDG_CACHE_HOME` or `~/.cache`.
+pub(crate) fn platform_cache_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
         home.join("Library/Caches")
     } else {
         non_empty_env("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".cache"))
-    };
-    base.join("com.theproxycompany")
+    }
 }
 
 /// Get the IPC root directory for socket files.

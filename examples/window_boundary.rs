@@ -8,26 +8,17 @@
 //!
 //! Exits non-zero when any run differs from its cache-off run.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+mod common;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-type Message = HashMap<String, serde_json::Value>;
-
-fn msg(role: &str, content: &str) -> Message {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
+use common::{msg, run_turn, Message};
+use orchard::{Client, SamplingParams};
 
 async fn run(
     client: &Client,
     model: &str,
     messages: Vec<Message>,
     prefix_cache: bool,
-) -> Result<(Vec<i32>, usize, usize, Vec<String>), Box<dyn std::error::Error>> {
+) -> Result<(Vec<i32>, usize, usize, Vec<String>), common::Error> {
     let params = SamplingParams {
         max_tokens: 24,
         temperature: 0.0,
@@ -37,14 +28,8 @@ async fn run(
         top_logprobs: 3,
         ..Default::default()
     };
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
-        unreachable!()
-    };
-    let (mut ids, mut prompt_tokens, mut cached, mut tops) = (Vec::new(), 0, 0, Vec::new());
-    while let Some(d) = stream.recv().await {
-        if let Some(e) = d.error {
-            return Err(e.into());
-        }
+    let mut tops = Vec::new();
+    let turn = run_turn(client, model, messages, params, |d| {
         if !d.top_logprobs.is_empty() {
             tops.push(
                 d.top_logprobs
@@ -54,14 +39,9 @@ async fn run(
                     .join(", "),
             );
         }
-        ids.extend(d.tokens.iter().copied());
-        prompt_tokens = prompt_tokens.max(d.prompt_token_count.unwrap_or(0));
-        cached = cached.max(d.cached_token_count.unwrap_or(0));
-        if d.is_final_delta {
-            break;
-        }
-    }
-    Ok((ids, prompt_tokens as usize, cached as usize, tops))
+    })
+    .await?;
+    Ok((turn.ids, turn.prompt_tokens, turn.cached, tops))
 }
 
 /// The exit status follows the RESULT line. Whether the boundary resume was exercised
@@ -74,12 +54,10 @@ fn verdict(mismatches: usize) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), common::Error> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
     let page: usize = 16;
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     registry.ensure_loaded(&model).await?;
 
     // Comfortably past a 512-token window.

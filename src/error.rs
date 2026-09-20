@@ -71,8 +71,6 @@ pub enum Error {
     StartupFailed(String),
     #[error("Engine shutdown failed: {0}")]
     ShutdownFailed(String),
-    #[error("Engine already closed")]
-    EngineClosed,
 
     // === Fetch Errors ===
     #[error("HTTP error: {0}")]
@@ -83,8 +81,6 @@ pub enum Error {
     Integrity { expected: String, actual: String },
     #[error("Invalid manifest: {0}")]
     InvalidManifest(String),
-    #[error("No compatible binary for this platform")]
-    NoBinaryForPlatform,
     #[error("Extract error: {0}")]
     Extract(String),
 

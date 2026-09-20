@@ -8,31 +8,17 @@ mod response;
 mod responses;
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::defaults;
-
-/// Global runtime for synchronous operations.
-/// Uses current_thread for efficiency - sync callers don't need multi-thread.
-static SYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
-    SYNC_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create sync runtime")
-    })
-}
-
+use crate::error::{Error, Result};
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
@@ -64,54 +50,6 @@ pub use responses::{
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
     ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
-
-/// Errors that can occur during client operations.
-#[derive(Error, Debug)]
-pub enum ClientError {
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    #[error("{0}")]
-    ModelNotReady(String),
-
-    #[error("{0}")]
-    Ipc(String),
-
-    #[error("{0}")]
-    Formatter(String),
-
-    #[error("{0}")]
-    Multimodal(String),
-
-    #[error("{0}")]
-    RequestFailed(String),
-}
-
-impl From<crate::error::Error> for ClientError {
-    fn from(err: crate::error::Error) -> Self {
-        use crate::error::Error;
-        match err {
-            Error::ModelNotFound(s) => ClientError::ModelNotFound(s),
-            Error::ModelNotReady(s) => ClientError::ModelNotReady(s),
-            Error::NotConnected
-            | Error::EngineDead
-            | Error::InvalidResponse
-            | Error::Nng(_)
-            | Error::Timeout
-            | Error::ChannelClosed => ClientError::Ipc(err.to_string()),
-            Error::Template(s) => ClientError::Formatter(s),
-            Error::InvalidImageUrl
-            | Error::InvalidBase64
-            | Error::MissingContentType(_, _)
-            | Error::InvalidContent
-            | Error::PlaceholderMismatch(_, _)
-            | Error::EmptyRequest => ClientError::Multimodal(err.to_string()),
-            _ => ClientError::RequestFailed(err.to_string()),
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, ClientError>;
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 
@@ -293,6 +231,19 @@ impl Default for SamplingParams {
     }
 }
 
+/// An explicit (non-zero) seed wins. Otherwise deterministic requests omit the
+/// seed so the engine pins its own deterministic default, and everything else
+/// gets a fresh random one.
+fn pick_seed(seed: u64, deterministic: bool) -> Option<u64> {
+    if seed != 0 {
+        Some(seed)
+    } else if deterministic {
+        None
+    } else {
+        Some(rand::thread_rng().gen::<u64>())
+    }
+}
+
 fn tool_choice_to_string(tool_choice: Option<&Value>) -> String {
     match tool_choice {
         None | Some(Value::Null) => "auto".to_string(),
@@ -342,7 +293,7 @@ fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Val
 
 /// A high-level client for the Proxy Inference Engine.
 ///
-/// Provides both synchronous and asynchronous interfaces for LLM inference.
+/// Provides an asynchronous interface for LLM inference.
 #[derive(Clone)]
 pub struct Client {
     ipc: Arc<IPCClient>,
@@ -439,7 +390,7 @@ impl Client {
         if matches!(status, "ok" | "accepted") {
             Ok(())
         } else {
-            Err(ClientError::Ipc(format!(
+            Err(Error::Other(format!(
                 "Cancel request {} failed: {}",
                 request_id, response
             )))
@@ -451,7 +402,7 @@ impl Client {
         self.registry
             .cancel_activation(model_id)
             .await
-            .map_err(ClientError::Ipc)
+            .map_err(Error::Other)
     }
 
     /// Perform asynchronous chat completion.
@@ -471,7 +422,6 @@ impl Client {
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
         let request_model_id = info.model_id.as_str();
-        let params = sampling_with_profile_defaults(formatter, &params);
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -488,132 +438,24 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-            formatter,
-            chat_reasoning_requested(formatter, &params),
-            &params.reasoning_effort,
-        );
-
-        // Build multimodal content (pass instructions if provided)
-        let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(formatter, &messages, params.instructions.as_deref())
-                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        if messages_for_template.is_empty() {
-            return Err(ClientError::RequestFailed(
-                "Chat request must include at least one message".into(),
-            ));
-        }
-        tracing::trace!(
-            request_id,
-            model_id = %model_id,
-            messages_for_template = ?messages_for_template,
-            "Chat messages after multimodal expansion"
-        );
-        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-        let template_tools =
-            (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-        // Apply template with reasoning flag
-        let prompt_text = formatter
-            .apply_template_with_tools(
-                &messages_for_template,
-                true,
-                reasoning_flag,
-                params.task_name.as_deref(),
-                reasoning_effort.as_deref(),
-                template_tools,
-            )
-            .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-        // Build layout for multimodal content
-        let layout_segments = build_multimodal_layout(
-            formatter,
-            &prompt_text,
-            &image_buffers,
-            &audio_buffers,
-            &capabilities,
-            &content_order,
-        )
-        .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+        // The span gives build_chat_payload's trace event the request it belongs to.
+        let prompt_payload = tracing::trace_span!("chat_payload", request_id, model_id = %model_id)
+            .in_scope(|| build_chat_payload(formatter, &messages, &params))?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
-            prompt_chars = final_prompt.chars().count(),
-            image_count = image_buffers.len(),
-            capability_count = capabilities.len(),
-            layout_segment_count = layout_segments.len(),
+            prompt_chars = prompt_payload.prompt.chars().count(),
+            image_count = prompt_payload.image_buffers.len(),
+            capability_count = prompt_payload.capabilities.len(),
+            layout_segment_count = prompt_payload.layout.len(),
             "Prepared chat prompt payload"
         );
         tracing::trace!(
             request_id,
             model_id = %model_id,
-            prompt = %final_prompt,
+            prompt = %prompt_payload.prompt,
             "Chat prompt sent to PIE"
         );
-
-        // Core tools are rendered in the prompt; active tools drive PSE grammar.
-        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-        let response_format_json = params
-            .response_format
-            .as_ref()
-            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-            .unwrap_or_default();
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-        // Build PromptPayload with full multimodal data
-        // Generate unique RNG seed if not explicitly provided
-        let rng_seed = if params.rng_seed != 0 {
-            Some(params.rng_seed)
-        } else if params.deterministic {
-            // Omit the seed: the engine pins its deterministic default.
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        };
-
-        let prompt_payload = PromptPayload {
-            prompt: final_prompt,
-            image_buffers,
-            audio_buffers,
-            capabilities: convert_capabilities(&capabilities),
-            layout: convert_layout(&layout_segments),
-            max_generated_tokens: params.max_tokens,
-            temperature: params.temperature,
-            top_p: params.top_p,
-            top_k: params.top_k,
-            min_p: params.min_p,
-            rng_seed,
-            deterministic: params.deterministic,
-            stop_sequences: params.stop.clone(),
-            num_candidates: params.n,
-            best_of: params.best_of,
-            final_candidates: params.final_candidates,
-            frequency_penalty: params.frequency_penalty,
-            presence_penalty: params.presence_penalty,
-            repetition_penalty: params.repetition_penalty,
-            repetition_context_size: params.repetition_context_size,
-            top_logprobs: params.top_logprobs,
-            logit_bias: params.logit_bias.clone(),
-            tool_schemas_json,
-            active_tool_schemas_json,
-            tool_calling_tokens,
-            output_frame_tokens,
-            thinking_tokens,
-            tool_choice,
-            min_tool_calls: 1,
-            max_tool_calls,
-            response_format_json,
-            modal_options_json: String::new(),
-            task_name: params.task_name.clone(),
-            reasoning_effort,
-            prefix_cache: params.prefix_cache,
-        };
 
         // Use unified batch request path (even for single prompts)
         tracing::debug!(
@@ -646,7 +488,7 @@ impl Client {
                 match rx.recv().await {
                     Some(delta) => {
                         if let Some(message) = delta_error_message(&delta) {
-                            return Err(ClientError::RequestFailed(message));
+                            return Err(Error::Other(message));
                         }
 
                         let candidate_index = delta.candidate_index.unwrap_or(0) as usize;
@@ -683,7 +525,7 @@ impl Client {
                         }
                     }
                     None => {
-                        return Err(ClientError::RequestFailed(
+                        return Err(Error::Other(
                             "Chat response channel closed before completion".to_string(),
                         ));
                     }
@@ -700,36 +542,6 @@ impl Client {
                 selected,
                 total_completion_tokens,
             )))
-        }
-    }
-
-    /// Perform synchronous chat completion (blocking).
-    ///
-    /// Handles nested async contexts properly - safe to call from any context.
-    pub fn chat(
-        &self,
-        model_id: &str,
-        messages: Vec<HashMap<String, serde_json::Value>>,
-        params: SamplingParams,
-    ) -> Result<ClientResponse> {
-        let future = async {
-            match self.achat(model_id, messages, params, false).await? {
-                ChatResult::Complete(response) => Ok(response),
-                ChatResult::Stream(_) => Err(ClientError::RequestFailed(
-                    "Unexpected stream result".into(),
-                )),
-            }
-        };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                // Already in async context - use block_in_place to avoid panic
-                tokio::task::block_in_place(|| handle.block_on(future))
-            }
-            Err(_) => {
-                // Not in async context - use the global sync runtime
-                get_sync_runtime().block_on(future)
-            }
         }
     }
 
@@ -768,7 +580,7 @@ impl Client {
             return Ok(BatchChatResult::Complete(Vec::new()));
         }
         if params_by_prompt.len() != conversations.len() {
-            return Err(ClientError::RequestFailed(format!(
+            return Err(Error::Other(format!(
                 "params_by_prompt length ({}) does not match batch size ({})",
                 params_by_prompt.len(),
                 conversations.len()
@@ -789,139 +601,44 @@ impl Client {
             "Building batched chat request"
         );
 
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
-            let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
-            let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-                formatter,
-                chat_reasoning_requested(formatter, &params),
-                &params.reasoning_effort,
-            );
-            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-            let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-            let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-            let response_format_json = params
-                .response_format
-                .as_ref()
-                .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-                .unwrap_or_default();
-            let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-            let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-
-            // Build multimodal content (pass instructions if provided)
-            let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-                build_multimodal_messages(formatter, messages, params.instructions.as_deref())
-                    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            if messages_for_template.is_empty() {
-                return Err(ClientError::RequestFailed(
-                    "Chat request must include at least one message".into(),
-                ));
-            }
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
                 messages = ?messages,
-                messages_for_template = ?messages_for_template,
                 "Prepared batch messages for prompt"
             );
-            let template_tools =
-                (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-            // Apply template with reasoning flag
-            let prompt_text = formatter
-                .apply_template_with_tools(
-                    &messages_for_template,
-                    true,
-                    reasoning_flag,
-                    params.task_name.as_deref(),
-                    reasoning_effort.as_deref(),
-                    template_tools,
-                )
-                .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-            // Build layout for multimodal content
-            let layout_segments = build_multimodal_layout(
-                formatter,
-                &prompt_text,
-                &image_buffers,
-                &audio_buffers,
-                &capabilities,
-                &content_order,
+            let payload = tracing::trace_span!(
+                "chat_payload",
+                request_id,
+                model_id = %model_id,
+                prompt_index
             )
-            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+            .in_scope(|| {
+                build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])
+            })?;
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt_chars = final_prompt.chars().count(),
-                image_count = image_buffers.len(),
-                capability_count = capabilities.len(),
-                layout_segment_count = layout_segments.len(),
+                prompt_chars = payload.prompt.chars().count(),
+                image_count = payload.image_buffers.len(),
+                capability_count = payload.capabilities.len(),
+                layout_segment_count = payload.layout.len(),
                 "Prepared batched prompt payload"
             );
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt = %final_prompt,
+                prompt = %payload.prompt,
                 "Batch prompt sent to PIE"
             );
-
-            // Generate unique RNG seed for EACH prompt in batch
-            let rng_seed = if params.rng_seed != 0 {
-                Some(params.rng_seed)
-            } else if params.deterministic {
-                // Omit the seed: the engine pins its deterministic default.
-                None
-            } else {
-                Some(rand::thread_rng().gen::<u64>())
-            };
-            prompt_payloads.push(PromptPayload {
-                prompt: final_prompt,
-                image_buffers,
-                audio_buffers,
-                capabilities: convert_capabilities(&capabilities),
-                layout: convert_layout(&layout_segments),
-                max_generated_tokens: params.max_tokens,
-                temperature: params.temperature,
-                top_p: params.top_p,
-                top_k: params.top_k,
-                min_p: params.min_p,
-                rng_seed,
-                deterministic: params.deterministic,
-                stop_sequences: params.stop.clone(),
-                num_candidates: params.n,
-                best_of: params.best_of,
-                final_candidates: params.final_candidates,
-                frequency_penalty: params.frequency_penalty,
-                presence_penalty: params.presence_penalty,
-                repetition_penalty: params.repetition_penalty,
-                repetition_context_size: params.repetition_context_size,
-                top_logprobs: params.top_logprobs,
-                logit_bias: params.logit_bias.clone(),
-                tool_schemas_json: tool_schemas_json.clone(),
-                active_tool_schemas_json: active_tool_schemas_json.clone(),
-                tool_calling_tokens: tool_calling_tokens.clone(),
-                output_frame_tokens: output_frame_tokens.clone(),
-                thinking_tokens,
-                tool_choice: tool_choice.clone(),
-                min_tool_calls: 1,
-                max_tool_calls,
-                response_format_json: response_format_json.clone(),
-                modal_options_json: String::new(),
-                task_name: params.task_name.clone(),
-                reasoning_effort,
-                prefix_cache: params.prefix_cache,
-            });
+            prompt_payloads.push(payload);
         }
 
         // Send ONE batch request with all prompts
@@ -962,7 +679,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(message) = delta_error_message(&delta) {
-                        return Err(ClientError::RequestFailed(message));
+                        return Err(Error::Other(message));
                     }
 
                     let prompt_index = delta.prompt_index.unwrap_or(0);
@@ -978,7 +695,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Chat response channel closed before completion".to_string(),
                     ));
                 }
@@ -998,9 +715,9 @@ impl Client {
     /// Generate an embedding for a single text input.
     pub async fn aembed(&self, model_id: &str, text: &str) -> Result<Vec<f32>> {
         let mut embeddings = self.aembed_batch(model_id, vec![text.to_string()]).await?;
-        embeddings.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Embedding response missing result".to_string())
-        })
+        embeddings
+            .pop()
+            .ok_or_else(|| Error::Other("Embedding response missing result".to_string()))
     }
 
     /// Generate embeddings for multiple text inputs in a single IPC request.
@@ -1071,14 +788,12 @@ impl Client {
         let max_output_tokens = match options.as_mut() {
             Some(Value::Object(object)) => match object.remove("max_output_tokens") {
                 Some(value) => value.as_i64().filter(|value| *value >= 0).ok_or_else(|| {
-                    ClientError::RequestFailed(
-                        "max_output_tokens must be a non-negative integer".to_string(),
-                    )
+                    Error::Other("max_output_tokens must be a non-negative integer".to_string())
                 })? as i32,
                 None => 8192,
             },
             Some(_) => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Modal options must be a JSON object".to_string(),
                 ))
             }
@@ -1110,23 +825,6 @@ impl Client {
             &[prompt_payload],
         )?;
         collect_modal_artifacts(rx).await
-    }
-
-    /// Synchronous wrapper for native PIE audio generation.
-    pub fn generate_audio(
-        &self,
-        model_id: &str,
-        text: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let text = text.to_string();
-        let future = async move { self.agenerate_audio(&model_id, &text, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
     }
 
     /// Generate image artifacts with a native PIE image-generation model.
@@ -1168,23 +866,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE image generation.
-    pub fn generate_image(
-        &self,
-        model_id: &str,
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let prompt = prompt.to_string();
-        let future = async move { self.agenerate_image(&model_id, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Edit an input image with a native PIE image-to-image model.
     pub async fn aedit_image(
         &self,
@@ -1224,25 +905,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE image editing.
-    pub fn edit_image(
-        &self,
-        model_id: &str,
-        image: &[u8],
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let image = image.to_vec();
-        let prompt = prompt.to_string();
-        let future = async move { self.aedit_image(&model_id, &image, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Transcribe float32 PCM audio with a local speech-to-text model.
     pub async fn atranscribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
         if pcm.is_empty() {
@@ -1277,18 +939,6 @@ impl Client {
         )?;
 
         collect_transcription(rx).await
-    }
-
-    /// Synchronous speech-to-text wrapper.
-    pub fn transcribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
-        let model_id = model_id.to_string();
-        let pcm = pcm.to_vec();
-        let future = async move { self.atranscribe_audio(&model_id, &pcm).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
     }
 
     /// Warm each model's prefix cache with `messages`, concurrently.
@@ -1374,9 +1024,9 @@ impl Client {
         let mut results = self
             .aprefill_task_batch(model_id, vec![text.to_string()], task_name)
             .await?;
-        results.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Prefill task response missing result".to_string())
-        })
+        results
+            .pop()
+            .ok_or_else(|| Error::Other("Prefill task response missing result".to_string()))
     }
 
     /// Run a prefill-only task for multiple texts in one IPC request.
@@ -1410,7 +1060,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(error) = delta.error.clone() {
-                        return Err(ClientError::RequestFailed(error));
+                        return Err(Error::Other(error));
                     }
                     let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
                     let is_final = delta.is_final_delta;
@@ -1423,7 +1073,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Prefill task response channel closed before completion".to_string(),
                     ));
                 }
@@ -1431,6 +1081,100 @@ impl Client {
         }
         Ok(deltas_by_prompt)
     }
+}
+
+/// Build the PIE prompt payload for one chat conversation: profile sampling
+/// defaults, multimodal expansion, template, layout, tool schemas and seed.
+fn build_chat_payload(
+    formatter: &crate::formatter::ChatFormatter,
+    messages: &[HashMap<String, Value>],
+    params: &SamplingParams,
+) -> Result<PromptPayload> {
+    let params = sampling_with_profile_defaults(formatter, params);
+    let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+        formatter,
+        chat_reasoning_requested(formatter, &params),
+        &params.reasoning_effort,
+    );
+
+    // Build multimodal content (pass instructions if provided)
+    let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
+        build_multimodal_messages(formatter, messages, params.instructions.as_deref())?;
+
+    if messages_for_template.is_empty() {
+        return Err(Error::Other(
+            "Chat request must include at least one message".into(),
+        ));
+    }
+    tracing::trace!(
+        messages_for_template = ?messages_for_template,
+        "Chat messages after multimodal expansion"
+    );
+    // Core tools are rendered in the prompt; active tools drive PSE grammar.
+    let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+    let template_tools = (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
+
+    // Apply template with reasoning flag
+    let prompt_text = formatter.apply_template_with_tools(
+        &messages_for_template,
+        true,
+        reasoning_flag,
+        params.task_name.as_deref(),
+        reasoning_effort.as_deref(),
+        template_tools,
+    )?;
+
+    // Build layout for multimodal content
+    let layout_segments = build_multimodal_layout(
+        formatter,
+        &prompt_text,
+        &image_buffers,
+        &audio_buffers,
+        &capabilities,
+        &content_order,
+    )?;
+
+    Ok(PromptPayload {
+        prompt: formatter.strip_template_placeholders(&prompt_text),
+        image_buffers,
+        audio_buffers,
+        capabilities: convert_capabilities(&capabilities),
+        layout: convert_layout(&layout_segments),
+        max_generated_tokens: params.max_tokens,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        top_k: params.top_k,
+        min_p: params.min_p,
+        rng_seed: pick_seed(params.rng_seed, params.deterministic),
+        deterministic: params.deterministic,
+        stop_sequences: params.stop,
+        num_candidates: params.n,
+        best_of: params.best_of,
+        final_candidates: params.final_candidates,
+        frequency_penalty: params.frequency_penalty,
+        presence_penalty: params.presence_penalty,
+        repetition_penalty: params.repetition_penalty,
+        repetition_context_size: params.repetition_context_size,
+        top_logprobs: params.top_logprobs,
+        logit_bias: params.logit_bias,
+        tool_schemas_json: serialize_tool_schemas(&core_tool_schemas),
+        active_tool_schemas_json: serialize_tool_schemas(&active_tool_schemas),
+        tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
+        output_frame_tokens: formatter.get_output_frame_tokens().clone(),
+        thinking_tokens,
+        tool_choice: tool_choice_to_string(params.tool_choice.as_ref()),
+        min_tool_calls: 1,
+        max_tool_calls: params.max_tool_calls.unwrap_or(0).max(0),
+        response_format_json: params
+            .response_format
+            .as_ref()
+            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+            .unwrap_or_default(),
+        modal_options_json: String::new(),
+        task_name: params.task_name,
+        reasoning_effort,
+        prefix_cache: params.prefix_cache,
+    })
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -1458,47 +1202,23 @@ fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
 }
 
 fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
-    let prompt_len = prompt.len();
-
     PromptPayload {
-        prompt,
-        image_buffers: Vec::new(),
-        audio_buffers: Vec::new(),
-        capabilities: Vec::new(),
         layout: vec![LayoutEntry {
             segment_type: "text".to_string(),
-            length: prompt_len,
+            length: prompt.len(),
         }],
-        max_generated_tokens: 0,
+        prompt,
         temperature: defaults::TEMPERATURE,
         top_p: defaults::TOP_P,
         top_k: defaults::TOP_K,
-        min_p: 0.0,
         rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
         num_candidates: 1,
         best_of: Some(1),
         final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
         repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        ..Default::default()
     }
 }
 
@@ -1547,13 +1267,7 @@ fn build_modal_artifact_prompt_payload(
         top_p: sampling_params.top_p,
         top_k: sampling_params.top_k,
         min_p: sampling_params.min_p,
-        rng_seed: if sampling_params.rng_seed != 0 {
-            Some(sampling_params.rng_seed)
-        } else if sampling_params.deterministic {
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        },
+        rng_seed: pick_seed(sampling_params.rng_seed, sampling_params.deterministic),
         deterministic: sampling_params.deterministic,
         task_name: Some(task_name.to_string()),
         modal_options_json,
@@ -1563,13 +1277,8 @@ fn build_modal_artifact_prompt_payload(
 
 fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
     let audio_payload = encode_float32_pcm_bytes(pcm);
-    let audio_payload_size = audio_payload.len();
 
     PromptPayload {
-        prompt: String::new(),
-        image_buffers: Vec::new(),
-        audio_buffers: vec![audio_payload],
-        capabilities: Vec::new(),
         layout: vec![
             LayoutEntry {
                 segment_type: "text".to_string(),
@@ -1577,39 +1286,11 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
             },
             LayoutEntry {
                 segment_type: "audio".to_string(),
-                length: audio_payload_size,
+                length: audio_payload.len(),
             },
         ],
-        max_generated_tokens: 0,
-        temperature: defaults::TEMPERATURE,
-        top_p: defaults::TOP_P,
-        top_k: defaults::TOP_K,
-        min_p: 0.0,
-        rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
-        num_candidates: 1,
-        best_of: Some(1),
-        final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-        repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
-        tool_choice: "auto".to_string(),
-        min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        audio_buffers: vec![audio_payload],
+        ..build_embedding_prompt_payload(String::new())
     }
 }
 
@@ -1623,7 +1304,7 @@ fn modal_options_object<const N: usize>(
     }
     if let Some(options) = options {
         let Value::Object(options_object) = options else {
-            return Err(ClientError::RequestFailed(
+            return Err(Error::Other(
                 "Modal options must be a JSON object".to_string(),
             ));
         };
@@ -1633,15 +1314,16 @@ fn modal_options_object<const N: usize>(
 }
 
 fn modal_options_json(object: &Map<String, Value>) -> Result<String> {
-    serde_json::to_string(object).map_err(|err| ClientError::RequestFailed(err.to_string()))
+    serde_json::to_string(object).map_err(|err| Error::Other(err.to_string()))
 }
 
 fn modal_option_f64(object: &Map<String, Value>, key: &str) -> Result<Option<f64>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_f64().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a number"))
-        }),
+        Some(value) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a number"))),
     }
 }
 
@@ -1649,12 +1331,12 @@ fn modal_option_i32(object: &Map<String, Value>, key: &str) -> Result<Option<i32
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => {
-            let value = value.as_i64().ok_or_else(|| {
-                ClientError::RequestFailed(format!("modal option '{key}' must be an integer"))
-            })?;
-            i32::try_from(value).map(Some).map_err(|_| {
-                ClientError::RequestFailed(format!("modal option '{key}' is out of range"))
-            })
+            let value = value
+                .as_i64()
+                .ok_or_else(|| Error::Other(format!("modal option '{key}' must be an integer")))?;
+            i32::try_from(value)
+                .map(Some)
+                .map_err(|_| Error::Other(format!("modal option '{key}' is out of range")))
         }
     }
 }
@@ -1666,11 +1348,11 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
             if let Some(value) = value.as_u64() {
                 Ok(Some(value))
             } else if let Some(value) = value.as_i64() {
-                u64::try_from(value).map(Some).map_err(|_| {
-                    ClientError::RequestFailed(format!("modal option '{key}' must be non-negative"))
-                })
+                u64::try_from(value)
+                    .map(Some)
+                    .map_err(|_| Error::Other(format!("modal option '{key}' must be non-negative")))
             } else {
-                Err(ClientError::RequestFailed(format!(
+                Err(Error::Other(format!(
                     "modal option '{key}' must be an integer"
                 )))
             }
@@ -1681,9 +1363,10 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
 fn modal_option_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bool>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a boolean"))
-        }),
+        Some(value) => value
+            .as_bool()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a boolean"))),
     }
 }
 
@@ -1715,14 +1398,13 @@ async fn collect_modal_artifacts(
     let mut artifacts = Vec::new();
     while let Some(delta) = rx.recv().await {
         if let Some(error) = delta.error.clone() {
-            return Err(ClientError::RequestFailed(error));
+            return Err(Error::Other(error));
         }
         if let Some(encoded) = delta.modal_bytes_b64.as_deref() {
             let metadata = match delta.modal_metadata_json.as_deref() {
-                Some(raw) if !raw.is_empty() => Some(
-                    serde_json::from_str(raw)
-                        .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
-                ),
+                Some(raw) if !raw.is_empty() => {
+                    Some(serde_json::from_str(raw).map_err(|err| Error::Other(err.to_string()))?)
+                }
                 _ => None,
             };
             artifacts.push(ModalArtifact {
@@ -1733,14 +1415,14 @@ async fn collect_modal_artifacts(
                 metadata,
                 data: BASE64
                     .decode(encoded)
-                    .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
+                    .map_err(|err| Error::Other(err.to_string()))?,
             });
         }
         if delta.is_final_delta {
             return Ok(artifacts);
         }
     }
-    Err(ClientError::RequestFailed(
+    Err(Error::Other(
         "Modal artifact response channel closed before completion".to_string(),
     ))
 }
@@ -1757,7 +1439,7 @@ async fn collect_embeddings(
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
@@ -1775,7 +1457,7 @@ async fn collect_embeddings(
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Embedding response channel closed before completion".to_string(),
                 ));
             }
@@ -1787,7 +1469,7 @@ async fn collect_embeddings(
         .enumerate()
         .map(|(prompt_index, embedding)| {
             embedding.ok_or_else(|| {
-                ClientError::RequestFailed(format!(
+                Error::Other(format!(
                     "Embedding response missing bytes for prompt_index={}",
                     prompt_index
                 ))
@@ -1799,7 +1481,7 @@ async fn collect_embeddings(
 fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
     let mut chunks = bytes.chunks_exact(std::mem::size_of::<f32>());
     if !chunks.remainder().is_empty() {
-        return Err(ClientError::RequestFailed(format!(
+        return Err(Error::Other(format!(
             "Embedding payload length {} is not divisible by {}",
             bytes.len(),
             std::mem::size_of::<f32>()
@@ -1819,7 +1501,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 if let Some(content) = delta.content {
@@ -1831,7 +1513,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Speech-to-text response channel closed before completion".to_string(),
                 ));
             }
@@ -2205,6 +1887,14 @@ mod tests {
     }
 
     #[test]
+    fn test_pick_seed() {
+        assert_eq!(pick_seed(7, false), Some(7));
+        assert_eq!(pick_seed(7, true), Some(7));
+        assert_eq!(pick_seed(0, true), None);
+        assert!(pick_seed(0, false).is_some());
+    }
+
+    #[test]
     fn test_native_reasoning_settings_drop_llama3_fallback_tokens() {
         let model_dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -2458,6 +2148,121 @@ mod tests {
     }
 
     #[test]
+    fn test_build_chat_payload() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+        let params = SamplingParams {
+            rng_seed: 42,
+            max_tokens: 5,
+            ..Default::default()
+        };
+
+        let payload = build_chat_payload(&formatter, &messages, &params).unwrap();
+
+        assert!(payload.prompt.contains("hello"));
+        assert_eq!(payload.layout.len(), 1);
+        assert_eq!(payload.layout[0].length, payload.prompt.len());
+        assert_eq!(payload.max_generated_tokens, 5);
+        assert_eq!(payload.rng_seed, Some(42));
+        assert_eq!(payload.tool_choice, "auto");
+        assert_eq!(payload.min_tool_calls, 1);
+        assert!(build_chat_payload(&formatter, &[], &params).is_err());
+    }
+
+    /// Records the field names of the span build_chat_payload's trace event fires in.
+    #[derive(Default)]
+    struct PayloadEventSpans {
+        spans: std::sync::Mutex<Vec<Vec<&'static str>>>,
+        entered: std::sync::Mutex<Vec<u64>>,
+        seen: Arc<std::sync::Mutex<Vec<Vec<&'static str>>>>,
+    }
+
+    impl tracing::Subscriber for PayloadEventSpans {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, attrs: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            let mut spans = self.spans.lock().unwrap();
+            spans.push(attrs.metadata().fields().iter().map(|f| f.name()).collect());
+            tracing::span::Id::from_u64(spans.len() as u64)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            if event
+                .metadata()
+                .fields()
+                .field("messages_for_template")
+                .is_some()
+            {
+                let fields = match self.entered.lock().unwrap().last() {
+                    Some(id) => self.spans.lock().unwrap()[*id as usize - 1].clone(),
+                    None => Vec::new(),
+                };
+                self.seen.lock().unwrap().push(fields);
+            }
+        }
+        fn enter(&self, id: &tracing::span::Id) {
+            self.entered.lock().unwrap().push(id.into_u64());
+        }
+        fn exit(&self, _: &tracing::span::Id) {
+            self.entered.lock().unwrap().pop();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chat_payload_trace_event_carries_request_fields() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let model_id = model_dir.path().to_str().unwrap();
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        registry.schedule_model(model_id, false).await.unwrap();
+        registry.mark_ready(model_id).await;
+        let client = Client::new(Arc::new(IPCClient::new()), registry);
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hello")),
+        ])];
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let _guard = tracing::subscriber::set_default(PayloadEventSpans {
+            seen: Arc::clone(&seen),
+            ..Default::default()
+        });
+
+        // Both calls build the payload and then stop at the unconnected socket.
+        let single = client
+            .achat(model_id, messages.clone(), SamplingParams::default(), false)
+            .await;
+        assert!(matches!(single, Err(Error::NotConnected)));
+        let batch = client
+            .achat_batch(model_id, vec![messages], SamplingParams::default(), false)
+            .await;
+        assert!(matches!(batch, Err(Error::NotConnected)));
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                vec!["request_id", "model_id"],
+                vec!["request_id", "model_id", "prompt_index"],
+            ]
+        );
+    }
+
+    #[test]
     fn test_warm_params_keep_what_renders_the_prompt() {
         let turn = SamplingParams {
             max_tokens: 512,
@@ -2572,7 +2377,7 @@ mod tests {
     #[test]
     fn test_decode_embedding_bytes_rejects_partial_float() {
         let error = decode_embedding_bytes(&[0, 0, 128]).expect_err("decode should fail");
-        assert!(matches!(error, ClientError::RequestFailed(_)));
+        assert!(matches!(error, Error::Other(_)));
     }
 
     #[test]

@@ -214,11 +214,6 @@ impl IPCClient {
         Arc::clone(&self.management_socket)
     }
 
-    /// Set the event callback for handling engine events.
-    pub fn set_event_callback(&mut self, callback: EventCallback) {
-        self.event_callback = Some(callback);
-    }
-
     /// Connect to PIE IPC endpoints.
     pub fn connect(&mut self) -> Result<()> {
         let engine_pid_file = current_engine_pid_file()
@@ -455,19 +450,6 @@ impl IPCClient {
         })
         .await
         .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
-    }
-
-    /// Send a management command synchronously (blocking).
-    ///
-    /// Prefer `send_management_command_async` in async contexts.
-    pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
-        blocking_management_exchange(
-            &self.management_socket,
-            &self.engine_dead,
-            self.engine_pid_file.as_deref(),
-            command,
-            timeout,
-        )
     }
 
     /// Start the response listener thread.
@@ -782,6 +764,31 @@ fn rand_u64() -> u64 {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_generate_channel_id_uniqueness() {
+        use std::collections::HashSet;
+
+        // Generate 1000 channel IDs in rapid succession
+        let ids: HashSet<u64> = (0..1000).map(|_| rand_u64()).collect();
+
+        // All IDs must be unique (HashSet dedupes)
+        assert_eq!(
+            ids.len(),
+            1000,
+            "Channel IDs must be unique across rapid calls"
+        );
+
+        // All IDs must be non-zero
+        assert!(!ids.contains(&0), "Channel ID must never be zero");
+
+        // All IDs should have the current PID in upper 32 bits
+        let expected_pid = std::process::id() as u64 & 0xFFFFFFFF;
+        for id in &ids {
+            let id_pid = id >> 32;
+            assert_eq!(id_pid, expected_pid, "Upper 32 bits must be current PID");
+        }
+    }
 
     #[test]
     fn test_client_creation() {

@@ -5,26 +5,17 @@
 //!
 //! Exits non-zero unless the RESULT is identical.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+mod common;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-type Message = HashMap<String, serde_json::Value>;
-
-fn msg(role: &str, content: &str) -> Message {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
+use common::{msg, run_turn, Message};
+use orchard::{Client, SamplingParams};
 
 async fn turn(
     client: &Client,
     model: &str,
     messages: Vec<Message>,
     prefix_cache: bool,
-) -> Result<(String, Vec<i32>, usize, usize, Vec<f64>, String), Box<dyn std::error::Error>> {
+) -> Result<(String, Vec<i32>, usize, usize, Vec<f64>, String), common::Error> {
     let params = SamplingParams {
         max_tokens: 160,
         temperature: 0.0,
@@ -36,16 +27,9 @@ async fn turn(
         deterministic: std::env::var("DETERMINISTIC").is_ok(),
         ..Default::default()
     };
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
-        unreachable!()
-    };
-    let (mut ids, mut text, mut prompt_tokens, mut cached) = (Vec::new(), String::new(), 0, 0);
     // Per-token log-prob of the chosen token, from the running cumulative value.
     let (mut per_token, mut last_cum, mut first_top) = (Vec::<f64>::new(), 0.0f64, String::new());
-    while let Some(d) = stream.recv().await {
-        if let Some(e) = d.error {
-            return Err(e.into());
-        }
+    let turn = run_turn(client, model, messages, params, |d| {
         if first_top.is_empty() && !d.top_logprobs.is_empty() {
             first_top = d
                 .top_logprobs
@@ -61,21 +45,13 @@ async fn turn(
                 last_cum = cum;
             }
         }
-        ids.extend(d.tokens.iter().copied());
-        prompt_tokens = prompt_tokens.max(d.prompt_token_count.unwrap_or(0));
-        cached = cached.max(d.cached_token_count.unwrap_or(0));
-        if let Some(c) = d.content {
-            text.push_str(&c);
-        }
-        if d.is_final_delta {
-            break;
-        }
-    }
+    })
+    .await?;
     Ok((
-        text,
-        ids,
-        prompt_tokens as usize,
-        cached as usize,
+        turn.text,
+        turn.ids,
+        turn.prompt_tokens,
+        turn.cached,
         per_token,
         first_top,
     ))
@@ -90,11 +66,9 @@ fn verdict(differing: usize) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), common::Error> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     registry.ensure_loaded(&model).await?;
 
     let system = "You are a terse assistant. ".repeat(12);

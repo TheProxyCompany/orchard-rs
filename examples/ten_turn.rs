@@ -3,40 +3,15 @@
 //!
 //!   MODEL=google/gemma-4-E2B-it cargo run --release --example ten_turn
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
+mod common;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-type Message = HashMap<String, serde_json::Value>;
-
-fn msg(role: &str, content: &str) -> Message {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
-
-const QUESTIONS: [&str; 10] = [
-    "In about 80 words, explain why the sky is blue.",
-    "In about 80 words, why are sunsets red?",
-    "In about 80 words, why does the ocean look blue?",
-    "In about 80 words, why is the grass green?",
-    "In about 80 words, why is snow white?",
-    "In about 80 words, why do rainbows form?",
-    "In about 80 words, why is the moon sometimes orange?",
-    "In about 80 words, why do stars twinkle?",
-    "In about 80 words, why is fire yellow and sometimes blue?",
-    "In about 80 words, summarize everything above in one paragraph.",
-];
+use common::{msg, run_turn, QUESTIONS};
+use orchard::SamplingParams;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), common::Error> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     registry.ensure_loaded(&model).await?;
 
     let system = "You are a concise science explainer. ".repeat(10);
@@ -51,32 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             reasoning: Some(false),
             ..Default::default()
         };
-        let t = Instant::now();
-        let ChatResult::Stream(mut stream) = client
-            .achat(&model, transcript.clone(), params, true)
-            .await?
-        else {
-            unreachable!()
-        };
-        let (mut ttft, mut prompt, mut cached, mut n, mut text) =
-            (None, 0usize, 0usize, 0usize, String::new());
-        while let Some(d) = stream.recv().await {
-            if let Some(e) = d.error {
-                return Err(e.into());
-            }
-            if ttft.is_none() && !d.tokens.is_empty() {
-                ttft = Some(t.elapsed());
-            }
-            n += d.tokens.len();
-            prompt = prompt.max(d.prompt_token_count.unwrap_or(0) as usize);
-            cached = cached.max(d.cached_token_count.unwrap_or(0) as usize);
-            if let Some(c) = d.content {
-                text.push_str(&c);
-            }
-            if d.is_final_delta {
-                break;
-            }
-        }
+        let turn = run_turn(&client, &model, transcript.clone(), params, |_| {}).await?;
+        let (prompt, cached) = (turn.prompt_tokens, turn.cached);
         println!(
             "{:>4} | {:>10} | {:>6} | {:>4.0}% | {:>14} | {:>7.0} | {:>3}",
             i + 1,
@@ -84,12 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cached,
             100.0 * cached as f64 / prompt.max(1) as f64,
             prompt - cached,
-            ttft.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
-            n
+            turn.ttft_ms,
+            turn.ids.len()
         );
         total_prompt += prompt;
         total_cached += cached;
-        transcript.push(msg("assistant", &text));
+        transcript.push(msg("assistant", &turn.text));
     }
     println!(
         "total: {total_cached} of {total_prompt} prompt tokens served from cache ({:.0}%)",

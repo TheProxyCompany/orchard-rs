@@ -41,23 +41,13 @@ hf-hub = { version = "0.5", features = ["tokio"] }
 minijinja = { version = "2", features = ["json", "preserve_order"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 
-# File locking for cross-process coordination
-fs4 = "0.9"
-
 # Base64 decoding for multimodal content
 base64 = "0.22"
 
-# Regex for placeholder parsing
-regex = "1"
-
 # Utilities
 thiserror = "2"
-dirs = "5"
 tracing = "0.1.44"
-futures = "0.3"
-async-trait = "0.1"
 rand = "0.8"
-hex = "0.4"
 
 # Unix system calls (Unix only)
 [target.'cfg(unix)'.dependencies]
@@ -67,6 +57,7 @@ libc = "0.2"
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
 ctor = "0.2"
+futures = "0.3"
 
 [build-dependencies]
 serde_json = "1"
