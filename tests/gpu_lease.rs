@@ -39,6 +39,8 @@ fn main() {
         return;
     }
 
+    every_engine_start_takes_the_lease();
+
     // A broken lease shows up as a session that blocks forever; fail instead.
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_secs(60));
@@ -96,7 +98,7 @@ fn main() {
 
     println!(
         "gpu_lease: sessions took turns; a holder's child and PROXY_GPU_LEASE=0 did not wait; \
-         an engine kept the lease after its session"
+         an engine kept the lease after its session; every engine start takes the lease"
     );
 }
 
@@ -142,6 +144,31 @@ fn gets_the_lease(mut waiter: Child, path: &str) {
 
 fn holder(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
+}
+
+/// Nothing else would notice an example or test that starts an engine without
+/// the lease, so: every .rs file under examples/ and tests/ that constructs an
+/// engine must also call the lease. (This file names both and passes itself.)
+fn every_engine_start_takes_the_lease() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut dirs = vec![root.join("examples"), root.join("tests")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let source = std::fs::read_to_string(&path).unwrap();
+                let starts_engine = source.contains("InferenceEngine::new(")
+                    || source.contains("InferenceEngine::with_options(");
+                assert!(
+                    !starts_engine || source.contains("gpu_lease::hold("),
+                    "{} starts an engine without gpu_lease::hold(); see tests/project/gpu_lease.rs",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 fn line(reader: &mut impl BufRead) -> String {
