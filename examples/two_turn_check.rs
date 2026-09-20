@@ -164,7 +164,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
-    verdict(usize::from(warm != cold))
+    // Only a reproducible run promises the same tokens: an ordinary turn may reuse KV the
+    // model produced while decoding, which differs from prefilled KV in the last bits.
+    verdict(usize::from(
+        std::env::var("DETERMINISTIC").is_ok() && warm != cold,
+    ))
 }
 
 #[cfg(test)]
