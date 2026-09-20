@@ -6,7 +6,7 @@
 //! benchmarks all meet on one GPU. Every Proxy repo therefore implements the
 //! same contract: anything outside production that starts a real engine takes
 //! an exclusive flock on `/tmp/proxy-gpu.lease` and keeps it until the process
-//! exits.
+//! exits. Here the engine it starts keeps the lease too (see [`hold_at`]).
 //!
 //! Production never takes the lease, so this is not part of the `orchard`
 //! library. It is one file, pulled in with `#[path]` by the test fixture and by
@@ -14,11 +14,13 @@
 
 use std::fs::{File, Permissions, TryLockError};
 use std::io::{Read, Seek, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::OnceLock;
 
-/// Open until the process exits. The kernel drops the flock with the process,
-/// however it dies, so there is no stale lease and nothing to clean up.
+/// Open until the process exits. The kernel drops the flock when the last
+/// process with this open file is gone, however each dies, so there is
+/// nothing to clean up. The engine this process starts is one of them.
 static LEASE: OnceLock<File> = OnceLock::new();
 
 /// Block until this process is the machine's one heavy GPU tenant. Call it
@@ -68,6 +70,24 @@ pub fn hold_at(path: &str) {
                 .unwrap_or_else(|e| panic!("cannot lock the GPU lease {path}: {e}"));
         }
         Err(TryLockError::Error(e)) => panic!("cannot lock the GPU lease {path}: {e}"),
+    }
+
+    // The GPU tenant is the engine, not this process, and the engine outlives
+    // it: an example only deregisters on exit, and a killed test binary or a
+    // panic during fixture setup never reaches the shutdown. std opens files
+    // close-on-exec, which would free the lease with the engine still on the
+    // GPU. So let children inherit this descriptor. The engine, spawned later
+    // by the library's plain Command, then shares the open file, and the flock
+    // lasts until this process AND its engine are gone. The price: an engine
+    // wedged on the GPU keeps the lease until someone kills it, and the holder
+    // line may by then name a dead pid. `lsof /tmp/proxy-gpu.lease` shows who
+    // really holds it. The examples run in the default namespace: an engine
+    // they adopt rather than start is not covered, and one they start keeps
+    // the lease for as long as any later client keeps it running.
+    // SAFETY: fcntl(F_SETFD) on a descriptor this function owns; no memory.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFD, 0) } == -1 {
+        let e = std::io::Error::last_os_error();
+        panic!("cannot pass the GPU lease {path} on to the engine: {e}");
     }
 
     // CARGO_CRATE_NAME is the target this file was compiled into: the test
