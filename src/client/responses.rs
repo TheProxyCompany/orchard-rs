@@ -1185,6 +1185,37 @@ struct AggregatedOutputItem {
     function_name: String,
 }
 
+fn append_raw_message_output(
+    output_items: &mut BTreeMap<u32, AggregatedOutputItem>,
+    content: &str,
+) {
+    if content.is_empty() {
+        return;
+    }
+
+    let output_index = output_items
+        .iter()
+        .rev()
+        .find_map(|(index, item)| (item.item_type == "message").then_some(*index))
+        .unwrap_or_else(|| {
+            output_items
+                .keys()
+                .next_back()
+                .map(|index| index.saturating_add(1))
+                .unwrap_or(0)
+        });
+    let item = output_items
+        .entry(output_index)
+        .or_insert_with(|| AggregatedOutputItem {
+            item_type: "message".to_string(),
+            content: String::new(),
+            arguments: String::new(),
+            identifier: "message".to_string(),
+            function_name: String::new(),
+        });
+    item.content.push_str(content);
+}
+
 fn process_state_event_for_output(
     event: &ResponseStateEvent,
     output_items: &mut BTreeMap<u32, AggregatedOutputItem>,
@@ -1736,6 +1767,7 @@ async fn stream_response_events(
     response_id: String,
     model: String,
     stream_tokens: bool,
+    released_text: bool,
 ) {
     let mut stream_state = ResponseStreamState::new(response_id, model);
 
@@ -1798,13 +1830,27 @@ async fn stream_response_events(
 
         let mut mapped_events = Vec::new();
         if delta.state_events.is_empty() {
-            // `content` is the decoded text of the sampled tokens. It is the reply only for a
-            // sequence that never sends state events, which is known when the stream ends.
-            // Once events have arrived they are the only source of the text: a token they
-            // show nothing of is held back (and released by a later event, the final delta's
-            // when the reply is cut off) or belongs to a stop sequence or a marker.
-            if !saw_state_events {
-                if let Some(content) = delta.content.as_deref() {
+            if let Some(content) = delta.content.as_deref() {
+                if released_text {
+                    // `content` is the decoded text of the sampled tokens. It is the reply
+                    // only for a sequence that never sends state events, which is known when
+                    // the stream ends. Once events have arrived they are the only source of
+                    // the text: a token they show nothing of is held back (and released by a
+                    // later event, the final delta's when the reply is cut off) or belongs
+                    // to a stop sequence or a marker.
+                    if !saw_state_events {
+                        pending_raw_content.push_str(content);
+                    }
+                } else if stream_state
+                    .items
+                    .values()
+                    .any(|item| item.item_type == "message")
+                {
+                    // An engine without `released_text` never sends the text it held when the
+                    // reply was cut off as an event, so this stays what it was: `content`
+                    // without events goes to the message.
+                    append_raw_message_stream_delta(&mut stream_state, content, &mut mapped_events);
+                } else {
                     pending_raw_content.push_str(content);
                 }
             }
@@ -1882,7 +1928,12 @@ async fn stream_response_events(
 
         let incomplete_details = finish_reason_to_incomplete(finish_reason.as_deref());
         let mut completion_events = Vec::new();
-        if !saw_state_events && !pending_raw_content.is_empty() {
+        let content_is_the_reply = if released_text {
+            !saw_state_events
+        } else {
+            stream_state.items.is_empty()
+        };
+        if content_is_the_reply && !pending_raw_content.is_empty() {
             append_raw_message_stream_delta(
                 &mut stream_state,
                 &pending_raw_content,
@@ -1936,6 +1987,7 @@ async fn gather_non_streaming_response(
     model: &str,
     request: &ResponsesRequest,
     raw_tool_call_tokens: Option<&ToolCallingTokens>,
+    released_text: bool,
 ) -> Result<ResponseObject> {
     let created_at = current_timestamp();
     let mut completed_at: Option<i64> = None;
@@ -1954,11 +2006,18 @@ async fn gather_non_streaming_response(
         }
 
         if delta.state_events.is_empty() {
-            // As in `stream_response_events`: `content` is the reply only for a sequence
-            // that never sends state events.
-            if !saw_state_events {
-                if let Some(content) = &delta.content {
+            // As in `stream_response_events`: with `released_text`, `content` is the reply
+            // only for a sequence that never sends state events; without it, `content`
+            // without events goes to the message, as it did.
+            if let Some(content) = &delta.content {
+                if released_text {
+                    if !saw_state_events {
+                        fallback_content.push_str(content);
+                    }
+                } else if output_items.is_empty() {
                     fallback_content.push_str(content);
+                } else {
+                    append_raw_message_output(&mut output_items, content);
                 }
             }
         } else {
@@ -1999,7 +2058,12 @@ async fn gather_non_streaming_response(
     }
 
     let incomplete_details = finish_reason_to_incomplete(finish_reason.as_deref());
-    let output = if !saw_state_events && !fallback_content.is_empty() {
+    let content_is_the_reply = if released_text {
+        !saw_state_events
+    } else {
+        output_items.is_empty()
+    };
+    let output = if content_is_the_reply && !fallback_content.is_empty() {
         vec![ResponseOutputItem::Message(OutputMessage {
             output_type: "message".to_string(),
             id: generate_message_id(),
@@ -2260,6 +2324,7 @@ impl Client {
                 generate_response_id(),
                 model_id.to_string(),
                 request.stream_tokens,
+                info.releases_held_text(),
             ));
             Ok(ResponsesResult::Stream {
                 request_id,
@@ -2273,9 +2338,14 @@ impl Client {
             } else {
                 Some(formatter.get_tool_calling_tokens())
             };
-            let response =
-                gather_non_streaming_response(stream, model_id, &request, raw_tool_call_tokens)
-                    .await?;
+            let response = gather_non_streaming_response(
+                stream,
+                model_id,
+                &request,
+                raw_tool_call_tokens,
+                info.releases_held_text(),
+            )
+            .await?;
             Ok(ResponsesResult::Complete(Box::new(response)))
         }
     }
@@ -2989,7 +3059,7 @@ mod tests {
         assert_eq!(serde_json::to_value(parsed).unwrap(), value);
     }
 
-    use crate::client::recorded_replies::{self, RecordedReply};
+    use crate::client::recorded_replies;
 
     fn message_text(output: &[ResponseOutputItem]) -> String {
         output
@@ -3003,6 +3073,16 @@ mod tests {
             .collect()
     }
 
+    fn calls(output: &[ResponseOutputItem]) -> Vec<&str> {
+        output
+            .iter()
+            .filter_map(|item| match item {
+                ResponseOutputItem::FunctionCall(call) => Some(call.name.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn delta_channel(deltas: Vec<ResponseDelta>) -> mpsc::UnboundedReceiver<ResponseDelta> {
         let (delta_tx, delta_rx) = mpsc::unbounded_channel();
         for delta in deltas {
@@ -3011,82 +3091,101 @@ mod tests {
         delta_rx
     }
 
-    /// A recorded reply through the non-streaming Responses path and through
-    /// the streaming one, where the text deltas a client sees, the text of the
-    /// finished message and the final snapshot must all agree.
-    async fn assert_responses_text(reply: RecordedReply) {
-        let request = ResponsesRequest::from_text("hi");
-        let response = gather_non_streaming_response(
-            delta_channel(reply.deltas.clone()),
-            "test-model",
-            &request,
-            None,
-        )
-        .await
-        .expect("recorded reply completes");
+    /// Every recorded reply from one of the two engines through the non-streaming
+    /// Responses path and through the streaming one: the text deltas a client
+    /// sees, the text of the finished message and the final snapshot. Returns
+    /// what came out wrong.
+    async fn responses_text_mismatches(released_text: bool) -> Vec<String> {
+        let mut wrong = Vec::new();
+        for reply in recorded_replies::all() {
+            let old = &reply.old;
+            let (deltas, text, streamed_text, done_text) = if released_text {
+                (reply.deltas.clone(), reply.text, reply.text, reply.text)
+            } else {
+                let text = old.responses.unwrap_or(reply.text);
+                (
+                    reply.deltas_without_released_text(),
+                    text,
+                    old.responses_streamed.unwrap_or(text),
+                    old.responses_done.unwrap_or(text),
+                )
+            };
 
-        let (event_tx, mut event_rx) = mpsc::channel(256);
-        stream_response_events(
-            delta_channel(reply.deltas),
-            event_tx,
-            "resp_test".to_string(),
-            "test-model".to_string(),
-            false,
-        )
-        .await;
-        let mut streamed = String::new();
-        let mut done = String::new();
-        let mut snapshot = String::new();
-        while let Some(event) = event_rx.recv().await {
-            match event {
-                ResponseEvent::OutputTextDelta(delta) => streamed.push_str(&delta.delta),
-                ResponseEvent::OutputTextDone(text) => done.push_str(&text.text),
-                ResponseEvent::ResponseCompleted(ResponseCompletedEvent { response, .. })
-                | ResponseEvent::ResponseIncomplete(ResponseIncompleteEvent { response, .. }) => {
-                    snapshot = message_text(&response.output);
+            let request = ResponsesRequest::from_text("hi");
+            let response = gather_non_streaming_response(
+                delta_channel(deltas.clone()),
+                "test-model",
+                &request,
+                None,
+                released_text,
+            )
+            .await
+            .expect("recorded reply completes");
+
+            let (event_tx, mut event_rx) = mpsc::channel(256);
+            stream_response_events(
+                delta_channel(deltas),
+                event_tx,
+                "resp_test".to_string(),
+                "test-model".to_string(),
+                false,
+                released_text,
+            )
+            .await;
+            let mut streamed = String::new();
+            let mut done = String::new();
+            let mut snapshot = Vec::new();
+            while let Some(event) = event_rx.recv().await {
+                match event {
+                    ResponseEvent::OutputTextDelta(delta) => streamed.push_str(&delta.delta),
+                    ResponseEvent::OutputTextDone(text) => done.push_str(&text.text),
+                    ResponseEvent::ResponseCompleted(ResponseCompletedEvent {
+                        response, ..
+                    })
+                    | ResponseEvent::ResponseIncomplete(ResponseIncompleteEvent {
+                        response, ..
+                    }) => snapshot = response.output,
+                    _ => {}
                 }
-                _ => {}
+            }
+
+            let got = [
+                ("non-streaming", message_text(&response.output), text),
+                ("streamed deltas", streamed, streamed_text),
+                ("streamed done", done, done_text),
+                ("streamed snapshot", message_text(&snapshot), text),
+            ];
+            for (site, got, expected) in got {
+                if got != expected {
+                    wrong.push(format!(
+                        "{} through {site}: {got:?}, expected {expected:?}",
+                        reply.name
+                    ));
+                }
+            }
+            for (site, output) in [("non-streaming", &response.output), ("streamed", &snapshot)] {
+                if calls(output) != reply.calls {
+                    wrong.push(format!(
+                        "{} through {site}: calls {:?}, expected {:?}",
+                        reply.name,
+                        calls(output),
+                        reply.calls
+                    ));
+                }
             }
         }
-
-        assert_eq!(
-            [
-                ("non-streaming", message_text(&response.output).as_str()),
-                ("streamed deltas", streamed.as_str()),
-                ("streamed done", done.as_str()),
-                ("streamed snapshot", snapshot.as_str()),
-            ],
-            [
-                ("non-streaming", reply.text),
-                ("streamed deltas", reply.text),
-                ("streamed done", reply.text),
-                ("streamed snapshot", reply.text),
-            ]
-        );
+        wrong
     }
 
     #[tokio::test]
-    async fn test_responses_text_has_held_text_the_final_delta_releases_once() {
-        assert_responses_text(recorded_replies::length_limit_releases_held_stop_start()).await;
+    async fn test_responses_text_of_every_recorded_reply_with_released_text() {
+        let wrong = responses_text_mismatches(true).await;
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
     #[tokio::test]
-    async fn test_responses_text_has_a_held_newline_the_final_delta_releases_once() {
-        assert_responses_text(recorded_replies::length_limit_releases_held_newline()).await;
-    }
-
-    #[tokio::test]
-    async fn test_responses_text_leaves_out_the_stop_sequence() {
-        assert_responses_text(recorded_replies::stop_sequence_stays_out()).await;
-    }
-
-    #[tokio::test]
-    async fn test_responses_text_has_held_text_released_mid_reply_once() {
-        assert_responses_text(recorded_replies::held_text_released_mid_reply()).await;
-    }
-
-    #[tokio::test]
-    async fn test_responses_text_without_state_events_is_the_content() {
-        assert_responses_text(recorded_replies::no_state_events()).await;
+    async fn test_responses_text_of_every_recorded_reply_without_released_text_is_what_it_was() {
+        let wrong = responses_text_mismatches(false).await;
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 }

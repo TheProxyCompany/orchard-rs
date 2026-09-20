@@ -56,6 +56,19 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// Whether the engine that loaded this model completes its text stream.
+    ///
+    /// The state events of a reply hold back text that could still become a stop
+    /// sequence. An engine that advertises `released_text` hands that text over in
+    /// the final delta when a reply ends without a stop (token limit, cancel), so
+    /// the message `content_delta` spans are the whole message. An engine without
+    /// it never sends that text as a span.
+    pub fn releases_held_text(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|c| c.contains_key("released_text"))
+    }
+
     pub fn require_formatter(&self) -> std::result::Result<&ChatFormatter, crate::error::Error> {
         self.formatter.as_deref().ok_or_else(|| {
             crate::error::Error::ModelNotReady(format!(
@@ -1462,6 +1475,26 @@ mod tests {
 
         assert_eq!(resolved.canonical_id, inspected.canonical_id);
         assert_eq!(resolved.formatter_config, inspected.formatter_config);
+    }
+
+    /// `released_text` arrives with the control-token capabilities of the engine's
+    /// load_model response.
+    #[test]
+    fn test_model_info_reads_the_released_text_capability() {
+        let registry = ModelRegistry::new().unwrap();
+        let info = |capabilities: Value| ModelInfo {
+            model_id: "model".to_string(),
+            model_path: "/models/model".to_string(),
+            formatter: None,
+            capabilities: registry.parse_capabilities(
+                &json!({"data": {"load_model": {"capabilities": capabilities}}}),
+            ),
+            minimum_memory_bytes: None,
+        };
+
+        assert!(info(json!({"answer": [7], "released_text": [1]})).releases_held_text());
+        assert!(!info(json!({"answer": [7]})).releases_held_text());
+        assert!(!info(Value::Null).releases_held_text());
     }
 
     #[test]
