@@ -15,6 +15,10 @@ crate-type = ["lib"]
 [dependencies]
 # NNG for IPC communication with PIE
 nng = "1.0"
+# Named only so src/ipc/client.rs can refuse to compile against an nng-sys
+# without the listener fix (see [patch.crates-io] below). Same version and
+# features as nng asks for, so the C library is built exactly as before.
+nng-sys = { version = "1.4.0-rc.0", default-features = false }
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "macros", "process", "fs", "io-util", "time"] }
@@ -79,6 +83,14 @@ serde_json = "1"
 # upstream 9248ed74 (#1518): a peer that connects to a listening socket and is
 # gone before the handshake made the listener stop accepting for good, so later
 # pipes connected and their messages vanished. Our response endpoint listens.
-# Workspaces that consume orchard-rs must repeat this [patch] at their own root.
+#
+# A [patch] only applies at the root of the workspace being built, so every
+# workspace that consumes orchard-rs must repeat this one at its own root, and
+# must move it together with orchard-rs: an orchard-rs from this commit on with
+# an nng-sys from before it listens with the unfixed NNG. That combination does
+# not compile (src/ipc/client.rs names a constant only this vendored copy
+# defines). grand-central pins both by rev in its Cargo.toml: bump both revs to
+# the same commit. Proxy/Glue patches nng-sys from branch main, and its
+# Cargo.lock holds the old commit until `cargo update -p nng-sys`.
 [patch.crates-io]
 nng-sys = { path = "vendor/nng-sys" }
