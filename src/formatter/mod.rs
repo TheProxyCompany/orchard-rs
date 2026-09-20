@@ -1038,6 +1038,84 @@ mod tests {
         );
     }
 
+    /// A reply that arrives as text (another model wrote it, or an HTTP client sent it)
+    /// keeps its reasoning on every turn, and adding later messages never changes how an
+    /// earlier turn renders: the conversation so far stays a prefix of the conversation.
+    #[test]
+    fn test_reasoning_stays_in_the_conversation_and_earlier_turns_do_not_move() {
+        let message = |role: &str, content: &str| {
+            HashMap::from([
+                ("role".to_string(), serde_json::json!(role)),
+                ("content".to_string(), serde_json::json!(content)),
+            ])
+        };
+        let reply = |content: &str, reasoning: &str| {
+            let mut reply = message("assistant", content);
+            reply.insert("reasoning_content".into(), serde_json::json!(reasoning));
+            reply
+        };
+        let profiles = [
+            "llama",
+            "gemma3",
+            "gemma4",
+            "gemma4u",
+            "qwen3_5",
+            "lfm2",
+            "lfm2_moe",
+            "olmo_hybrid",
+            "nemotron_h",
+            "granite_switch",
+            "gpt_oss",
+            "proxy_i",
+            "afmoe",
+            "glm4_moe",
+            "laguna",
+        ];
+        let mut broken = Vec::new();
+        for model_type in profiles {
+            let model_dir = tempdir().unwrap();
+            std::fs::write(
+                model_dir.path().join("config.json"),
+                serde_json::json!({"model_type": model_type}).to_string(),
+            )
+            .unwrap();
+            let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+            let thinking = formatter.supports_native_thinking();
+            let two_turns = [
+                message("system", "Be brief."),
+                message("user", "first question"),
+                reply("first answer", "FIRST-REASONING"),
+                message("user", "second question"),
+            ];
+            let mut three_turns = two_turns.to_vec();
+            three_turns.extend([
+                reply("second answer", "SECOND-REASONING"),
+                message("user", "third question"),
+            ]);
+
+            // Rendered without a generation prompt, the shorter conversation is where the longer one starts.
+            let shorter = formatter
+                .apply_template(&two_turns, false, thinking, None, None)
+                .unwrap();
+            let longer = formatter
+                .apply_template(&three_turns, false, thinking, None, None)
+                .unwrap();
+            if !longer.starts_with(&shorter) {
+                broken.push(format!(
+                    "{model_type}: an earlier turn renders differently once later messages exist"
+                ));
+            }
+            if thinking
+                && !(longer.contains("FIRST-REASONING") && longer.contains("SECOND-REASONING"))
+            {
+                broken.push(format!(
+                    "{model_type}: reasoning dropped from an earlier turn"
+                ));
+            }
+        }
+        assert!(broken.is_empty(), "{}", broken.join("\n"));
+    }
+
     #[test]
     fn test_granite_switch_profile_inserts_adapter_tokens() {
         let model_dir = tempdir().unwrap();
