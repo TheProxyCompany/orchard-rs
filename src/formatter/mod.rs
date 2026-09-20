@@ -998,7 +998,12 @@ mod tests {
             "laguna",
         ];
         let mut broken = Vec::new();
-        for model_type in profiles {
+        // PROFILES=llama,gemma3 narrows the run while one template is being worked on.
+        let only = std::env::var("PROFILES").unwrap_or_default();
+        for model_type in profiles
+            .into_iter()
+            .filter(|p| only.is_empty() || only.split(',').any(|o| o == *p))
+        {
             let model_dir = tempdir().unwrap();
             std::fs::write(
                 model_dir.path().join("config.json"),
@@ -1072,7 +1077,12 @@ mod tests {
             "laguna",
         ];
         let mut broken = Vec::new();
-        for model_type in profiles {
+        // PROFILES=llama,gemma3 narrows the run while one template is being worked on.
+        let only = std::env::var("PROFILES").unwrap_or_default();
+        for model_type in profiles
+            .into_iter()
+            .filter(|p| only.is_empty() || only.split(',').any(|o| o == *p))
+        {
             let model_dir = tempdir().unwrap();
             std::fs::write(
                 model_dir.path().join("config.json"),
