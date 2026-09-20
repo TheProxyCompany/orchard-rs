@@ -701,6 +701,56 @@ pub enum ResponseOutputItem {
     Reasoning(OutputReasoning),
 }
 
+/// The input items that carry a finished response into the next request: its
+/// `generation` record first, then its output items. Sent back to the same model the
+/// turn is replayed id for id; any other model reads the reasoning, text and calls.
+pub fn response_input_items(
+    output: &[ResponseOutputItem],
+    generation: Option<&Value>,
+) -> Vec<ResponseInputItem> {
+    let record = generation.and_then(|record| {
+        Some(ResponseInputItem::Generation {
+            model: record.get("model")?.as_str()?.to_string(),
+            tokens: serde_json::from_value(record.get("tokens")?.clone()).ok()?,
+            thinking: record
+                .get("thinking")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        })
+    });
+    let items = output.iter().map(|item| match item {
+        ResponseOutputItem::Message(message) => ResponseInputItem::Message {
+            role: message.role.clone(),
+            content: Value::String(
+                message
+                    .content
+                    .iter()
+                    .map(|part| part.text.as_str())
+                    .collect(),
+            ),
+            tool_calls: None,
+            tool_call_id: None,
+        },
+        ResponseOutputItem::FunctionCall(call) => ResponseInputItem::FunctionCall {
+            call_id: call.call_id.clone(),
+            name: call.name.clone(),
+            arguments: call.arguments.clone(),
+        },
+        ResponseOutputItem::Reasoning(reasoning) => ResponseInputItem::Reasoning {
+            summary: None,
+            content: Some(
+                reasoning
+                    .content
+                    .iter()
+                    .map(|part| serde_json::json!({"type": "reasoning_text", "text": part.text}))
+                    .collect(),
+            ),
+            encrypted_content: reasoning.encrypted_content.clone(),
+        },
+    });
+    record.into_iter().chain(items).collect()
+}
+
 impl ResponseOutputItem {
     pub fn item_type(&self) -> &'static str {
         match self {

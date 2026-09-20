@@ -39,12 +39,12 @@ pub use response::{
     BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, ModalArtifact, UsageStats,
 };
 pub use responses::{
-    ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
-    FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
-    InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent, OutputItemDoneEvent,
-    OutputMessage, OutputReasoning, OutputStatus, OutputTextContent, OutputTextDeltaEvent,
-    OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig, ReasoningContent,
-    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    response_input_items, ContentPartAddedEvent, ContentPartDoneEvent,
+    FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent, FunctionCallOutputContent,
+    IncompleteDetails, InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent,
+    OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus, OutputTextContent,
+    OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig,
+    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
     ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
     ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
     ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
