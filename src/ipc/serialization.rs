@@ -618,6 +618,62 @@ mod tests {
     }
 
     #[test]
+    fn test_token_segments_are_written_as_little_endian_ids_the_layout_points_at() {
+        let prompt = |token_segments: Vec<Vec<i32>>| PromptPayload {
+            prompt: "ab".to_string(),
+            layout: vec![
+                LayoutEntry {
+                    segment_type: "text".to_string(),
+                    length: 1,
+                },
+                LayoutEntry {
+                    segment_type: "tokens".to_string(),
+                    length: 2,
+                },
+                LayoutEntry {
+                    segment_type: "text".to_string(),
+                    length: 1,
+                },
+            ],
+            token_segments,
+            ..Default::default()
+        };
+        let build = |prompt: PromptPayload| {
+            build_batch_request_payload(
+                1,
+                "test-model",
+                "/path/to/model",
+                RequestType::Generation,
+                12345,
+                &[prompt],
+            )
+        };
+
+        let frame = build(prompt(vec![vec![5, -6]])).unwrap();
+        let length = u32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;
+        let metadata: Value = serde_json::from_slice(&frame[4..4 + length]).unwrap();
+        let blobs = &frame[4 + length..];
+        let meta = &metadata["prompts"][0];
+
+        assert_eq!(meta["token_data_size"], 8);
+        let ids = meta["token_data_offset"].as_u64().unwrap() as usize;
+        assert_eq!(blobs[ids..ids + 4], 5i32.to_le_bytes());
+        assert_eq!(blobs[ids + 4..ids + 8], (-6i32).to_le_bytes());
+
+        // Each layout entry is 16 bytes: the type code, padding, then the length.
+        assert_eq!(meta["layout_count"], 3);
+        let layout = meta["layout_offset"].as_u64().unwrap() as usize;
+        assert_eq!(blobs[layout + 16], SegmentType::Tokens as u8);
+        assert_eq!(blobs[layout + 24..layout + 32], 2u64.to_le_bytes());
+
+        // One id for a two-token layout entry is refused, not sent short.
+        assert!(matches!(
+            build(prompt(vec![vec![5]])),
+            Err(Error::Serialization(_))
+        ));
+    }
+
+    #[test]
     fn test_empty_default_prompt_serializes_text_layout_segment() {
         let prompt = PromptPayload {
             prompt: String::new(),

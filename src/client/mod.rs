@@ -2250,6 +2250,55 @@ mod tests {
         assert!(build_chat_payload(&formatter, &[], &params, None).is_err());
     }
 
+    #[test]
+    fn test_build_chat_payload_replays_a_generation_record_as_token_ids() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+        let message = |role: &str, content: &str| {
+            HashMap::from([
+                ("role".to_string(), serde_json::json!(role)),
+                ("content".to_string(), serde_json::json!(content)),
+            ])
+        };
+        let mut reply = message("assistant", "the reply as text");
+        reply.insert(
+            "generation".to_string(),
+            serde_json::json!({"model": "m", "tokens": [7, 8, 9], "thinking": false}),
+        );
+        let messages = vec![message("user", "hello"), reply, message("user", "again")];
+        let params = SamplingParams::default();
+
+        let replayed = build_chat_payload(&formatter, &messages, &params, Some("m")).unwrap();
+        let kinds: Vec<(&str, usize)> = replayed
+            .layout
+            .iter()
+            .map(|entry| (entry.segment_type.as_str(), entry.length))
+            .collect();
+        assert_eq!(kinds.len(), 3);
+        assert_eq!(
+            (kinds[0].0, kinds[1], kinds[2].0),
+            ("text", ("tokens", 3), "text")
+        );
+        assert_eq!(replayed.token_segments, vec![vec![7, 8, 9]]);
+        assert_eq!(kinds[0].1 + kinds[2].1, replayed.prompt.len());
+        assert!(
+            !replayed.prompt.contains('\u{E000}') && !replayed.prompt.contains("the reply as text")
+        );
+
+        // Asked of another model, or with no model that takes ids, the turn goes back as text.
+        for other in [Some("another-model"), None] {
+            let text = build_chat_payload(&formatter, &messages, &params, other).unwrap();
+            assert_eq!(text.layout.len(), 1);
+            assert!(text.token_segments.is_empty());
+            assert!(text.prompt.contains("the reply as text"));
+        }
+    }
+
     /// Records the field names of the span build_chat_payload's trace event fires in.
     #[derive(Default)]
     struct PayloadEventSpans {
