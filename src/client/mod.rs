@@ -4,6 +4,8 @@
 
 mod moondream;
 mod privacy_filter;
+#[cfg(test)]
+mod recorded_replies;
 mod response;
 mod responses;
 
@@ -1884,58 +1886,43 @@ fn value_to_text(value: &Value) -> String {
     }
 }
 
+/// The message text of one reply.
+///
+/// A delta carries two views of the text. `content` is the decoded text of the
+/// sampled tokens. The message `content_delta` events are the engine's text
+/// stream: it holds back the end of the text while that end could still become
+/// a stop sequence, hands it over in a later delta (the final one when the
+/// reply is cut off), and never contains a stop sequence. A reply that carries
+/// state events is read from them alone: `content` next to them says held text
+/// twice (" the E" beside the span " the ", then the released "E") and spells
+/// the stop sequence. Only a reply without any state event is read from
+/// `content`.
 fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
+    if deltas.iter().all(|delta| delta.state_events.is_empty()) {
+        return deltas
+            .iter()
+            .filter_map(|delta| delta.content.as_deref())
+            .collect();
+    }
+
     let mut text = String::new();
     let mut completed_value = None;
-
-    for delta in deltas {
-        if delta.state_events.is_empty() {
-            if let Some(content) = &delta.content {
-                text.push_str(content);
-            }
-            continue;
-        }
-
-        let has_non_message_event = delta
-            .state_events
-            .iter()
-            .any(|event| event.item_type != "message");
-        let message_content = delta
-            .state_events
-            .iter()
-            .filter(|event| event.item_type == "message" && event.event_type == "content_delta")
-            .map(|event| event.delta.as_str())
-            .collect::<String>();
-        let raw_content = delta
-            .content
-            .as_deref()
-            .filter(|content| !content.is_empty());
-        let delta_content = if has_non_message_event {
-            message_content.as_str()
-        } else {
-            raw_content.unwrap_or(message_content.as_str())
-        };
-
-        for event in &delta.state_events {
-            if event.item_type == "message"
-                && event.event_type == "item_completed"
-                && event.value.is_some()
-                && text.is_empty()
-                && delta_content.is_empty()
-            {
-                completed_value = event.value.as_ref().map(value_to_text);
-            }
-        }
-
-        if !delta_content.is_empty() {
-            text.push_str(delta_content);
+    let message_events = deltas
+        .iter()
+        .flat_map(|delta| &delta.state_events)
+        .filter(|event| event.item_type == "message");
+    for event in message_events {
+        if event.event_type == "content_delta" {
+            text.push_str(&event.delta);
+        } else if event.event_type == "item_completed" && event.value.is_some() {
+            completed_value = event.value.as_ref();
         }
     }
 
     if !text.is_empty() {
         return text;
     }
-    completed_value.unwrap_or_default()
+    completed_value.map(value_to_text).unwrap_or_default()
 }
 
 fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<ClientToolCall>) {
@@ -2457,8 +2444,9 @@ mod tests {
         assert_eq!(response.reasoning, vec!["private".to_string()]);
     }
 
+    /// Stop sequence "blue": the token's `content` spells it, its span ends in front of it.
     #[test]
-    fn test_build_response_from_candidates_keeps_plain_raw_content() {
+    fn test_build_response_from_candidates_leaves_out_a_stop_sequence_inside_a_token() {
         let response = build_response_from_candidates(
             vec![CandidateState {
                 content: "red, white, blue".to_string(),
@@ -2480,43 +2468,12 @@ mod tests {
             3,
         );
 
-        assert_eq!(response.text, "red, white, blue");
+        assert_eq!(response.text, "red, white, ");
     }
 
+    /// Stop sequence "blue" as a token of its own: `content` spells it, no event shows it.
     #[test]
-    fn test_build_response_from_candidates_uses_message_delta_when_raw_content_empty() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "red, white, ".to_string(),
-                finish_reason: Some("stop".to_string()),
-                prompt_tokens: 5,
-                deltas: vec![
-                    ClientDelta {
-                        content: Some("red, white, ".to_string()),
-                        ..Default::default()
-                    },
-                    ClientDelta {
-                        content: Some(String::new()),
-                        state_events: vec![crate::ipc::client::ResponseStateEvent {
-                            event_type: "content_delta".to_string(),
-                            item_type: "message".to_string(),
-                            identifier: "message".to_string(),
-                            delta: "blue".to_string(),
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            3,
-        );
-
-        assert_eq!(response.text, "red, white, blue");
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_preserves_raw_suffix_after_state_text() {
+    fn test_build_response_from_candidates_ignores_content_without_events_after_state_text() {
         let response = build_response_from_candidates(
             vec![CandidateState {
                 content: "red, white, blue".to_string(),
@@ -2553,7 +2510,51 @@ mod tests {
             3,
         );
 
-        assert_eq!(response.text, "red, white, blue");
+        assert_eq!(response.text, "red, white, ");
         assert_eq!(response.reasoning, vec!["hidden".to_string()]);
+    }
+
+    /// A recorded reply through both non-streaming chat paths: `achat`
+    /// assembles one candidate at a time, `achat_batch` all deltas of a prompt.
+    fn assert_chat_text(reply: recorded_replies::RecordedReply) {
+        let deltas: Vec<ClientDelta> = reply.deltas.into_iter().map(ClientDelta::from).collect();
+        let by_candidate = build_response_from_candidates(
+            vec![CandidateState {
+                deltas: deltas.clone(),
+                ..Default::default()
+            }],
+            0,
+        );
+        let by_prompt = aggregate_response(deltas);
+
+        assert_eq!(
+            (by_candidate.text.as_str(), by_prompt.text.as_str()),
+            (reply.text, reply.text)
+        );
+    }
+
+    #[test]
+    fn test_message_text_has_held_text_the_final_delta_releases_once() {
+        assert_chat_text(recorded_replies::length_limit_releases_held_stop_start());
+    }
+
+    #[test]
+    fn test_message_text_has_a_held_newline_the_final_delta_releases_once() {
+        assert_chat_text(recorded_replies::length_limit_releases_held_newline());
+    }
+
+    #[test]
+    fn test_message_text_leaves_out_the_stop_sequence() {
+        assert_chat_text(recorded_replies::stop_sequence_stays_out());
+    }
+
+    #[test]
+    fn test_message_text_has_held_text_released_mid_reply_once() {
+        assert_chat_text(recorded_replies::held_text_released_mid_reply());
+    }
+
+    #[test]
+    fn test_message_text_without_state_events_is_the_content() {
+        assert_chat_text(recorded_replies::no_state_events());
     }
 }

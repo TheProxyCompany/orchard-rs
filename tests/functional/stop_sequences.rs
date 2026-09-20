@@ -7,7 +7,9 @@ use orchard::SamplingParams;
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
-/// Test stop sequence on "blue" - should output red, white, blue and stop at blue.
+/// Test stop sequence on "blue" - the reply stops in front of it: the stop sequence ends the
+/// reply and is not part of it (the engine's text stream leaves it out, only the decoded
+/// tokens spell it).
 /// Mirrors: test_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
 async fn test_chat_completion_respects_stop_sequence() {
@@ -40,10 +42,9 @@ async fn test_chat_completion_respects_stop_sequence() {
 
                 assert!(content.contains("red"), "Expected 'red' in response");
                 assert!(content.contains("white"), "Expected 'white' in response");
-                assert!(content.contains("blue"), "Expected 'blue' in response");
                 assert!(
-                    content.ends_with("blue"),
-                    "Expected response to end with 'blue' for {} but got: '{}'",
+                    !content.contains("blue"),
+                    "Expected the stop sequence 'blue' to be left out for {} but got: '{}'",
                     model_id,
                     response.text
                 );
