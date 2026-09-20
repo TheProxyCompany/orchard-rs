@@ -18,7 +18,8 @@ orchard-rs is the Rust client library for communicating with PIE (Proxy Inferenc
 ├─────────────────────────────────────────────────┤
 │  IPCClient                                       │
 │    ├── Push socket → PIE request queue          │
-│    ├── Sub socket  ← PIE response stream        │
+│    ├── Pull socket ← PIE response deltas        │
+│    ├── Sub socket  ← PIE broadcast events       │
 │    └── Req socket  ↔ PIE management (sync)      │
 ├─────────────────────────────────────────────────┤
 │  Serialization                                   │

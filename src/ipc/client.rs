@@ -1,11 +1,23 @@
 //! High-performance IPC client for communicating with PIE.
 //!
 //! Uses NNG sockets with a dedicated listener thread for response handling.
+//!
+//! Response deltas do not travel over PUB/SUB: that pattern drops the oldest
+//! queued messages, silently on both sides, once a subscriber is about a
+//! thousand messages behind, which shortens a reply with no error anywhere.
+//! Every request asks for the engine's flow-controlled route instead
+//! (`"response_transport": "pull_v1"`): this client listens on its own PULL
+//! endpoint, the engine dials it and PUSHes this client's deltas, and a client
+//! that falls behind makes the engine wait instead of losing anything.
+//! PUB/SUB still carries the engine's broadcast events.
 
 use crate::engine::lifecycle::{current_engine_pid_file, EnginePaths};
 use crate::engine::multiprocess::{pid_is_alive, read_pid_file};
 use crate::error::{Error, Result};
-use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
+use crate::ipc::endpoints::{
+    as_ipc_url, ipc_root, management_url_in, request_url_in, response_route_path, response_url_in,
+    EVENT_TOPIC_PREFIX, RESPONSE_ROUTE_SOCKET_PREFIX, RESPONSE_ROUTE_SOCKET_SUFFIX,
+};
 use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -27,7 +39,11 @@ pub type EventCallback = Arc<dyn Fn(&str, &Value) + Send + Sync>;
 
 const ENGINE_LIVENESS_POLL_INTERVAL: Duration = Duration::from_secs(10);
 const RESPONSE_RECV_TIMEOUT: Duration = Duration::from_millis(10);
-const RESPONSE_SOCKET_BUFFER_MESSAGES: i32 = 1024;
+/// Events are rare and `disconnect` wakes their reader by closing its socket,
+/// so this only bounds how long the reader outlives a listener that stopped
+/// by itself.
+const EVENT_RECV_TIMEOUT: Duration = Duration::from_secs(1);
+const EVENT_SOCKET_BUFFER_MESSAGES: i32 = 1024;
 /// Cap on how long a PUSH send may block. With no live peer (engine dead
 /// before the liveness poll notices), nng blocks the send forever otherwise.
 const REQUEST_SEND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -164,13 +180,18 @@ pub struct ResponseDelta {
 /// All socket operations are thread-safe via internal locks.
 pub struct IPCClient {
     request_socket: Option<Socket>,
+    /// PULL socket listening on this client's own endpoint; the engine dials
+    /// it and pushes this client's response deltas.
     response_socket: Option<Socket>,
+    /// SUB socket for the engine's broadcast events.
+    event_socket: Option<Socket>,
     /// Management socket wrapped in Arc<Mutex> for async access via spawn_blocking
     management_socket: Arc<Mutex<Option<Socket>>>,
     response_channel_id: u64,
     request_id_counter: AtomicU64,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     listener_handle: Option<JoinHandle<()>>,
+    event_listener_handle: Option<JoinHandle<()>>,
     should_stop: Arc<AtomicBool>,
     /// Set by the listener when the engine process dies or the response
     /// socket is gone for good; send paths fail fast instead of hanging.
@@ -190,11 +211,13 @@ impl IPCClient {
         Self {
             request_socket: None,
             response_socket: None,
+            event_socket: None,
             management_socket: Arc::new(Mutex::new(None)),
             response_channel_id: rand_u64(),
             request_id_counter: AtomicU64::new(0),
             active_requests: Arc::new(Mutex::new(HashMap::new())),
             listener_handle: None,
+            event_listener_handle: None,
             should_stop: Arc::new(AtomicBool::new(false)),
             engine_dead: Arc::new(AtomicBool::new(false)),
             engine_pid_file: None,
@@ -224,33 +247,47 @@ impl IPCClient {
         let engine_pid_file = current_engine_pid_file()
             .or_else(|| EnginePaths::new().ok().map(|paths| paths.pid_file))
             .ok_or_else(|| Error::Internal("Cannot determine engine PID file path".into()))?;
+        self.connect_in(&ipc_root(), engine_pid_file)
+    }
+
+    fn connect_in(&mut self, ipc_root: &Path, engine_pid_file: PathBuf) -> Result<()> {
+        if self.response_socket.is_some() {
+            // Our endpoint is still bound: a second listen on it would fail.
+            self.disconnect();
+        }
+        remove_stale_response_endpoints(ipc_root);
+
+        // Response socket (PULL). It listens before the request socket exists:
+        // the engine dials this endpoint on a request's first delta, and drops
+        // the deltas it produces while nothing listens there.
+        let response_socket = Socket::new(Protocol::Pull0)?;
+        response_socket.set_opt::<nng::options::RecvMaxSize>(0)?;
+        response_socket.listen(&as_ipc_url(response_route_path(
+            ipc_root,
+            self.response_channel_id,
+        )))?;
 
         // Create and connect request socket (PUSH)
         let request_socket = Socket::new(Protocol::Push0)?;
         request_socket.set_opt::<nng::options::SendTimeout>(Some(REQUEST_SEND_TIMEOUT))?;
-        request_socket.dial(&request_url())?;
-        self.request_socket = Some(request_socket);
+        request_socket.dial(&request_url_in(ipc_root))?;
 
-        // Create response socket (SUB) - subscribe BEFORE dial
-        let response_socket = Socket::new(Protocol::Sub0)?;
-        response_socket.set_opt::<nng::options::RecvBufferSize>(RESPONSE_SOCKET_BUFFER_MESSAGES)?;
-
-        // Subscribe to our response topic
-        let response_topic = format!("resp:{:x}:", self.response_channel_id);
-        response_socket.set_opt::<nng::options::protocol::pubsub::Subscribe>(
-            response_topic.as_bytes().to_vec(),
-        )?;
-
-        // Subscribe to global events
-        response_socket
+        // Create event socket (SUB) - subscribe BEFORE dial
+        let event_socket = Socket::new(Protocol::Sub0)?;
+        event_socket.set_opt::<nng::options::RecvBufferSize>(EVENT_SOCKET_BUFFER_MESSAGES)?;
+        event_socket
             .set_opt::<nng::options::protocol::pubsub::Subscribe>(EVENT_TOPIC_PREFIX.to_vec())?;
-
-        response_socket.dial(&response_url())?;
-        self.response_socket = Some(response_socket);
+        // An engine older than the flow-controlled route ignores the request
+        // for it and answers here, on our response topic. Without this
+        // subscription every request to such an engine would time out.
+        event_socket.set_opt::<nng::options::protocol::pubsub::Subscribe>(
+            format!("resp:{:x}:", self.response_channel_id).into_bytes(),
+        )?;
+        event_socket.dial(&response_url_in(ipc_root))?;
 
         // Create management socket (REQ)
         let management_socket = Socket::new(Protocol::Req0)?;
-        management_socket.dial(&management_url())?;
+        management_socket.dial(&management_url_in(ipc_root))?;
         {
             let mut mgmt = self
                 .management_socket
@@ -258,8 +295,11 @@ impl IPCClient {
                 .unwrap_or_else(|e| e.into_inner());
             *mgmt = Some(management_socket);
         }
+        self.request_socket = Some(request_socket);
+        self.response_socket = Some(response_socket);
+        self.event_socket = Some(event_socket);
 
-        // Start listener thread
+        // Start listener threads
         self.should_stop.store(false, Ordering::SeqCst);
         self.engine_dead.store(false, Ordering::SeqCst);
         self.engine_pid_file = Some(engine_pid_file.clone());
@@ -294,12 +334,27 @@ impl IPCClient {
             }
         }
 
-        if let Some(handle) = self.listener_handle.take() {
+        // Closing wakes both readers now instead of at their next receive
+        // timeout, and closing the listening socket removes our endpoint file.
+        for socket in [&self.response_socket, &self.event_socket]
+            .into_iter()
+            .flatten()
+        {
+            socket.close();
+        }
+        for handle in [
+            self.listener_handle.take(),
+            self.event_listener_handle.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let _ = handle.join();
         }
 
         self.request_socket = None;
         self.response_socket = None;
+        self.event_socket = None;
         {
             let mut mgmt = self
                 .management_socket
@@ -470,19 +525,18 @@ impl IPCClient {
         )
     }
 
-    /// Start the response listener thread.
+    /// Start the response listener thread and the event listener thread.
     fn start_listener(&mut self, engine_pid_file: PathBuf) {
-        let response_socket = self.response_socket.take();
-        let active_requests = Arc::clone(&self.active_requests);
-        let should_stop = Arc::clone(&self.should_stop);
-        let engine_dead = Arc::clone(&self.engine_dead);
         let response_channel_id = self.response_channel_id;
-        let event_callback = self.event_callback.clone();
 
-        let handle = thread::Builder::new()
-            .name("orchard-ipc-listener".to_string())
-            .spawn(move || {
-                if let Some(socket) = response_socket {
+        if let Some(socket) = self.response_socket.clone() {
+            let active_requests = Arc::clone(&self.active_requests);
+            let should_stop = Arc::clone(&self.should_stop);
+            let engine_dead = Arc::clone(&self.engine_dead);
+            let event_callback = self.event_callback.clone();
+            let handle = thread::Builder::new()
+                .name("orchard-ipc-listener".to_string())
+                .spawn(move || {
                     run_response_listener(
                         socket,
                         active_requests,
@@ -492,12 +546,32 @@ impl IPCClient {
                         engine_pid_file,
                         event_callback,
                     );
-                }
-            });
+                });
+            match handle {
+                Ok(h) => self.listener_handle = Some(h),
+                Err(e) => tracing::error!("Failed to spawn IPC listener thread: {}", e),
+            }
+        }
 
-        match handle {
-            Ok(h) => self.listener_handle = Some(h),
-            Err(e) => tracing::error!("Failed to spawn IPC listener thread: {}", e),
+        if let Some(socket) = self.event_socket.clone() {
+            let active_requests = Arc::clone(&self.active_requests);
+            let should_stop = Arc::clone(&self.should_stop);
+            let event_callback = self.event_callback.clone();
+            let handle = thread::Builder::new()
+                .name("orchard-ipc-events".to_string())
+                .spawn(move || {
+                    run_event_listener(
+                        socket,
+                        active_requests,
+                        should_stop,
+                        response_channel_id,
+                        event_callback,
+                    );
+                });
+            match handle {
+                Ok(h) => self.event_listener_handle = Some(h),
+                Err(e) => tracing::error!("Failed to spawn IPC event thread: {}", e),
+            }
         }
     }
 }
@@ -584,7 +658,55 @@ fn blocking_management_exchange(
     }
 }
 
+/// Hand one response delta (the JSON after the topic) to the request it
+/// belongs to. Never waits on a consumer: the per-request channel is unbounded,
+/// so whatever a consumer has not read yet sits here, not in the engine.
+fn route_response_delta(
+    json_data: &[u8],
+    active_requests: &Mutex<HashMap<u64, ActiveRequest>>,
+    response_channel_id: u64,
+) {
+    let Ok(delta) = serde_json::from_slice::<ResponseDelta>(json_data) else {
+        tracing::warn!(
+            response_channel_id,
+            payload_bytes = json_data.len(),
+            "Failed to deserialize IPC response payload"
+        );
+        return;
+    };
+    let request_id = delta.request_id;
+    let is_final = delta.is_final_delta;
+
+    let sender = {
+        let mut requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = requests.get_mut(&request_id) {
+            if is_final {
+                entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
+                if entry.remaining_finals == 0 {
+                    let sender = entry.sender.clone();
+                    requests.remove(&request_id);
+                    Some(sender)
+                } else {
+                    Some(entry.sender.clone())
+                }
+            } else {
+                Some(entry.sender.clone())
+            }
+        } else {
+            None
+        }
+    };
+
+    if let Some(tx) = sender {
+        let _ = tx.send(delta);
+    }
+}
+
 /// Response listener - runs on dedicated thread for minimal latency.
+///
+/// `socket` is this client's PULL endpoint, so every message on it is one of
+/// this client's deltas: the same `resp:<channel hex>:` topic and JSON body
+/// the engine publishes on PUB/SUB.
 fn run_response_listener(
     socket: Socket,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
@@ -604,55 +726,16 @@ fn run_response_listener(
 
     while !should_stop.load(Ordering::SeqCst) {
         match socket.recv() {
-            Ok(msg) => {
-                let data = msg.as_slice();
-
-                // Check if it's a response for us
-                if data.starts_with(response_topic_bytes) {
-                    let json_data = &data[response_topic_bytes.len()..];
-
-                    if let Ok(delta) = serde_json::from_slice::<ResponseDelta>(json_data) {
-                        let request_id = delta.request_id;
-                        let is_final = delta.is_final_delta;
-
-                        let sender = {
-                            let mut requests =
-                                active_requests.lock().unwrap_or_else(|e| e.into_inner());
-                            if let Some(entry) = requests.get_mut(&request_id) {
-                                if is_final {
-                                    entry.remaining_finals =
-                                        entry.remaining_finals.saturating_sub(1);
-                                    if entry.remaining_finals == 0 {
-                                        let sender = entry.sender.clone();
-                                        requests.remove(&request_id);
-                                        Some(sender)
-                                    } else {
-                                        Some(entry.sender.clone())
-                                    }
-                                } else {
-                                    Some(entry.sender.clone())
-                                }
-                            } else {
-                                None
-                            }
-                        };
-
-                        if let Some(tx) = sender {
-                            let _ = tx.send(delta);
-                        }
-                    } else {
-                        tracing::warn!(
-                            response_channel_id,
-                            payload_bytes = json_data.len(),
-                            "Failed to deserialize IPC response payload"
-                        );
-                    }
+            Ok(msg) => match msg.as_slice().strip_prefix(response_topic_bytes) {
+                Some(json_data) => {
+                    route_response_delta(json_data, &active_requests, response_channel_id)
                 }
-                // Check if it's an engine event
-                else if data.starts_with(EVENT_TOPIC_PREFIX) {
-                    handle_engine_event(data, &event_callback);
-                }
-            }
+                None => tracing::warn!(
+                    response_channel_id,
+                    payload_bytes = msg.len(),
+                    "Ignoring a message for another channel on our response endpoint"
+                ),
+            },
             Err(nng::Error::TimedOut) => {
                 if last_engine_check.elapsed() >= ENGINE_LIVENESS_POLL_INTERVAL {
                     last_engine_check = Instant::now();
@@ -724,6 +807,79 @@ fn run_response_listener(
     }
 }
 
+/// Event listener - the engine's broadcast events (telemetry, model_loaded,
+/// engine_ready, ...) only ever come over PUB/SUB.
+fn run_event_listener(
+    socket: Socket,
+    active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
+    should_stop: Arc<AtomicBool>,
+    response_channel_id: u64,
+    event_callback: Option<EventCallback>,
+) {
+    let response_topic = format!("resp:{:x}:", response_channel_id);
+    let response_topic_bytes = response_topic.as_bytes();
+    let mut warned_about_lossy_route = false;
+
+    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(EVENT_RECV_TIMEOUT));
+    while !should_stop.load(Ordering::SeqCst) {
+        match socket.recv() {
+            Ok(msg) => {
+                let data = msg.as_slice();
+                if data.starts_with(EVENT_TOPIC_PREFIX) {
+                    handle_engine_event(data, &event_callback);
+                } else if let Some(json_data) = data.strip_prefix(response_topic_bytes) {
+                    if !warned_about_lossy_route {
+                        warned_about_lossy_route = true;
+                        tracing::warn!(
+                            "PIE answered over PUB/SUB: it predates the flow-controlled \
+                             response route, so deltas can be lost whenever this process \
+                             falls behind. Update the engine."
+                        );
+                    }
+                    route_response_delta(json_data, &active_requests, response_channel_id);
+                }
+            }
+            Err(nng::Error::TimedOut) => {}
+            Err(error) => {
+                if !should_stop.load(Ordering::SeqCst) {
+                    tracing::error!(error = %error, "IPC event listener stopped");
+                }
+                break;
+            }
+        }
+    }
+}
+
+/// Remove the response endpoints of clients that are gone.
+///
+/// A client that is killed leaves its socket file behind, and nothing listens
+/// on that name again (it holds a process id and a random number), so NNG
+/// never cleans it up. A file is stale when the process in the top half of
+/// its channel id, where orchard-rs and orchard-py put their own pid (see
+/// `rand_u64`), no longer exists; an id with nothing there is left alone.
+///
+/// Never probe an endpoint by connecting to it instead. A connection that
+/// goes away before the handshake pauses a live listener's accepts for
+/// 100 ms, and an NNG without the fix for upstream #1518 stops accepting for
+/// good: the engine still connects, and every delta it sends is lost.
+fn remove_stale_response_endpoints(ipc_root: &Path) {
+    let Ok(entries) = std::fs::read_dir(ipc_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let owner_pid = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(RESPONSE_ROUTE_SOCKET_PREFIX))
+            .and_then(|name| name.strip_suffix(RESPONSE_ROUTE_SOCKET_SUFFIX))
+            .and_then(|channel_hex| u64::from_str_radix(channel_hex, 16).ok())
+            .map(|channel_id| (channel_id >> 32) as u32);
+        if owner_pid.is_some_and(|pid| pid != 0 && !pid_is_alive(pid)) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Handle an engine event (telemetry, model_loaded, etc.)
 fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
     // Event format: __PIE_EVENT__:<event_name>\x00<json_body>
@@ -764,6 +920,9 @@ fn handle_engine_event(data: &[u8], event_callback: &Option<EventCallback>) {
 
 /// Generate a unique response channel ID.
 /// Format: (PID << 32) | random_32_bits
+///
+/// The pid is how a later client tells that the endpoint file named after
+/// this id was left behind by a process that is gone.
 fn rand_u64() -> u64 {
     use rand::Rng;
 
@@ -898,7 +1057,7 @@ mod tests {
 
     #[test]
     fn test_listener_shutdown_fails_pending_requests_and_marks_engine_dead() {
-        let socket = Socket::new(Protocol::Sub0).expect("sub socket");
+        let socket = Socket::new(Protocol::Pull0).expect("pull socket");
         let active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -1018,6 +1177,403 @@ mod tests {
         assert_eq!(delta.state_events.len(), 2);
         assert_eq!(delta.state_events[0].event_type, "item_started");
         assert_eq!(delta.state_events[1].delta, "hello");
+    }
+
+    // --- The response route, against a stand-in for the engine's wire side ---
+
+    /// What PIE does on the wire, without a model. It PULLs requests, PUBlishes
+    /// events, and answers each request on the route the request asked for:
+    /// PUSH to the client's own endpoint for "pull_v1" (dialled on the first
+    /// delta, nothing buffered on the send side), PUB/SUB otherwise.
+    struct FakeEngine {
+        root: PathBuf,
+        /// False stands in for an engine older than the lossless route: it
+        /// ignores the field it does not know and answers on PUB/SUB.
+        knows_pull_route: bool,
+        requests: Socket,
+        publisher: Socket,
+        _management: Socket,
+        routes: HashMap<u64, Socket>,
+    }
+
+    impl FakeEngine {
+        fn start(root: &Path) -> Self {
+            let requests = Socket::new(Protocol::Pull0).expect("pull socket");
+            requests
+                .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_secs(10)))
+                .expect("recv timeout");
+            requests.listen(&request_url_in(root)).expect("listen");
+            let publisher = Socket::new(Protocol::Pub0).expect("pub socket");
+            // The engine's own NNG_OPT_SENDBUF on this socket.
+            publisher
+                .set_opt::<nng::options::SendBufferSize>(1024)
+                .expect("send buffer");
+            publisher.listen(&response_url_in(root)).expect("listen");
+            let management = Socket::new(Protocol::Rep0).expect("rep socket");
+            management.listen(&management_url_in(root)).expect("listen");
+            Self {
+                root: root.to_path_buf(),
+                knows_pull_route: true,
+                requests,
+                publisher,
+                _management: management,
+                routes: HashMap::new(),
+            }
+        }
+
+        /// Metadata of the next request a client sent.
+        fn next_request(&self) -> Value {
+            let frame = self.requests.recv().expect("a request");
+            let length = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
+            serde_json::from_slice(&frame[4..4 + length]).expect("request metadata")
+        }
+
+        fn send_delta(&mut self, request: &Value, content: &str, is_final_delta: bool) {
+            let channel_id = request["response_channel_id"].as_u64().expect("channel id");
+            let mut message = format!("resp:{channel_id:x}:").into_bytes();
+            let delta = serde_json::json!({
+                "request_id": request["request_id"],
+                "content": content,
+                "is_final_delta": is_final_delta,
+            });
+            message.extend_from_slice(&serde_json::to_vec(&delta).unwrap());
+
+            if self.knows_pull_route && request["response_transport"] == "pull_v1" {
+                let root = &self.root;
+                let route = self.routes.entry(channel_id).or_insert_with(|| {
+                    let route = Socket::new(Protocol::Push0).expect("push socket");
+                    route
+                        .set_opt::<nng::options::SendBufferSize>(0)
+                        .expect("send buffer");
+                    route
+                        .set_opt::<nng::options::SendTimeout>(Some(Duration::from_secs(10)))
+                        .expect("send timeout");
+                    route
+                        .dial(&as_ipc_url(response_route_path(root, channel_id)))
+                        .expect("the client listens on its endpoint before it sends");
+                    route
+                });
+                route
+                    .send(message.as_slice())
+                    .map_err(|(_, error)| error)
+                    .expect("push a delta");
+            } else {
+                self.publisher
+                    .send(message.as_slice())
+                    .map_err(|(_, error)| error)
+                    .expect("publish a delta");
+            }
+        }
+
+        /// Answer with `count` deltas whose contents are "0", "1", ...
+        fn answer(&mut self, request: &Value, count: usize) {
+            for index in 0..count {
+                self.send_delta(request, &index.to_string(), index + 1 == count);
+            }
+        }
+
+        fn publish_event(&self, name: &str, payload: &Value) {
+            let mut message = EVENT_TOPIC_PREFIX.to_vec();
+            message.extend_from_slice(name.as_bytes());
+            message.push(0);
+            message.extend_from_slice(&serde_json::to_vec(payload).unwrap());
+            let _ = self.publisher.send(message.as_slice());
+        }
+    }
+
+    /// An IPC root short enough for a socket path whatever TMPDIR is.
+    fn ipc_dir() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("orc-")
+            .tempdir_in("/tmp")
+            .expect("tempdir should be available")
+    }
+
+    fn connect(client: &mut IPCClient, root: &Path) {
+        let pid_file = root.join("engine.pid");
+        std::fs::write(&pid_file, format!("{}\n", std::process::id())).expect("pid file");
+        client.connect_in(root, pid_file).expect("connect");
+    }
+
+    fn send(client: &IPCClient, request_id: u64) -> mpsc::UnboundedReceiver<ResponseDelta> {
+        let (_, deltas) = client
+            .send_batch_request(request_id, "model", "/model", &[PromptPayload::default()])
+            .expect("send");
+        deltas
+    }
+
+    /// Contents of every delta up to and including the final one.
+    fn contents(deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut contents = Vec::new();
+        loop {
+            match deltas.try_recv() {
+                Ok(delta) => {
+                    contents.push(delta.content.unwrap_or_default());
+                    if delta.is_final_delta {
+                        return contents;
+                    }
+                }
+                Err(_) => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "no final delta; got {} deltas",
+                        contents.len()
+                    );
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+    }
+
+    fn counting(count: usize) -> Vec<String> {
+        (0..count).map(|index| index.to_string()).collect()
+    }
+
+    #[test]
+    fn test_deltas_pushed_to_the_endpoint_reach_their_request_in_order() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        let mut first = send(&client, 1);
+        let mut second = send(&client, 2);
+        let requests = [engine.next_request(), engine.next_request()];
+        assert_eq!(requests[0]["request_id"], 1);
+        assert_eq!(requests[1]["request_id"], 2);
+
+        // Straight to the endpoint, whatever the request asked for.
+        let endpoint = as_ipc_url(response_route_path(dir.path(), client.response_channel_id));
+        let pusher = Socket::new(Protocol::Push0).expect("push socket");
+        pusher
+            .dial(&endpoint)
+            .expect("the endpoint is up before a request is sent");
+        let topic = format!("resp:{:x}:", client.response_channel_id);
+        for index in 0..200 {
+            for request_id in [1, 2] {
+                let delta = serde_json::json!({
+                    "request_id": request_id,
+                    "content": format!("{request_id}.{index}"),
+                    "is_final_delta": index == 199,
+                });
+                pusher
+                    .send(format!("{topic}{delta}").as_bytes())
+                    .map_err(|(_, error)| error)
+                    .expect("push a delta");
+            }
+        }
+
+        let expected = |request_id: u64| -> Vec<String> {
+            (0..200)
+                .map(|index| format!("{request_id}.{index}"))
+                .collect()
+        };
+        assert_eq!(contents(&mut first), expected(1));
+        assert_eq!(contents(&mut second), expected(2));
+        drop(engine.routes.drain());
+    }
+
+    #[test]
+    fn test_a_stalled_receive_loop_loses_no_delta() {
+        const DELTAS: usize = 6000;
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        let engine = thread::spawn(move || {
+            engine.answer(&request, DELTAS);
+            engine
+        });
+
+        // The receive loop takes this lock for every delta: holding it is a
+        // client that falls 1.5 s behind while the engine keeps producing.
+        let stall = client.active_requests.lock().unwrap();
+        thread::sleep(Duration::from_millis(1500));
+        drop(stall);
+
+        let received = contents(&mut deltas);
+        assert_eq!(received.len(), DELTAS, "deltas were lost during the stall");
+        assert_eq!(received, counting(DELTAS));
+        drop(engine.join().expect("engine thread"));
+    }
+
+    #[test]
+    fn test_two_clients_on_one_root_get_only_their_own_deltas() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut clients = [IPCClient::new(), IPCClient::new()];
+        for client in &mut clients {
+            connect(client, dir.path());
+        }
+
+        // Every client counts request ids from 1: only the channel tells them apart.
+        let mut streams = [send(&clients[0], 1), send(&clients[1], 1)];
+        for _ in 0..2 {
+            let request = engine.next_request();
+            let channel_id = request["response_channel_id"].as_u64().unwrap();
+            for index in 0..50 {
+                engine.send_delta(&request, &format!("{channel_id:x}.{index}"), index == 49);
+            }
+        }
+
+        for (client, deltas) in clients.iter().zip(&mut streams) {
+            let expected: Vec<String> = (0..50)
+                .map(|index| format!("{:x}.{index}", client.response_channel_id))
+                .collect();
+            assert_eq!(contents(deltas), expected);
+            assert!(deltas.try_recv().is_err(), "a delta of the other client");
+        }
+    }
+
+    #[test]
+    fn test_disconnect_closes_and_removes_the_endpoint() {
+        let dir = ipc_dir();
+        let _engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        let endpoint = response_route_path(dir.path(), client.response_channel_id);
+
+        connect(&mut client, dir.path());
+        assert!(endpoint.exists(), "the endpoint is up once connect returns");
+
+        client.disconnect();
+        assert!(!endpoint.exists(), "disconnect removes the socket file");
+        let pusher = Socket::new(Protocol::Push0).expect("push socket");
+        assert!(pusher.dial(&as_ipc_url(endpoint.clone())).is_err());
+
+        connect(&mut client, dir.path());
+        assert!(endpoint.exists());
+        drop(client);
+        assert!(!endpoint.exists(), "drop removes the socket file");
+    }
+
+    #[test]
+    fn test_connecting_again_replaces_the_endpoint() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+        // No disconnect in between: the endpoint of the first connect is
+        // still bound to the path the second one listens on.
+        connect(&mut client, dir.path());
+
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_the_same_listener_hears_a_restarted_engine() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+
+        // A new engine in the same root knows nothing of this client until its
+        // first delta for it, and then dials the endpoint that is still up.
+        drop(engine);
+        let mut engine = FakeEngine::start(dir.path());
+        let mut deltas = send(&client, 2);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_reconnect_after_an_engine_restart_still_receives() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+
+        drop(engine);
+        client.disconnect();
+        let mut engine = FakeEngine::start(dir.path());
+        connect(&mut client, dir.path());
+
+        let mut deltas = send(&client, 2);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_events_and_an_older_engines_deltas_arrive_over_pub_sub() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        engine.knows_pull_route = false;
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_for_callback = Arc::clone(&events);
+        let mut client =
+            IPCClient::with_event_callback(Arc::new(move |name: &str, payload: &Value| {
+                events_for_callback
+                    .lock()
+                    .unwrap()
+                    .push((name.to_string(), payload.clone()));
+            }));
+        connect(&mut client, dir.path());
+
+        // PUB/SUB does not queue for a subscriber it has not seen yet.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while events.lock().unwrap().is_empty() {
+            assert!(Instant::now() < deadline, "no event arrived");
+            engine.publish_event("model_loaded", &serde_json::json!({"model_id": "model"}));
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            events.lock().unwrap()[0],
+            (
+                "model_loaded".to_string(),
+                serde_json::json!({"model_id": "model"})
+            )
+        );
+
+        let mut deltas = send(&client, 1);
+        let request = engine.next_request();
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+    }
+
+    #[test]
+    fn test_connect_removes_the_endpoints_of_dead_clients_only() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = ipc_dir();
+        let _engine = FakeEngine::start(dir.path());
+
+        let mut child = std::process::Command::new("true").spawn().expect("spawn");
+        let dead_pid = u64::from(child.id());
+        child.wait().expect("wait");
+        // std leaves the socket file behind when the listener goes, as a
+        // killed client does.
+        let stale = response_route_path(dir.path(), (dead_pid << 32) | 7);
+        drop(UnixListener::bind(&stale).expect("bind"));
+        let alive = response_route_path(dir.path(), (u64::from(std::process::id()) << 32) | 7);
+        drop(UnixListener::bind(&alive).expect("bind"));
+        let foreign = response_route_path(dir.path(), 7);
+        drop(UnixListener::bind(&foreign).expect("bind"));
+
+        let mut client = IPCClient::new();
+        connect(&mut client, dir.path());
+
+        assert!(!stale.exists(), "its owner is gone");
+        assert!(alive.exists(), "its owner is alive");
+        assert!(foreign.exists(), "its id names no owner");
     }
 
     #[test]

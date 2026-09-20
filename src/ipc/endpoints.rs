@@ -156,33 +156,61 @@ pub fn ipc_root() -> PathBuf {
 }
 
 /// Format a filesystem path into an NNG ipc:// transport URL.
-fn as_ipc_url(path: PathBuf) -> String {
+pub(crate) fn as_ipc_url(path: PathBuf) -> String {
     format!("ipc://{}", path.display())
 }
 
 /// The endpoint for submitting inference requests to the engine.
 /// Pattern: PUSH/PULL (Many clients PUSH, one engine PULLs)
 pub fn request_url() -> String {
-    as_ipc_url(ipc_root().join("pie_requests.ipc"))
+    request_url_in(&ipc_root())
 }
 
-/// The endpoint for receiving responses and broadcast events from the engine.
+pub(crate) fn request_url_in(ipc_root: &Path) -> String {
+    as_ipc_url(ipc_root.join("pie_requests.ipc"))
+}
+
+/// The endpoint for receiving broadcast events from the engine.
 /// Pattern: PUB/SUB (One engine PUBlishes, many clients SUBscribe)
-/// Topics are used to route messages to the correct consumer.
+/// PUB/SUB drops the oldest queued messages when a subscriber falls behind,
+/// so response deltas do not travel here: see [`response_route_path`].
 pub fn response_url() -> String {
-    as_ipc_url(ipc_root().join("pie_responses.ipc"))
+    response_url_in(&ipc_root())
+}
+
+pub(crate) fn response_url_in(ipc_root: &Path) -> String {
+    as_ipc_url(ipc_root.join("pie_responses.ipc"))
 }
 
 /// The endpoint for synchronous management commands (e.g., load_model).
 /// Pattern: REQ/REP (One client sends a REQ, one engine sends a REP)
 pub fn management_url() -> String {
-    as_ipc_url(ipc_root().join("pie_management.ipc"))
+    management_url_in(&ipc_root())
+}
+
+pub(crate) fn management_url_in(ipc_root: &Path) -> String {
+    as_ipc_url(ipc_root.join("pie_management.ipc"))
+}
+
+/// Filename prefix and suffix of a client's own response endpoint
+/// (`RESPONSE_ROUTE_SOCKET_PREFIX` / `_SUFFIX` in the engine).
+pub(crate) const RESPONSE_ROUTE_SOCKET_PREFIX: &str = "pie_response_";
+pub(crate) const RESPONSE_ROUTE_SOCKET_SUFFIX: &str = ".ipc";
+
+/// The socket file a client listens on for its own response deltas.
+/// Pattern: PUSH/PULL the other way round (the client PULLs and listens, the
+/// engine dials and PUSHes). The engine derives the same path from the
+/// request's `response_channel_id`: unpadded lowercase hex.
+pub(crate) fn response_route_path(ipc_root: &Path, response_channel_id: u64) -> PathBuf {
+    ipc_root.join(format!(
+        "{RESPONSE_ROUTE_SOCKET_PREFIX}{response_channel_id:x}{RESPONSE_ROUTE_SOCKET_SUFFIX}"
+    ))
 }
 
 // --- Topic Prefixes for the PUB/SUB Channel ---
 
-/// Topic prefix for response deltas targeted at a specific client.
-/// A client subscribes to RESPONSE_TOPIC_PREFIX + its_channel_id_hex.
+/// Topic prefix of every response delta, on either route.
+/// A client's deltas start with RESPONSE_TOPIC_PREFIX + its_channel_id_hex + ":".
 pub const RESPONSE_TOPIC_PREFIX: &[u8] = b"resp:";
 
 /// Topic prefix for global, broadcast events (e.g., engine_ready).

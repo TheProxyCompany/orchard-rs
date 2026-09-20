@@ -227,6 +227,11 @@ pub fn parse_response_delta(data: &[u8]) -> Result<Value> {
 ///
 /// This is the correct implementation that sends all prompts in ONE IPC message,
 /// allowing the engine to schedule them together efficiently.
+///
+/// The request asks for the engine's flow-controlled response route: its
+/// deltas are pushed to `pie_response_<response_channel_id in hex>.ipc`, where
+/// the sender must already be listening (`IPCClient::connect` does), and are
+/// not published on the PUB/SUB endpoint.
 #[allow(clippy::too_many_arguments)]
 pub fn build_batch_request_payload(
     request_id: u64,
@@ -423,6 +428,11 @@ pub fn build_batch_request_payload(
         "request_type": request_type as i32,
         "request_channel_id": 0,
         "response_channel_id": response_channel_id,
+        // The engine's flow-controlled response route: it pushes this
+        // request's deltas to the sender's own endpoint instead of publishing
+        // them, so none is dropped when the sender falls behind. The engine
+        // compares the exact string and takes anything else to mean PUB/SUB.
+        "response_transport": "pull_v1",
         "prompts": prompt_metadata_list,
     });
 
@@ -587,6 +597,28 @@ mod tests {
         assert_eq!(metadata["model_id"], "test-model");
         assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
         assert_eq!(metadata["prompts"][0]["deterministic"], true);
+    }
+
+    #[test]
+    fn test_every_request_asks_for_the_lossless_response_route() {
+        for request_type in [RequestType::Generation, RequestType::Embedding] {
+            let payload = build_batch_request_payload(
+                1,
+                "test-model",
+                "/path/to/model",
+                request_type,
+                0xabc,
+                &[PromptPayload::default()],
+            )
+            .unwrap();
+
+            let length = u32::from_le_bytes(payload[..4].try_into().unwrap()) as usize;
+            let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
+            // The engine compares this exact string and takes anything else
+            // to mean PUB/SUB, which drops deltas when the client falls behind.
+            assert_eq!(metadata["response_transport"], "pull_v1");
+            assert_eq!(metadata["response_channel_id"], 0xabc);
+        }
     }
 
     #[test]
