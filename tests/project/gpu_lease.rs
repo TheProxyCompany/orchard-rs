@@ -107,12 +107,17 @@ pub fn hold_at(path: &str) {
 
     // Children inherit the mark from this process's own environment. The
     // engine is spawned by the library's production code, which this must not
-    // touch, so there is no Command::env to hang it on. set_var is sound only
-    // while nothing reads the environment behind std's back (C getenv), which
-    // is why callers take the lease first, before the engine, NNG or any HTTP
-    // client exists in the process. This crate is edition 2021, where set_var
-    // is a safe fn; edition 2024 wants an unsafe block around it, with this
-    // same argument.
+    // touch, so there is no Command::env to hang it on. Other threads do exist
+    // by now: in the test binaries this runs on a tokio blocking thread
+    // (get_fixture in fixture.rs) with libtest's test threads and their
+    // runtimes already up, and in the examples the tokio workers are started.
+    // What set_var relies on instead: the engine-backed tests get no further
+    // than the fixture's OnceLock until this returns, std's own env accessors
+    // serialize on std's env lock, and nothing in these targets is known to
+    // read the environment from C (getenv, which std cannot lock) this early.
+    // ensure_test_namespace() sets ORCHARD_CACHE_ROOT at the same point on the
+    // same terms. This crate is edition 2021, where set_var is a safe fn; an
+    // edition-2024 unsafe block needs this argument, not "no other threads".
     std::env::set_var("PROXY_GPU_LEASE_HELD", "1");
     let _ = LEASE.set(file);
 }
