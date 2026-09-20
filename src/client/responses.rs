@@ -752,6 +752,7 @@ pub fn response_input_items(
                     .collect(),
             ),
             encrypted_content: reasoning.encrypted_content.clone(),
+            provider_metadata: reasoning.provider_metadata.clone(),
         },
     });
     record.into_iter().chain(items).collect()
@@ -2620,6 +2621,7 @@ mod tests {
                     serde_json::json!({"type": "reasoning_text", "text": "look it up"}),
                 ]),
                 encrypted_content: None,
+                provider_metadata: None,
             },
             answer("Checking."),
             ResponseInputItem::FunctionCall {
