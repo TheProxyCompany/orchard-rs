@@ -1305,7 +1305,8 @@ impl Client {
     /// renders a different prompt leaves nothing the turn can reuse. Only the
     /// output budget is overridden: one token, one candidate.
     ///
-    /// The models must already be loaded. One token is sampled and discarded.
+    /// The models must already be loaded: one that is not gets an error result, it is
+    /// not downloaded or loaded here. One token is sampled and discarded.
     pub async fn awarm_prefix(
         &self,
         model_ids: &[&str],
@@ -1329,6 +1330,11 @@ impl Client {
                     elapsed: std::time::Duration::ZERO,
                     error: None,
                 };
+                // achat would download and load a missing model; a warm-up must not.
+                if client.registry.get_if_ready(&model_id).await.is_none() {
+                    result.error = Some(format!("Model '{model_id}' is not loaded"));
+                    return result;
+                }
                 match client.achat(&model_id, messages, params, true).await {
                     Ok(ChatResult::Stream(mut stream)) => {
                         while let Some(delta) = stream.recv().await {
@@ -2509,6 +2515,31 @@ mod tests {
         assert_eq!(results[0].model_id, "org/cancelled");
         assert_eq!(results[1].model_id, "org/panicked");
         assert!(results.iter().all(|result| result.error.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_warm_prefix_refuses_a_model_that_is_not_loaded() {
+        let client = Client::new(
+            Arc::new(IPCClient::new()),
+            Arc::new(ModelRegistry::new().unwrap()),
+        );
+        let messages = vec![HashMap::from([
+            ("role".to_string(), serde_json::json!("user")),
+            ("content".to_string(), serde_json::json!("hi")),
+        ])];
+
+        let results = client
+            .awarm_prefix(
+                &["orchard-tests/never-loaded"],
+                messages,
+                SamplingParams::default(),
+            )
+            .await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].model_id, "orchard-tests/never-loaded");
+        let error = results[0].error.as_deref().expect("should be refused");
+        assert!(error.contains("is not loaded"), "{error}");
     }
 
     #[test]
