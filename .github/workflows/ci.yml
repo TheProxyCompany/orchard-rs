@@ -50,7 +50,7 @@ jobs:
         run: cargo build --release
 
       - name: Run unit tests
-        run: cargo test --release --lib
+        run: cargo test --release --lib --test gpu_lease
 
       - name: Checkout PIE and its private dependencies
         uses: actions/checkout@v6
