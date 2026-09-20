@@ -1319,7 +1319,8 @@ impl Client {
             let model_id = (*model_id).to_string();
             let messages = messages.clone();
             let params = params.clone();
-            handles.push(tokio::spawn(async move {
+            let task_model_id = model_id.clone();
+            let handle = tokio::spawn(async move {
                 let started = std::time::Instant::now();
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
@@ -1351,22 +1352,10 @@ impl Client {
                 }
                 result.elapsed = started.elapsed();
                 result
-            }));
+            });
+            handles.push((task_model_id, handle));
         }
-        let mut results = Vec::with_capacity(handles.len());
-        for handle in handles {
-            match handle.await {
-                Ok(result) => results.push(result),
-                Err(error) => results.push(WarmResult {
-                    model_id: String::new(),
-                    prompt_tokens: 0,
-                    cached_tokens: 0,
-                    elapsed: std::time::Duration::ZERO,
-                    error: Some(error.to_string()),
-                }),
-            }
-        }
-        results
+        join_warm_tasks(handles).await
     }
 
     /// Run a prefill-only task and return the raw response deltas.
@@ -1865,6 +1854,27 @@ fn warm_params(params: SamplingParams) -> SamplingParams {
         final_candidates: None,
         ..params
     }
+}
+
+/// One result per warm task, in order. A task that panicked or was cancelled has no
+/// result of its own, so its model id travels next to its handle.
+async fn join_warm_tasks(
+    handles: Vec<(String, tokio::task::JoinHandle<WarmResult>)>,
+) -> Vec<WarmResult> {
+    let mut results = Vec::with_capacity(handles.len());
+    for (model_id, handle) in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(error) => results.push(WarmResult {
+                model_id,
+                prompt_tokens: 0,
+                cached_tokens: 0,
+                elapsed: std::time::Duration::ZERO,
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+    results
 }
 
 /// Result of a chat operation.
@@ -2481,6 +2491,24 @@ mod tests {
             serde_json::to_value(&warm).unwrap(),
             serde_json::to_value(&expected).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn test_failed_warm_task_still_names_its_model() {
+        let cancelled = tokio::spawn(std::future::pending::<WarmResult>());
+        cancelled.abort();
+        let panicked = tokio::spawn(async { panic!("warm task panicked") });
+
+        let results = join_warm_tasks(vec![
+            ("org/cancelled".to_string(), cancelled),
+            ("org/panicked".to_string(), panicked),
+        ])
+        .await;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].model_id, "org/cancelled");
+        assert_eq!(results[1].model_id, "org/panicked");
+        assert!(results.iter().all(|result| result.error.is_some()));
     }
 
     #[test]
