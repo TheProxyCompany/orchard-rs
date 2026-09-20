@@ -312,4 +312,27 @@ mod tests {
         assert!(management_url().starts_with("ipc://"));
         assert!(request_url().len() - "ipc://".len() <= MAX_SOCKET_PATH_BYTES);
     }
+
+    #[test]
+    fn response_route_path_is_the_name_the_engine_dials() {
+        // Literal names, not built with this module's own constants: the
+        // engine formats "{}{:x}{}" with "pie_response_" and ".ipc"
+        // (PIE transport.cpp get_response_route, ipc/constants.hpp), and a
+        // client that listens under any other name is never dialled, so every
+        // request would wait for deltas that are dropped on the engine side.
+        let root = Path::new("/r");
+        for (channel_id, name) in [
+            (0x1a2b3c, "pie_response_1a2b3c.ipc"),
+            // No padding, and a leading zero nibble is not printed.
+            (0x0abc, "pie_response_abc.ipc"),
+            // Lowercase, all 16 digits of a (pid << 32) | random id.
+            (0xffff_ffff_0000_0001, "pie_response_ffffffff00000001.ipc"),
+            (0xDEAD_BEEF_CAFE_F00D, "pie_response_deadbeefcafef00d.ipc"),
+        ] {
+            assert_eq!(
+                response_route_path(root, channel_id),
+                Path::new("/r").join(name)
+            );
+        }
+    }
 }
