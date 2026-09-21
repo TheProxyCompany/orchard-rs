@@ -1246,6 +1246,219 @@ mod tests {
             .contains("<|image|>"));
     }
 
+    /// What the engine receives for a chat, cut along the layout: every text segment as the
+    /// bytes the engine tokenizes on their own, every image or audio segment as `[image]` or
+    /// `[audio]`.
+    fn segments(
+        formatter: &ChatFormatter,
+        items: &[HashMap<String, serde_json::Value>],
+    ) -> Vec<String> {
+        let (messages, image_buffers, audio_buffers, capabilities, content_order) =
+            build_multimodal_messages(formatter, items, None).unwrap();
+        let rendered = formatter
+            .apply_template(&messages, true, false, None, None)
+            .unwrap();
+        let layout = build_multimodal_layout(
+            formatter,
+            &rendered,
+            &image_buffers,
+            &audio_buffers,
+            &capabilities,
+            &content_order,
+        )
+        .unwrap();
+
+        let prompt = formatter.strip_template_placeholders(&rendered);
+        let mut rest = prompt.as_str();
+        let mut segments = Vec::new();
+        for segment in &layout {
+            if segment.segment_type == "text" {
+                let (text, tail) = rest.split_at(segment.length);
+                segments.push(text.to_string());
+                rest = tail;
+            } else {
+                segments.push(format!("[{}]", segment.segment_type));
+            }
+        }
+        assert_eq!(rest, "", "the text segments must cover the prompt exactly");
+        segments
+    }
+
+    /// Gemma 4 E2B.
+    fn gemma4() -> ChatFormatter {
+        ChatFormatter::from_config(
+            Path::new("gemma-4-E2B-it"),
+            serde_json::json!({"model_type": "gemma4", "text_config": {"hidden_size": 1536}}),
+        )
+        .unwrap()
+    }
+
+    fn chat_message(role: &str, content: serde_json::Value) -> HashMap<String, serde_json::Value> {
+        HashMap::from([
+            ("role".to_string(), serde_json::json!(role)),
+            ("content".to_string(), content),
+        ])
+    }
+
+    /// The Hugging Face processor turns each image into `<|image>`, the image's soft tokens,
+    /// `<image|>` (token ids 255999, 258880 x N, 258882), with no newline on either side. The
+    /// engine supplies the soft tokens for the image segment, so the two delimiters have to
+    /// arrive as text: the last token before the image and the first one after it.
+    #[test]
+    fn test_gemma4_wraps_every_image_in_its_begin_and_end_tokens() {
+        let image = || serde_json::json!({"type": "input_image", "image_url": "data:image/png;base64,AA=="});
+        let text = |value: &str| serde_json::json!({"type": "input_text", "text": value});
+
+        let one_image = [chat_message(
+            "user",
+            serde_json::json!([
+                text("Here is a picture."),
+                image(),
+                text("In one sentence, what does it show?"),
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &one_image),
+            [
+                "<bos><|turn>user\nHere is a picture.<|image>",
+                "[image]",
+                "<image|>In one sentence, what does it show?<turn|>\n<|turn>model\n",
+            ]
+        );
+
+        let two_images = [chat_message(
+            "user",
+            serde_json::json!([
+                text("Here is the first picture."),
+                image(),
+                text("Here is the second picture."),
+                image(),
+                text("What do the two pictures have in common?"),
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &two_images),
+            [
+                "<bos><|turn>user\nHere is the first picture.<|image>",
+                "[image]",
+                "<image|>Here is the second picture.<|image>",
+                "[image]",
+                "<image|>What do the two pictures have in common?<turn|>\n<|turn>model\n",
+            ]
+        );
+
+        // Two images with nothing between them still get a closing and an opening token.
+        let adjacent = [chat_message(
+            "user",
+            serde_json::json!([image(), image(), text("Compare them.")]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &adjacent),
+            [
+                "<bos><|turn>user\n<|image>",
+                "[image]",
+                "<image|><|image>",
+                "[image]",
+                "<image|>Compare them.<turn|>\n<|turn>model\n",
+            ]
+        );
+    }
+
+    /// Audio follows the same rule with `<|audio>` and `<audio|>` (256000 and 258883), and the
+    /// `<|audio|>` placeholder itself must not reach the engine as text: the engine rejects a
+    /// prompt whose text is longer than its layout says.
+    #[test]
+    fn test_gemma4_wraps_audio_in_its_begin_and_end_tokens() {
+        let listen = [chat_message(
+            "user",
+            serde_json::json!([
+                {"type": "input_text", "text": "Listen."},
+                {"type": "input_audio", "data": [0.0, 0.5, -0.5]},
+                {"type": "input_text", "text": "What do you hear?"},
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &listen),
+            [
+                "<bos><|turn>user\nListen.<|audio>",
+                "[audio]",
+                "<audio|>What do you hear?<turn|>\n<|turn>model\n",
+            ]
+        );
+    }
+
+    /// An image a tool returns goes after the response block, in its delimiters, which is
+    /// where the Hugging Face template and processor put it; the block keeps the text.
+    #[test]
+    fn test_gemma4_puts_a_tool_result_image_after_the_response_block() {
+        let mut call = chat_message("assistant", serde_json::json!(""));
+        call.insert(
+            "tool_calls".to_string(),
+            serde_json::json!([{
+                "id": "call_image",
+                "type": "function",
+                "function": {"name": "generate_image", "arguments": {"prompt": "a red apple"}},
+            }]),
+        );
+        let mut result = chat_message(
+            "tool",
+            serde_json::json!([
+                {"type": "text", "text": "done"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            ]),
+        );
+        result.insert("tool_call_id".to_string(), serde_json::json!("call_image"));
+        let conversation = [
+            chat_message("user", serde_json::json!("Create an image of an apple.")),
+            call,
+            result,
+        ];
+        assert_eq!(
+            segments(&gemma4(), &conversation),
+            [
+                "<bos><|turn>user\nCreate an image of an apple.<turn|>\n<|turn>model\n\
+                 <|tool_call>call:generate_image{prompt:<|\"|>a red apple<|\"|>}<tool_call|>\
+                 <|tool_response>response:generate_image{value:<|\"|>done<|\"|>}<tool_response|><|image>",
+                "[image]",
+                "<image|>",
+            ]
+        );
+    }
+
+    /// Gemma 3's delimiters are in its template already. What the Hugging Face processor adds
+    /// besides the soft tokens is a blank line on each side of the image:
+    /// "\n\n<start_of_image>", the soft tokens, "<end_of_image>\n\n".
+    #[test]
+    fn test_gemma3_sets_an_image_apart_with_blank_lines() {
+        let formatter = ChatFormatter::from_config(
+            Path::new("gemma-3-4b-it"),
+            serde_json::json!({"model_type": "gemma3"}),
+        )
+        .unwrap();
+        let items = [chat_message(
+            "user",
+            serde_json::json!([
+                {"type": "input_text", "text": "Here is a picture."},
+                {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+                {"type": "input_text", "text": "What does it show?"},
+            ]),
+        )];
+        // The start token is this profile's placeholder and stays in the text, so the image
+        // sits between the two delimiters.
+        let [before, image, after] = &segments(&formatter, &items)[..] else {
+            panic!("expected text, image, text");
+        };
+        assert_eq!(image, "[image]");
+        assert!(
+            before.ends_with("user\nHere is a picture.\n\n<start_of_image>"),
+            "{before:?}"
+        );
+        assert_eq!(
+            after,
+            "<end_of_image>\n\nWhat does it show?<end_of_turn>\n<start_of_turn>model\n"
+        );
+    }
+
     #[test]
     fn test_gemma4u_audio_layout_uses_audio_segment() {
         let model_dir = tempdir().unwrap();
