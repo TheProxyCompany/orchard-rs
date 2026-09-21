@@ -7,12 +7,16 @@ use orchard::SamplingParams;
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
-/// Test stop sequence on "blue" - should output red, white, blue and stop at blue.
+/// Test stop sequence on "blue" - the reply stops in front of it: the stop sequence ends the
+/// reply and is not part of it (the engine's text stream leaves it out, only the decoded
+/// tokens spell it). Against an engine without the `released_text` capability the reply is
+/// still read from the decoded tokens and ends with the stop sequence, as it always did.
 /// Mirrors: test_stop_sequences.py::test_chat_completion_respects_stop_sequence
 #[tokio::test]
 async fn test_chat_completion_respects_stop_sequence() {
     let fixture = get_fixture().await;
     let client = &fixture.client;
+    let registry = &fixture.registry;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
@@ -40,13 +44,25 @@ async fn test_chat_completion_respects_stop_sequence() {
 
                 assert!(content.contains("red"), "Expected 'red' in response");
                 assert!(content.contains("white"), "Expected 'white' in response");
-                assert!(content.contains("blue"), "Expected 'blue' in response");
-                assert!(
-                    content.ends_with("blue"),
-                    "Expected response to end with 'blue' for {} but got: '{}'",
-                    model_id,
-                    response.text
-                );
+                let info = registry
+                    .ensure_loaded(model_id)
+                    .await
+                    .expect("the model answered, so it is loaded");
+                if info.releases_held_text() {
+                    assert!(
+                        !content.contains("blue"),
+                        "Expected the stop sequence 'blue' to be left out for {} but got: '{}'",
+                        model_id,
+                        response.text
+                    );
+                } else {
+                    assert!(
+                        content.ends_with("blue"),
+                        "Expected response to end with 'blue' for {} but got: '{}'",
+                        model_id,
+                        response.text
+                    );
+                }
                 assert_eq!(
                     response.finish_reason.as_deref().map(|s| s.to_lowercase()),
                     Some("stop".to_string()),
