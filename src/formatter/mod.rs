@@ -1246,22 +1246,20 @@ mod tests {
             .contains("<|image|>"));
     }
 
-    /// What the engine receives for a Gemma 4 E2B chat, cut along the layout: every text
-    /// segment as the bytes the engine tokenizes on their own, every image or audio segment
-    /// as `[image]` or `[audio]`.
-    fn gemma4_segments(items: &[HashMap<String, serde_json::Value>]) -> Vec<String> {
-        let formatter = ChatFormatter::from_config(
-            Path::new("gemma-4-E2B-it"),
-            serde_json::json!({"model_type": "gemma4", "text_config": {"hidden_size": 1536}}),
-        )
-        .unwrap();
+    /// What the engine receives for a chat, cut along the layout: every text segment as the
+    /// bytes the engine tokenizes on their own, every image or audio segment as `[image]` or
+    /// `[audio]`.
+    fn segments(
+        formatter: &ChatFormatter,
+        items: &[HashMap<String, serde_json::Value>],
+    ) -> Vec<String> {
         let (messages, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(&formatter, items, None).unwrap();
+            build_multimodal_messages(formatter, items, None).unwrap();
         let rendered = formatter
             .apply_template(&messages, true, false, None, None)
             .unwrap();
         let layout = build_multimodal_layout(
-            &formatter,
+            formatter,
             &rendered,
             &image_buffers,
             &audio_buffers,
@@ -1284,6 +1282,15 @@ mod tests {
         }
         assert_eq!(rest, "", "the text segments must cover the prompt exactly");
         segments
+    }
+
+    /// Gemma 4 E2B.
+    fn gemma4() -> ChatFormatter {
+        ChatFormatter::from_config(
+            Path::new("gemma-4-E2B-it"),
+            serde_json::json!({"model_type": "gemma4", "text_config": {"hidden_size": 1536}}),
+        )
+        .unwrap()
     }
 
     fn chat_message(role: &str, content: serde_json::Value) -> HashMap<String, serde_json::Value> {
@@ -1311,7 +1318,7 @@ mod tests {
             ]),
         )];
         assert_eq!(
-            gemma4_segments(&one_image),
+            segments(&gemma4(), &one_image),
             [
                 "<bos><|turn>user\nHere is a picture.<|image>",
                 "[image]",
@@ -1330,7 +1337,7 @@ mod tests {
             ]),
         )];
         assert_eq!(
-            gemma4_segments(&two_images),
+            segments(&gemma4(), &two_images),
             [
                 "<bos><|turn>user\nHere is the first picture.<|image>",
                 "[image]",
@@ -1346,7 +1353,7 @@ mod tests {
             serde_json::json!([image(), image(), text("Compare them.")]),
         )];
         assert_eq!(
-            gemma4_segments(&adjacent),
+            segments(&gemma4(), &adjacent),
             [
                 "<bos><|turn>user\n<|image>",
                 "[image]",
@@ -1371,7 +1378,7 @@ mod tests {
             ]),
         )];
         assert_eq!(
-            gemma4_segments(&listen),
+            segments(&gemma4(), &listen),
             [
                 "<bos><|turn>user\nListen.<|audio>",
                 "[audio]",
@@ -1407,7 +1414,7 @@ mod tests {
             result,
         ];
         assert_eq!(
-            gemma4_segments(&conversation),
+            segments(&gemma4(), &conversation),
             [
                 "<bos><|turn>user\nCreate an image of an apple.<turn|>\n<|turn>model\n\
                  <|tool_call>call:generate_image{prompt:<|\"|>a red apple<|\"|>}<tool_call|>\
@@ -1436,27 +1443,12 @@ mod tests {
                 {"type": "input_text", "text": "What does it show?"},
             ]),
         )];
-        let (messages, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(&formatter, &items, None).unwrap();
-        let rendered = formatter
-            .apply_template(&messages, true, false, None, None)
-            .unwrap();
-        let layout = build_multimodal_layout(
-            &formatter,
-            &rendered,
-            &image_buffers,
-            &audio_buffers,
-            &capabilities,
-            &content_order,
-        )
-        .unwrap();
-
-        // The start token is this profile's placeholder and stays in the text, so the prompt
-        // is the rendered text and the image sits between the two delimiters.
-        assert_eq!(formatter.strip_template_placeholders(&rendered), rendered);
-        let kinds: Vec<&str> = layout.iter().map(|s| s.segment_type.as_str()).collect();
-        assert_eq!(kinds, ["text", "image", "text"]);
-        let (before, after) = rendered.split_at(layout[0].length);
+        // The start token is this profile's placeholder and stays in the text, so the image
+        // sits between the two delimiters.
+        let [before, image, after] = &segments(&formatter, &items)[..] else {
+            panic!("expected text, image, text");
+        };
+        assert_eq!(image, "[image]");
         assert!(
             before.ends_with("user\nHere is a picture.\n\n<start_of_image>"),
             "{before:?}"
