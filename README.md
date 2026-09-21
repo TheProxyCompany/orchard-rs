@@ -143,6 +143,34 @@ let result = client
     .await?;
 ```
 
+## Multi-turn conversations
+
+Append `assistant_message` after each reply and send the conversation back as it is:
+
+```rust
+let ChatResult::Stream(mut stream) = client.achat(model, messages.clone(), params.clone(), true).await? else {
+    unreachable!()
+};
+let mut deltas = Vec::new();
+while let Some(delta) = stream.recv().await {
+    let done = delta.is_final_delta;
+    deltas.push(delta);
+    if done {
+        break;
+    }
+}
+messages.push(client.assistant_message(model, &params, deltas).await?);
+messages.push(user("and the next question"));
+```
+
+The message keeps the reply's reasoning and tool calls, and a `generation` record with
+the exact token ids the model produced. Sent back to the same model, the reply is
+replayed id for id, so the engine serves the whole conversation so far from its prefix
+cache and computes only the new question. Any other model reads the text fields. With the
+Responses API, `response_input_items(&response.output, response.generation.as_ref())`
+does the same. `examples/replay_turns.rs` and `examples/replay_responses.rs` print the
+cache reuse per turn.
+
 ## Multimodal
 
 Vision-capable models accept OpenAI-style content parts. Use data URLs for

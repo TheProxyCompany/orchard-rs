@@ -41,6 +41,8 @@ pub async fn connect() -> Result<(InferenceEngine, Arc<ModelRegistry>, Client), 
 
 /// What one streamed turn produced.
 pub struct Turn {
+    /// Every delta of the reply, for `Client::assistant_message`.
+    pub deltas: Vec<ResponseDelta>,
     pub text: String,
     /// Generated token ids.
     pub ids: Vec<i32>,
@@ -67,6 +69,7 @@ pub async fn run_turn(
     };
     let (mut text, mut ids, mut prompt_tokens, mut cached, mut ttft) =
         (String::new(), Vec::new(), 0, 0, None);
+    let mut deltas = Vec::new();
     while let Some(d) = stream.recv().await {
         if let Some(e) = &d.error {
             return Err(e.clone().into());
@@ -75,6 +78,7 @@ pub async fn run_turn(
             ttft = Some(t.elapsed());
         }
         on_delta(&d);
+        deltas.push(d.clone());
         ids.extend(d.tokens.iter().copied());
         prompt_tokens = prompt_tokens.max(d.prompt_token_count.unwrap_or(0));
         cached = cached.max(d.cached_token_count.unwrap_or(0));
@@ -86,6 +90,7 @@ pub async fn run_turn(
         }
     }
     Ok(Turn {
+        deltas,
         text,
         ids,
         prompt_tokens: prompt_tokens as usize,
@@ -93,4 +98,21 @@ pub async fn run_turn(
         ttft_ms: ttft.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
         elapsed: t.elapsed(),
     })
+}
+
+/// The exit status follows the RESULT line: `bad` runs that differ fail the process.
+pub fn verdict(bad: usize, what: &str) -> Result<(), Error> {
+    if bad > 0 {
+        return Err(format!("{bad} {what}").into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_differing_run_fails_the_process() {
+        assert!(super::verdict(0, "x").is_ok());
+        assert!(super::verdict(1, "x").is_err());
+    }
 }

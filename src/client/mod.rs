@@ -4,6 +4,7 @@
 
 mod moondream;
 mod privacy_filter;
+mod replay;
 mod response;
 mod responses;
 
@@ -14,7 +15,7 @@ use std::time::Duration;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tokio::sync::mpsc;
 
 use crate::defaults;
@@ -38,12 +39,12 @@ pub use response::{
     BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, ModalArtifact, UsageStats,
 };
 pub use responses::{
-    ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
-    FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
-    InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent, OutputItemDoneEvent,
-    OutputMessage, OutputReasoning, OutputStatus, OutputTextContent, OutputTextDeltaEvent,
-    OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig, ReasoningContent,
-    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    response_input_items, ContentPartAddedEvent, ContentPartDoneEvent,
+    FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent, FunctionCallOutputContent,
+    IncompleteDetails, InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent,
+    OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus, OutputTextContent,
+    OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig,
+    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
     ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
     ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
     ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
@@ -405,6 +406,59 @@ impl Client {
             .map_err(Error::Other)
     }
 
+    /// The assistant message to append to the conversation for a finished reply.
+    ///
+    /// Besides the visible text it keeps the reply's reasoning and tool calls, and a
+    /// `generation` record with the exact token ids the model produced. Sent back on
+    /// the next turn to the same model, the reply is replayed id for id, so the engine
+    /// reuses its cached keys and values for all of it. Any other model reads the text.
+    ///
+    /// `deltas` are the reply's deltas: the ones a stream yielded, or a complete
+    /// response's `deltas`. `params` are the ones the request was made with.
+    pub async fn assistant_message<D: Into<ClientDelta>>(
+        &self,
+        model_id: &str,
+        params: &SamplingParams,
+        deltas: impl IntoIterator<Item = D>,
+    ) -> Result<HashMap<String, Value>> {
+        let deltas: Vec<ClientDelta> = deltas.into_iter().map(Into::into).collect();
+        let deltas = deltas.as_slice();
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
+        let (thinking, _, _) = native_reasoning_settings(
+            formatter,
+            chat_reasoning_requested(formatter, params),
+            &params.reasoning_effort,
+        );
+        let (reasoning, tool_calls) = aggregate_structured_items(deltas);
+        let tokens: Vec<i32> = deltas
+            .iter()
+            .flat_map(|delta| delta.tokens.iter().copied())
+            .collect();
+
+        let mut message = HashMap::from([
+            ("role".to_string(), json!("assistant")),
+            ("content".to_string(), json!(aggregate_message_text(deltas))),
+        ]);
+        if !reasoning.is_empty() {
+            message.insert("reasoning_content".into(), json!(reasoning.join("\n")));
+        }
+        if !tool_calls.is_empty() {
+            let calls: Vec<Value> = tool_calls
+                .iter()
+                .map(|call| json!({"type": "function", "function": {"name": call.name, "arguments": call.arguments}}))
+                .collect();
+            message.insert("tool_calls".into(), json!(calls));
+        }
+        if !tokens.is_empty() {
+            message.insert(
+                "generation".into(),
+                json!({"model": info.model_id, "tokens": tokens, "thinking": thinking}),
+            );
+        }
+        Ok(message)
+    }
+
     /// Perform asynchronous chat completion.
     ///
     /// # Arguments
@@ -438,9 +492,10 @@ impl Client {
             "Chat messages before template application"
         );
 
+        let replay_model = info.takes_token_segments().then_some(request_model_id);
         // The span gives build_chat_payload's trace event the request it belongs to.
         let prompt_payload = tracing::trace_span!("chat_payload", request_id, model_id = %model_id)
-            .in_scope(|| build_chat_payload(formatter, &messages, &params))?;
+            .in_scope(|| build_chat_payload(formatter, &messages, &params, replay_model))?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
@@ -619,7 +674,13 @@ impl Client {
                 prompt_index
             )
             .in_scope(|| {
-                build_chat_payload(formatter, messages, &params_by_prompt[prompt_index])
+                build_chat_payload(
+                    formatter,
+                    messages,
+                    &params_by_prompt[prompt_index],
+                    info.takes_token_segments()
+                        .then_some(info.model_id.as_str()),
+                )
             })?;
             tracing::debug!(
                 request_id,
@@ -975,10 +1036,7 @@ impl Client {
                 let started = std::time::Instant::now();
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
-                    prompt_tokens: 0,
-                    cached_tokens: 0,
-                    elapsed: std::time::Duration::ZERO,
-                    error: None,
+                    ..Default::default()
                 };
                 // achat would download and load a missing model; a warm-up must not.
                 if client.registry.get_if_ready(&model_id).await.is_none() {
@@ -1085,12 +1143,17 @@ impl Client {
 
 /// Build the PIE prompt payload for one chat conversation: profile sampling
 /// defaults, multimodal expansion, template, layout, tool schemas and seed.
+/// `replay_model` is the model being asked when its engine takes token segments: replies
+/// that model generated earlier in the conversation are then sent as their token ids.
 fn build_chat_payload(
     formatter: &crate::formatter::ChatFormatter,
     messages: &[HashMap<String, Value>],
     params: &SamplingParams,
+    replay_model: Option<&str>,
 ) -> Result<PromptPayload> {
     let params = sampling_with_profile_defaults(formatter, params);
+    let (messages, replays) = replay::take_replays(messages, replay_model);
+    let messages = messages.as_slice();
     let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
         formatter,
         chat_reasoning_requested(formatter, &params),
@@ -1134,12 +1197,18 @@ fn build_chat_payload(
         &content_order,
     )?;
 
+    let (prompt, layout, token_segments) = replay::splice_replays(
+        &formatter.strip_template_placeholders(&prompt_text),
+        &convert_layout(&layout_segments),
+        &replays,
+    );
     Ok(PromptPayload {
-        prompt: formatter.strip_template_placeholders(&prompt_text),
+        prompt,
         image_buffers,
         audio_buffers,
         capabilities: convert_capabilities(&capabilities),
-        layout: convert_layout(&layout_segments),
+        layout,
+        token_segments,
         max_generated_tokens: params.max_tokens,
         temperature: params.temperature,
         top_p: params.top_p,
@@ -1522,7 +1591,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
 }
 
 /// What warming one model's prefix cache did (see [`Client::awarm_prefix`]).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WarmResult {
     pub model_id: String,
     /// Tokens in the rendered transcript for this model.
@@ -1551,16 +1620,11 @@ async fn join_warm_tasks(
 ) -> Vec<WarmResult> {
     let mut results = Vec::with_capacity(handles.len());
     for (model_id, handle) in handles {
-        match handle.await {
-            Ok(result) => results.push(result),
-            Err(error) => results.push(WarmResult {
-                model_id,
-                prompt_tokens: 0,
-                cached_tokens: 0,
-                elapsed: std::time::Duration::ZERO,
-                error: Some(error.to_string()),
-            }),
-        }
+        results.push(handle.await.unwrap_or_else(|error| WarmResult {
+            model_id,
+            error: Some(error.to_string()),
+            ..Default::default()
+        }));
     }
     results
 }
@@ -2166,7 +2230,7 @@ mod tests {
             ..Default::default()
         };
 
-        let payload = build_chat_payload(&formatter, &messages, &params).unwrap();
+        let payload = build_chat_payload(&formatter, &messages, &params, None).unwrap();
 
         assert!(payload.prompt.contains("hello"));
         assert_eq!(payload.layout.len(), 1);
@@ -2175,7 +2239,56 @@ mod tests {
         assert_eq!(payload.rng_seed, Some(42));
         assert_eq!(payload.tool_choice, "auto");
         assert_eq!(payload.min_tool_calls, 1);
-        assert!(build_chat_payload(&formatter, &[], &params).is_err());
+        assert!(build_chat_payload(&formatter, &[], &params, None).is_err());
+    }
+
+    #[test]
+    fn test_build_chat_payload_replays_a_generation_record_as_token_ids() {
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": "llama3"}).to_string(),
+        )
+        .unwrap();
+        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
+        let message = |role: &str, content: &str| {
+            HashMap::from([
+                ("role".to_string(), serde_json::json!(role)),
+                ("content".to_string(), serde_json::json!(content)),
+            ])
+        };
+        let mut reply = message("assistant", "the reply as text");
+        reply.insert(
+            "generation".to_string(),
+            serde_json::json!({"model": "m", "tokens": [7, 8, 9], "thinking": false}),
+        );
+        let messages = vec![message("user", "hello"), reply, message("user", "again")];
+        let params = SamplingParams::default();
+
+        let replayed = build_chat_payload(&formatter, &messages, &params, Some("m")).unwrap();
+        let kinds: Vec<(&str, usize)> = replayed
+            .layout
+            .iter()
+            .map(|entry| (entry.segment_type.as_str(), entry.length))
+            .collect();
+        assert_eq!(kinds.len(), 3);
+        assert_eq!(
+            (kinds[0].0, kinds[1], kinds[2].0),
+            ("text", ("tokens", 3), "text")
+        );
+        assert_eq!(replayed.token_segments, vec![vec![7, 8, 9]]);
+        assert_eq!(kinds[0].1 + kinds[2].1, replayed.prompt.len());
+        assert!(
+            !replayed.prompt.contains('\u{E000}') && !replayed.prompt.contains("the reply as text")
+        );
+
+        // Asked of another model, or with no model that takes ids, the turn goes back as text.
+        for other in [Some("another-model"), None] {
+            let text = build_chat_payload(&formatter, &messages, &params, other).unwrap();
+            assert_eq!(text.layout.len(), 1);
+            assert!(text.token_segments.is_empty());
+            assert!(text.prompt.contains("the reply as text"));
+        }
     }
 
     /// Records the field names of the span build_chat_payload's trace event fires in.
@@ -2279,18 +2392,7 @@ mod tests {
 
         let warm = warm_params(turn.clone());
 
-        // One token, one candidate.
-        assert_eq!(warm.max_tokens, 1);
-        assert_eq!(warm.n, 1);
-        assert_eq!(warm.best_of, None);
-        assert_eq!(warm.final_candidates, None);
-        // Everything that renders the prompt is the turn's, `reasoning: None` included.
-        assert_eq!(warm.reasoning, None);
-        assert_eq!(warm.reasoning_effort, turn.reasoning_effort);
-        assert_eq!(warm.instructions, turn.instructions);
-        assert_eq!(warm.task_name, turn.task_name);
-        assert_eq!(warm.core_tools, turn.core_tools);
-        // And nothing else moved either.
+        // One token, one candidate; everything else, `reasoning: None` included, is the turn's.
         let expected = SamplingParams {
             max_tokens: 1,
             n: 1,
