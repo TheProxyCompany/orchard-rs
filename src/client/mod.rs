@@ -1036,10 +1036,7 @@ impl Client {
                 let started = std::time::Instant::now();
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
-                    prompt_tokens: 0,
-                    cached_tokens: 0,
-                    elapsed: std::time::Duration::ZERO,
-                    error: None,
+                    ..Default::default()
                 };
                 // achat would download and load a missing model; a warm-up must not.
                 if client.registry.get_if_ready(&model_id).await.is_none() {
@@ -1594,7 +1591,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
 }
 
 /// What warming one model's prefix cache did (see [`Client::awarm_prefix`]).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WarmResult {
     pub model_id: String,
     /// Tokens in the rendered transcript for this model.
@@ -1623,16 +1620,11 @@ async fn join_warm_tasks(
 ) -> Vec<WarmResult> {
     let mut results = Vec::with_capacity(handles.len());
     for (model_id, handle) in handles {
-        match handle.await {
-            Ok(result) => results.push(result),
-            Err(error) => results.push(WarmResult {
-                model_id,
-                prompt_tokens: 0,
-                cached_tokens: 0,
-                elapsed: std::time::Duration::ZERO,
-                error: Some(error.to_string()),
-            }),
-        }
+        results.push(handle.await.unwrap_or_else(|error| WarmResult {
+            model_id,
+            error: Some(error.to_string()),
+            ..Default::default()
+        }));
     }
     results
 }
