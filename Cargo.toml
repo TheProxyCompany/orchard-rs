@@ -71,6 +71,11 @@ ctor = "0.2"
 [build-dependencies]
 serde_json = "1"
 
+# The GPU lease check runs itself as its own helper sessions, so it needs a main.
+[[test]]
+name = "gpu_lease"
+harness = false
+
 # nng-sys 1.4.0-rc.0 bundles nng C 1.4.0, which carries upstream bug #1523: a
 # use-after-free race between sub0_recv_cb and sub0_ctx_cancel on SUB sockets
 # with short receive timeouts — our 10ms recv loop rolls it ~100x/second and

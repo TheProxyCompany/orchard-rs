@@ -4,6 +4,9 @@
 //!   cargo run --example one_turn
 //!   MODEL=google/gemma-4-26B-A4B-it cargo run --example one_turn
 
+#[path = "../tests/project/gpu_lease.rs"]
+mod gpu_lease;
+
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
@@ -20,6 +23,7 @@ fn msg(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    gpu_lease::hold(); // waits for any test or benchmark engine on this machine
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
     let prompt = std::env::args()
         .nth(1)
