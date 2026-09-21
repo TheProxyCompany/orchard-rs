@@ -67,12 +67,6 @@ use core::convert::TryFrom;
 
 pub use crate::bindings::*;
 
-/// Only the copy of this crate vendored in orchard-rs defines this. It marks
-/// the bundled NNG as carrying the ipc listener fix for upstream #1518 (a
-/// peer gone before the handshake made a listener stop accepting for good),
-/// and orchard-rs refuses to compile against an nng-sys without it.
-pub const ORCHARD_VENDORED_WITH_LISTENER_FIX_1518: () = ();
-
 impl nng_pipe {
     pub const NNG_PIPE_INITIALIZER: nng_pipe = nng_pipe {
         _bindgen_opaque_blob: 0,

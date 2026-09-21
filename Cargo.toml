@@ -15,10 +15,6 @@ crate-type = ["lib"]
 [dependencies]
 # NNG for IPC communication with PIE
 nng = "1.0"
-# Named only so src/ipc/client.rs can refuse to compile against an nng-sys
-# without the listener fix (see [patch.crates-io] below). Same version and
-# features as nng asks for, so the C library is built exactly as before.
-nng-sys = { version = "1.4.0-rc.0", default-features = false }
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "macros", "process", "fs", "io-util", "time"] }
@@ -83,10 +79,6 @@ serde_json = "1"
 # upstream 9248ed74 (#1518): a peer that connects to a listening socket and is
 # gone before the handshake made the listener stop accepting for good, so later
 # pipes connected and their messages vanished. Our response endpoint listens.
-#
-# A [patch] only applies at the root of the workspace being built, so every
-# workspace that consumes orchard-rs must repeat this one at its own root, and
-# move it together with orchard-rs; src/ipc/client.rs refuses to compile
-# otherwise.
+# Workspaces that consume orchard-rs must repeat this [patch] at their own root.
 [patch.crates-io]
 nng-sys = { path = "vendor/nng-sys" }

@@ -62,19 +62,6 @@ const REQUEST_SEND_TIMEOUT: Duration = Duration::from_secs(30);
 /// so a reply that will never come fails loudly instead of blocking.
 const MANAGEMENT_LIVENESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-// This client listens, and the NNG that nng-sys 1.4.0-rc.0 bundles has a
-// listener that stops accepting for good once a peer connects and is gone
-// before the handshake (upstream #1518), as an engine killed while dialling
-// is: later deltas are then lost with no error on either side. The nng-sys
-// vendored in this repository carries the fix and defines this constant.
-//
-// If this line does not compile, the workspace being built resolves nng-sys
-// to a copy without the fix. Point its [patch.crates-io] nng-sys at this
-// orchard-rs commit or a later one, in the same change that moves orchard-rs:
-// grand-central pins both by rev (bump both to the same commit); Proxy/Glue
-// patches from branch main and needs `cargo update -p nng-sys`.
-const _: () = nng_sys::ORCHARD_VENDORED_WITH_LISTENER_FIX_1518;
-
 /// The capability an engine lists in a load_model reply and in a
 /// `model_loaded` event, with value 1, once it reaps a stalled response route
 /// with an explicit error and reports a response endpoint it cannot reach.

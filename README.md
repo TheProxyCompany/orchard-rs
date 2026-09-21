@@ -26,14 +26,6 @@ orchard-rs = "2026.5.6"
 base64 = "0.22"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-
-# Required by every release after 2026.6.2, at the root of your workspace:
-# orchard-rs does not compile without it. The NNG that nng-sys bundles has a
-# listener that stops accepting for good (upstream #1518), which loses response
-# deltas with no error; this repository vendors an nng-sys with the fix, under
-# a tag named after each orchard-rs version.
-[patch.crates-io]
-nng-sys = { git = "https://github.com/TheProxyCompany/orchard-rs", tag = "<your orchard-rs version>" }
 ```
 
 ## Quickstart
