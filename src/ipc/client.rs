@@ -1658,28 +1658,33 @@ mod tests {
         deltas
     }
 
-    /// Contents of every delta up to and including the final one.
-    fn contents(deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>) -> Vec<String> {
+    /// The final delta of `deltas`, and the contents before it.
+    fn contents_until_error(
+        deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>,
+    ) -> (Vec<String>, ResponseDelta) {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut contents = Vec::new();
         loop {
             match deltas.try_recv() {
-                Ok(delta) => {
-                    contents.push(delta.content.unwrap_or_default());
-                    if delta.is_final_delta {
-                        return contents;
-                    }
-                }
+                Ok(delta) if delta.is_final_delta => return (contents, delta),
+                Ok(delta) => contents.push(delta.content.unwrap_or_default()),
                 Err(_) => {
                     assert!(
                         Instant::now() < deadline,
-                        "no final delta; got {} deltas",
+                        "the request never ended; got {} deltas",
                         contents.len()
                     );
                     thread::sleep(Duration::from_millis(1));
                 }
             }
         }
+    }
+
+    /// Contents of every delta up to and including the final one.
+    fn contents(deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>) -> Vec<String> {
+        let (mut contents, last) = contents_until_error(deltas);
+        contents.push(last.content.unwrap_or_default());
+        contents
     }
 
     fn counting(count: usize) -> Vec<String> {
@@ -1689,7 +1694,7 @@ mod tests {
     #[test]
     fn test_deltas_pushed_to_the_endpoint_reach_their_request_in_order() {
         let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
+        let engine = FakeEngine::start(dir.path());
         let mut client = IPCClient::new();
         connect(&mut client, dir.path());
 
@@ -1727,7 +1732,6 @@ mod tests {
         };
         assert_eq!(contents(&mut first), expected(1));
         assert_eq!(contents(&mut second), expected(2));
-        drop(engine.routes.drain());
     }
 
     #[test]
@@ -1873,30 +1877,13 @@ mod tests {
         let mut engine = FakeEngine::start(dir.path());
         engine.knows_pull_route = false;
 
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let events_for_callback = Arc::clone(&events);
-        let mut client =
-            IPCClient::with_event_callback(Arc::new(move |name: &str, payload: &Value| {
-                events_for_callback
-                    .lock()
-                    .unwrap()
-                    .push((name.to_string(), payload.clone()));
-            }));
+        let (mut client, events) = client_recording_events();
         connect(&mut client, dir.path());
-
-        // PUB/SUB does not queue for a subscriber it has not seen yet.
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while events.lock().unwrap().is_empty() {
-            assert!(Instant::now() < deadline, "no event arrived");
-            engine.publish_event("model_loaded", &serde_json::json!({"model_id": "model"}));
-            thread::sleep(Duration::from_millis(5));
-        }
-        assert_eq!(
-            events.lock().unwrap()[0],
-            (
-                "model_loaded".to_string(),
-                serde_json::json!({"model_id": "model"})
-            )
+        publish_until_handled(
+            &engine,
+            &events,
+            "model_loaded",
+            &serde_json::json!({"model_id": "model"}),
         );
 
         let mut deltas = send(&client, 1);
@@ -2043,28 +2030,6 @@ mod tests {
         let flag = AtomicBool::new(false);
         note_engine_capabilities(None, &flag);
         assert!(!flag.load(Ordering::SeqCst));
-    }
-
-    /// The error delta that ends `deltas`, and the contents before it.
-    fn contents_until_error(
-        deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>,
-    ) -> (Vec<String>, ResponseDelta) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut contents = Vec::new();
-        loop {
-            match deltas.try_recv() {
-                Ok(delta) if delta.is_final_delta => return (contents, delta),
-                Ok(delta) => contents.push(delta.content.unwrap_or_default()),
-                Err(_) => {
-                    assert!(
-                        Instant::now() < deadline,
-                        "the request never ended; got {} deltas",
-                        contents.len()
-                    );
-                    thread::sleep(Duration::from_millis(1));
-                }
-            }
-        }
     }
 
     #[test]
@@ -2266,12 +2231,9 @@ mod tests {
         // the resulting "closed" for its own listener closing and never
         // accepted again (upstream #1518): later peers still connected, and
         // what they sent was never received.
-        let dir = tempfile::Builder::new()
-            .prefix("orc-")
-            .tempdir_in("/tmp")
-            .expect("tempdir should be available");
+        let dir = ipc_dir();
         let path = dir.path().join("listener.ipc");
-        let url = format!("ipc://{}", path.display());
+        let url = as_ipc_url(path.clone());
         let listener = Socket::new(Protocol::Pull0).expect("pull socket");
         listener
             .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_secs(5)))
