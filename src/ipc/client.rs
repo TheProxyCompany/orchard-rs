@@ -78,7 +78,7 @@ const _: () = nng_sys::ORCHARD_VENDORED_WITH_LISTENER_FIX_1518;
 /// The capability an engine lists in a load_model reply and in a
 /// `model_loaded` event, with value 1, once it reaps a stalled response route
 /// with an explicit error and reports a response endpoint it cannot reach.
-const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
+pub(crate) const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 
 /// Longest wait for a request's first delta before the request fails.
 ///
