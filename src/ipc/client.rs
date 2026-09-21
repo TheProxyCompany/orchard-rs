@@ -80,32 +80,6 @@ const _: () = nng_sys::ORCHARD_VENDORED_WITH_LISTENER_FIX_1518;
 /// with an explicit error and reports a response endpoint it cannot reach.
 pub(crate) const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 
-/// Longest wait for a request's first delta before the request fails.
-///
-/// The engine sends nothing while a request is queued or prefilling, so this
-/// has to hold the longest prefill a caller can legitimately ask for, not a
-/// latency budget. It does not have to hold a model load: every client path
-/// awaits `ModelRegistry::ensure_loaded` before it sends, the engine
-/// publishes `model_loaded` only after the weights are materialized, and it
-/// answers a request for a model it has not loaded with an error delta at
-/// once. orchard-py caps the same wait at 300 s, but the app sends far longer
-/// prompts to far larger models: 128k tokens at 100 tokens/s is 21 minutes of
-/// prefill with no delta.
-const DEFAULT_FIRST_DELTA_TIMEOUT: Duration = Duration::from_secs(1800);
-/// Longest silence between two deltas of a request with one stream before it
-/// fails; a request with several is held to the first-delta bound throughout.
-///
-/// Once a request decodes, a gap is a decode step behind other requests'
-/// prefill chunks, or a preempted sequence waiting for cache pages. This is
-/// orchard-py's ceiling on any single delta wait (`DELTA_HARD_TIMEOUT_S`).
-const DEFAULT_DELTA_TIMEOUT: Duration = Duration::from_secs(300);
-/// How often the listener looks for requests the engine went silent on. A
-/// request therefore fails up to two intervals after its bound.
-const DELTA_WATCHDOG_INTERVAL: Duration = Duration::from_secs(1);
-/// While deltas arrive back to back the listener never sees a receive
-/// timeout, so it also considers the watchdog once per this many deltas.
-const DELTAS_PER_WATCHDOG_CHECK: u32 = 1024;
-
 /// A single token's log probability info from PIE.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -253,49 +227,15 @@ pub struct IPCClient {
     engine_dead: Arc<AtomicBool>,
     engine_pid_file: Option<PathBuf>,
     event_callback: Option<EventCallback>,
-    delta_timeouts: DeltaTimeouts,
     /// This process launched the engine it is connected to.
     own_engine: bool,
     /// The engine has advertised `lossless_responses`.
     engine_advertises_lossless: Arc<AtomicBool>,
 }
 
-/// How long a request may wait on a silent engine: for its first delta, and
-/// between two deltas.
-#[derive(Clone, Copy)]
-struct DeltaTimeouts {
-    first: Duration,
-    between: Duration,
-}
-
 struct ActiveRequest {
     sender: mpsc::UnboundedSender<ResponseDelta>,
     remaining_finals: usize,
-    /// The request has several prompts. One of them can be queued or
-    /// prefilling, which is silent, after another has sent deltas, so only the
-    /// first-delta bound holds for such a request. The candidates of one
-    /// prompt cannot: the engine forks them once that prompt's first token is
-    /// out, so they all decode from then on.
-    several_prompts: bool,
-    /// Deltas routed to this request so far. The watchdog compares it with
-    /// `watched_deltas` once per interval, so the receive loop pays one
-    /// addition per delta and never reads the clock for it.
-    deltas: u64,
-    watched_deltas: u64,
-    /// When the request was sent, then when the watchdog last saw new deltas.
-    last_progress: Instant,
-}
-
-/// The delta that ends a request this client fails by itself.
-fn terminal_error_delta(request_id: u64, reason: &str) -> ResponseDelta {
-    ResponseDelta {
-        request_id,
-        is_final_delta: true,
-        finish_reason: Some("error".to_string()),
-        content: Some(reason.to_string()),
-        error: Some(reason.to_string()),
-        ..Default::default()
-    }
 }
 
 impl IPCClient {
@@ -315,10 +255,6 @@ impl IPCClient {
             engine_dead: Arc::new(AtomicBool::new(false)),
             engine_pid_file: None,
             event_callback: None,
-            delta_timeouts: DeltaTimeouts {
-                first: DEFAULT_FIRST_DELTA_TIMEOUT,
-                between: DEFAULT_DELTA_TIMEOUT,
-            },
             own_engine: false,
             engine_advertises_lossless: Arc::new(AtomicBool::new(false)),
         }
@@ -339,15 +275,6 @@ impl IPCClient {
     /// Set the event callback for handling engine events.
     pub fn set_event_callback(&mut self, callback: EventCallback) {
         self.event_callback = Some(callback);
-    }
-
-    /// Takes effect at the next `connect`.
-    #[cfg(test)]
-    fn set_delta_timeouts(&mut self, first_delta: Duration, between_deltas: Duration) {
-        self.delta_timeouts = DeltaTimeouts {
-            first: first_delta,
-            between: between_deltas,
-        };
     }
 
     /// The engine advertised `lossless_responses` to an earlier client of the
@@ -450,10 +377,15 @@ impl IPCClient {
                 .unwrap_or_else(|e| e.into_inner());
 
             for (request_id, entry) in requests.iter() {
-                let _ = entry.sender.send(terminal_error_delta(
-                    *request_id,
-                    "Engine process disconnected.",
-                ));
+                let error_delta = ResponseDelta {
+                    request_id: *request_id,
+                    is_final_delta: true,
+                    finish_reason: Some("error".to_string()),
+                    content: Some("Engine process disconnected.".to_string()),
+                    error: Some("Engine process disconnected.".to_string()),
+                    ..Default::default()
+                };
+                let _ = entry.sender.send(error_delta);
             }
         }
 
@@ -579,10 +511,6 @@ impl IPCClient {
                 ActiveRequest {
                     sender: tx,
                     remaining_finals,
-                    several_prompts: prompts.len() > 1,
-                    deltas: 0,
-                    watched_deltas: 0,
-                    last_progress: Instant::now(),
                 },
             );
         }
@@ -665,9 +593,6 @@ impl IPCClient {
             let should_stop = Arc::clone(&self.should_stop);
             let engine_dead = Arc::clone(&self.engine_dead);
             let event_callback = self.event_callback.clone();
-            let delta_timeouts = self.delta_timeouts;
-            let management_socket = Arc::clone(&self.management_socket);
-            let engine_advertises_lossless = Arc::clone(&self.engine_advertises_lossless);
             let handle = thread::Builder::new()
                 .name("orchard-ipc-listener".to_string())
                 .spawn(move || {
@@ -679,9 +604,6 @@ impl IPCClient {
                         response_channel_id,
                         engine_pid_file,
                         event_callback,
-                        delta_timeouts,
-                        management_socket,
-                        engine_advertises_lossless,
                     );
                 });
             match handle {
@@ -861,7 +783,6 @@ fn route_response_delta(
         let Some(entry) = requests.get_mut(&request_id) else {
             return;
         };
-        entry.deltas += 1;
         let sender = entry.sender.clone();
         if is_final {
             entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
@@ -874,57 +795,11 @@ fn route_response_delta(
     let _ = sender.send(delta);
 }
 
-/// Fail every request the engine has been silent on for longer than its
-/// bound, and return their ids. A request that waits forever is what an engine
-/// that cannot reach this client's response endpoint looks like from here: it
-/// drops that client's deltas and nothing else tells the client.
-fn fail_silent_requests(
-    active_requests: &Mutex<HashMap<u64, ActiveRequest>>,
-    timeouts: DeltaTimeouts,
-) -> Vec<u64> {
-    let now = Instant::now();
-    let mut failed = Vec::new();
-    let mut requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
-    requests.retain(|request_id, entry| {
-        if entry.deltas != entry.watched_deltas {
-            entry.watched_deltas = entry.deltas;
-            entry.last_progress = now;
-            return true;
-        }
-        let awaited = if entry.deltas == 0 {
-            "its first response delta"
-        } else {
-            "its next response delta"
-        };
-        let limit = if entry.deltas == 0 || entry.several_prompts {
-            timeouts.first
-        } else {
-            timeouts.between
-        };
-        let silent_for = now.duration_since(entry.last_progress);
-        if silent_for < limit {
-            return true;
-        }
-        let reason = format!(
-            "Timed out after {} s waiting for {awaited} from PIE.",
-            silent_for.as_secs()
-        );
-        tracing::error!(request_id, deltas_received = entry.deltas, "{reason}");
-        let _ = entry
-            .sender
-            .send(terminal_error_delta(*request_id, &reason));
-        failed.push(*request_id);
-        false
-    });
-    failed
-}
-
 /// Response listener - runs on dedicated thread for minimal latency.
 ///
 /// `socket` is this client's PULL endpoint, so every message on it is one of
 /// this client's deltas: the same `resp:<channel hex>:` topic and JSON body
 /// the engine publishes on PUB/SUB.
-#[allow(clippy::too_many_arguments)]
 fn run_response_listener(
     socket: Socket,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
@@ -933,9 +808,6 @@ fn run_response_listener(
     response_channel_id: u64,
     engine_pid_file: PathBuf,
     event_callback: Option<EventCallback>,
-    delta_timeouts: DeltaTimeouts,
-    management_socket: Arc<Mutex<Option<Socket>>>,
-    engine_advertises_lossless: Arc<AtomicBool>,
 ) {
     let response_topic = format!("resp:{:x}:", response_channel_id);
     let response_topic_bytes = response_topic.as_bytes();
@@ -943,28 +815,20 @@ fn run_response_listener(
     // Set receive timeout for responsive polling (10ms for better latency)
     let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(RESPONSE_RECV_TIMEOUT));
     let mut last_engine_check = Instant::now();
-    let mut last_watchdog = Instant::now();
-    let mut deltas_since_watchdog_check = 0u32;
     let mut death_reason: Option<String> = None;
 
     while !should_stop.load(Ordering::SeqCst) {
         match socket.recv() {
-            Ok(msg) => {
-                match msg.as_slice().strip_prefix(response_topic_bytes) {
-                    Some(json_data) => {
-                        route_response_delta(json_data, &active_requests, response_channel_id)
-                    }
-                    None => tracing::warn!(
-                        response_channel_id,
-                        payload_bytes = msg.len(),
-                        "Ignoring a message for another channel on our response endpoint"
-                    ),
+            Ok(msg) => match msg.as_slice().strip_prefix(response_topic_bytes) {
+                Some(json_data) => {
+                    route_response_delta(json_data, &active_requests, response_channel_id)
                 }
-                deltas_since_watchdog_check += 1;
-                if deltas_since_watchdog_check < DELTAS_PER_WATCHDOG_CHECK {
-                    continue;
-                }
-            }
+                None => tracing::warn!(
+                    response_channel_id,
+                    payload_bytes = msg.len(),
+                    "Ignoring a message for another channel on our response endpoint"
+                ),
+            },
             Err(nng::Error::TimedOut) => {
                 if last_engine_check.elapsed() >= ENGINE_LIVENESS_POLL_INTERVAL {
                     last_engine_check = Instant::now();
@@ -978,6 +842,7 @@ fn run_response_listener(
                         break;
                     }
                 }
+                continue;
             }
             Err(error) => {
                 if should_stop.load(Ordering::SeqCst) {
@@ -993,40 +858,6 @@ fn run_response_listener(
                     should_stop.store(true, Ordering::SeqCst);
                     break;
                 }
-            }
-        }
-
-        // Reached on every receive timeout (every 10 ms while nothing
-        // arrives) and once per DELTAS_PER_WATCHDOG_CHECK deltas otherwise.
-        deltas_since_watchdog_check = 0;
-        if last_watchdog.elapsed() >= DELTA_WATCHDOG_INTERVAL {
-            last_watchdog = Instant::now();
-            let timed_out = fail_silent_requests(&active_requests, delta_timeouts);
-            // The engine would decode them to their token limit and keep
-            // their cache pages. An engine that does not advertise
-            // `lossless_responses` is not told: it would cancel every
-            // client's request with that id. On a thread of its own: the
-            // exchange waits for the management socket, which a load_model
-            // can hold for minutes, and this thread receives the deltas.
-            if !timed_out.is_empty() && engine_advertises_lossless.load(Ordering::SeqCst) {
-                let management_socket = Arc::clone(&management_socket);
-                let engine_dead = Arc::clone(&engine_dead);
-                let engine_pid_file = engine_pid_file.clone();
-                let engine_advertises_lossless = Arc::clone(&engine_advertises_lossless);
-                let _ = thread::Builder::new()
-                    .name("orchard-ipc-cancel".to_string())
-                    .spawn(move || {
-                        for request_id in timed_out {
-                            let _ = blocking_management_exchange(
-                                &management_socket,
-                                &engine_dead,
-                                Some(&engine_pid_file),
-                                &cancel_request_command(response_channel_id, request_id),
-                                Duration::from_secs(2),
-                                &engine_advertises_lossless,
-                            );
-                        }
-                    });
             }
         }
     }
@@ -1048,9 +879,15 @@ fn run_response_listener(
             );
 
             for (request_id, entry) in requests.iter() {
-                let _ = entry
-                    .sender
-                    .send(terminal_error_delta(*request_id, &reason));
+                let error_delta = ResponseDelta {
+                    request_id: *request_id,
+                    is_final_delta: true,
+                    finish_reason: Some("error".to_string()),
+                    content: Some(reason.clone()),
+                    error: Some(reason.clone()),
+                    ..Default::default()
+                };
+                let _ = entry.sender.send(error_delta);
             }
             requests.clear();
         }
@@ -1337,10 +1174,6 @@ mod tests {
             ActiveRequest {
                 sender: tx,
                 remaining_finals: 1,
-                several_prompts: false,
-                deltas: 0,
-                watched_deltas: 0,
-                last_progress: Instant::now(),
             },
         );
 
@@ -1360,9 +1193,6 @@ mod tests {
             1,
             dir.path().join("engine.pid"),
             Some(callback),
-            IPCClient::new().delta_timeouts,
-            Arc::new(Mutex::new(None)),
-            Arc::new(AtomicBool::new(false)),
         );
 
         assert!(engine_dead.load(Ordering::SeqCst));
@@ -1648,33 +1478,28 @@ mod tests {
         deltas
     }
 
-    /// The final delta of `deltas`, and the contents before it.
-    fn contents_until_error(
-        deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>,
-    ) -> (Vec<String>, ResponseDelta) {
+    /// Contents of every delta up to and including the final one.
+    fn contents(deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>) -> Vec<String> {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut contents = Vec::new();
         loop {
             match deltas.try_recv() {
-                Ok(delta) if delta.is_final_delta => return (contents, delta),
-                Ok(delta) => contents.push(delta.content.unwrap_or_default()),
+                Ok(delta) => {
+                    contents.push(delta.content.unwrap_or_default());
+                    if delta.is_final_delta {
+                        return contents;
+                    }
+                }
                 Err(_) => {
                     assert!(
                         Instant::now() < deadline,
-                        "the request never ended; got {} deltas",
+                        "no final delta; got {} deltas",
                         contents.len()
                     );
                     thread::sleep(Duration::from_millis(1));
                 }
             }
         }
-    }
-
-    /// Contents of every delta up to and including the final one.
-    fn contents(deltas: &mut mpsc::UnboundedReceiver<ResponseDelta>) -> Vec<String> {
-        let (mut contents, last) = contents_until_error(deltas);
-        contents.push(last.content.unwrap_or_default());
-        contents
     }
 
     fn counting(count: usize) -> Vec<String> {
@@ -2020,198 +1845,6 @@ mod tests {
         let flag = AtomicBool::new(false);
         note_engine_capabilities(None, &flag);
         assert!(!flag.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn test_a_request_the_engine_never_answers_fails_after_the_first_delta_timeout() {
-        let dir = ipc_dir();
-        let engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_millis(200), Duration::from_secs(60));
-        connect(&mut client, dir.path());
-
-        // The engine has the request and never answers it: from here that is
-        // an engine that could not dial our endpoint and dropped the deltas.
-        let mut deltas = send(&client, 1);
-        engine.next_request();
-
-        let (contents, error) = contents_until_error(&mut deltas);
-        assert!(contents.is_empty());
-        assert_eq!(error.request_id, 1);
-        assert_eq!(error.finish_reason.as_deref(), Some("error"));
-        let message = error.error.expect("an error the caller can see");
-        assert!(message.contains("first response delta"), "{message}");
-        assert!(client.active_requests.lock().unwrap().is_empty());
-        assert!(deltas.try_recv().is_err(), "the request ends exactly once");
-    }
-
-    #[test]
-    fn test_a_request_the_watchdog_fails_is_cancelled_in_an_engine_that_cancels_by_channel() {
-        let dir = ipc_dir();
-        let engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_millis(200), Duration::from_secs(60));
-        connect(&mut client, dir.path());
-
-        // Nothing says yet that this engine cancels by channel: it may cancel
-        // every client's request 1, so it is not asked to.
-        let mut deltas = send(&client, 1);
-        engine.next_request();
-        contents_until_error(&mut deltas);
-
-        client.note_lossless_responses();
-        let mut deltas = send(&client, 2);
-        engine.next_request();
-        contents_until_error(&mut deltas);
-
-        let command = engine.answer_management(&serde_json::json!({"status": "accepted"}));
-        assert_eq!(
-            command,
-            serde_json::json!({
-                "type": "cancel_request",
-                "request_id": 2,
-                "response_channel_id": client.response_channel_id,
-            })
-        );
-    }
-
-    #[test]
-    fn test_a_stream_that_goes_silent_fails_after_the_delta_timeout() {
-        let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_secs(60), Duration::from_millis(200));
-        connect(&mut client, dir.path());
-
-        let mut deltas = send(&client, 1);
-        let request = engine.next_request();
-        for index in 0..3 {
-            engine.send_delta(&request, &index.to_string(), false);
-        }
-
-        let (contents, error) = contents_until_error(&mut deltas);
-        assert_eq!(contents, counting(3));
-        assert_eq!(error.finish_reason.as_deref(), Some("error"));
-        let message = error.error.expect("an error the caller can see");
-        assert!(message.contains("next response delta"), "{message}");
-        assert!(client.active_requests.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_a_request_with_several_prompts_is_held_to_the_first_delta_timeout_only() {
-        let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_secs(4), Duration::from_millis(100));
-        connect(&mut client, dir.path());
-
-        let prompts = [PromptPayload::default(), PromptPayload::default()];
-        let (_, mut deltas) = client
-            .send_batch_request(1, "model", "/model", &prompts)
-            .expect("send");
-        let request = engine.next_request();
-        // One prompt's stream runs and ends while the other is still queued
-        // or prefilling, which the engine is silent through.
-        engine.answer(&request, 3);
-        assert_eq!(contents(&mut deltas), counting(3));
-
-        thread::sleep(Duration::from_millis(2300));
-        assert!(
-            deltas.try_recv().is_err(),
-            "failed by the between-deltas bound while a stream had yet to start"
-        );
-
-        let (_, error) = contents_until_error(&mut deltas);
-        let message = error.error.expect("an error the caller can see");
-        assert!(message.contains("next response delta"), "{message}");
-    }
-
-    #[test]
-    fn test_the_candidates_of_one_prompt_are_held_to_the_delta_timeout() {
-        let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_secs(60), Duration::from_millis(200));
-        connect(&mut client, dir.path());
-
-        // The engine forks a prompt's candidates once that prompt's first
-        // token is out, so none of them is queued or prefilling, and silent,
-        // while another streams.
-        let prompt = PromptPayload {
-            num_candidates: 2,
-            ..Default::default()
-        };
-        let (_, mut deltas) = client
-            .send_batch_request(1, "model", "/model", &[prompt])
-            .expect("send");
-        let request = engine.next_request();
-        engine.send_delta(&request, "0", false);
-
-        let (contents, error) = contents_until_error(&mut deltas);
-        assert_eq!(contents, counting(1));
-        let message = error.error.expect("an error the caller can see");
-        assert!(message.contains("next response delta"), "{message}");
-    }
-
-    #[test]
-    fn test_a_stream_that_keeps_arriving_outlives_the_delta_timeout() {
-        let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        // Both bounds are far shorter than the stream: what they bound is
-        // the engine's silence, not how long a request takes.
-        client.set_delta_timeouts(Duration::from_millis(1500), Duration::from_millis(1500));
-        connect(&mut client, dir.path());
-
-        let mut deltas = send(&client, 1);
-        let request = engine.next_request();
-        for index in 0..8 {
-            thread::sleep(Duration::from_millis(500));
-            engine.send_delta(&request, &index.to_string(), index == 7);
-        }
-        // Read only now: a consumer that is slow to read is not silence.
-        assert_eq!(contents(&mut deltas), counting(8));
-    }
-
-    #[test]
-    fn test_a_silent_request_fails_while_another_streams_without_a_pause() {
-        let dir = ipc_dir();
-        let mut engine = FakeEngine::start(dir.path());
-        let mut client = IPCClient::new();
-        client.set_delta_timeouts(Duration::from_millis(200), Duration::from_secs(60));
-        connect(&mut client, dir.path());
-
-        let mut silent = send(&client, 1);
-        let mut busy = send(&client, 2);
-        engine.next_request();
-        let request = engine.next_request();
-
-        // Deltas back to back for three seconds: the receive loop never sees
-        // a receive timeout, which is where it otherwise runs the watchdog.
-        let streaming = Arc::new(AtomicBool::new(true));
-        let streaming_in_engine = Arc::clone(&streaming);
-        let engine = thread::spawn(move || {
-            let until = Instant::now() + Duration::from_secs(3);
-            let mut sent = 0usize;
-            while Instant::now() < until {
-                engine.send_delta(&request, "", false);
-                sent += 1;
-            }
-            streaming_in_engine.store(false, Ordering::SeqCst);
-            engine.send_delta(&request, "", true);
-            (engine, sent + 1)
-        });
-
-        let (_, error) = contents_until_error(&mut silent);
-        assert!(
-            streaming.load(Ordering::SeqCst),
-            "the silent request only failed once the other stream paused"
-        );
-        assert!(error.error.is_some());
-
-        let (engine, sent) = engine.join().expect("engine thread");
-        assert_eq!(contents(&mut busy).len(), sent);
-        drop(engine);
     }
 
     #[test]
