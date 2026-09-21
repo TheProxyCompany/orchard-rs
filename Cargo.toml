@@ -1,5 +1,7 @@
 [package]
 name = "orchard-rs"
+# The version of the last release that was committed here. publish.yml now takes
+# the next calver from the newest tag and writes it into its own checkout only.
 version = "2026.6.2"
 edition = "2021"
 description = "Rust client for Orchard - high-performance LLM inference on Apple Silicon"
