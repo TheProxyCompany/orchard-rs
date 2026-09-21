@@ -44,15 +44,6 @@ async fn run(
     Ok((turn.ids, turn.prompt_tokens, turn.cached, tops))
 }
 
-/// The exit status follows the RESULT line. Whether the boundary resume was exercised
-/// is information only.
-fn verdict(mismatches: usize) -> Result<(), Box<dyn std::error::Error>> {
-    if mismatches > 0 {
-        return Err(format!("{mismatches} prompt lengths differ from the cache-off run").into());
-    }
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), common::Error> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
@@ -150,14 +141,6 @@ async fn main() -> Result<(), common::Error> {
             "was NOT exercised"
         }
     );
-    verdict(mismatches)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_differing_run_fails_the_process() {
-        assert!(super::verdict(0).is_ok());
-        assert!(super::verdict(1).is_err());
-    }
+    // Whether the boundary resume was exercised is information only.
+    common::verdict(mismatches, "prompt lengths differ from the cache-off run")
 }

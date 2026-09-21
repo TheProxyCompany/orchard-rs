@@ -70,14 +70,6 @@ fn numbered(count: usize, what: &str, offset: usize) -> String {
         .collect()
 }
 
-/// The exit status follows the RESULT line.
-fn verdict(bad: usize) -> Result<(), Box<dyn std::error::Error>> {
-    if bad > 0 {
-        return Err(format!("{bad} shared-prefix requests differ from the cache-off run").into());
-    }
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
@@ -147,14 +139,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("RESULT: {bad} of 2 shared-prefix requests differ from the cache-off run (reproducible={reproducible})");
     // Only a reproducible run promises a match; an ordinary run reports and passes.
-    verdict(if reproducible { bad } else { 0 })
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_differing_run_fails_the_process() {
-        assert!(super::verdict(0).is_ok());
-        assert!(super::verdict(1).is_err());
-    }
+    common::verdict(
+        if reproducible { bad } else { 0 },
+        "shared-prefix requests differ from the cache-off run",
+    )
 }
