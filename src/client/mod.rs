@@ -36,10 +36,7 @@ fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
-use crate::ipc::client::{
-    cancel_request_command, EventCallback, IPCClient, ResponseDelta, DEFAULT_DELTA_TIMEOUT,
-    DEFAULT_FIRST_DELTA_TIMEOUT,
-};
+use crate::ipc::client::{cancel_request_command, EventCallback, IPCClient, ResponseDelta};
 use crate::ipc::serialization::{
     CapabilityEntry, LayoutEntry, PromptPayload, RequestType, ThinkingTokens,
 };
@@ -364,17 +361,6 @@ impl Client {
     /// - Event callback for handling model lifecycle events
     /// - IPC client shared with registry for management commands
     pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
-        Self::connect_with_options(registry, None, None).await
-    }
-
-    /// Create a client with custom bounds on how long a request waits on a
-    /// silent engine: for its first delta, and between two deltas. `None`
-    /// keeps the default (see [`IPCClient::set_delta_timeouts`]).
-    pub async fn connect_with_options(
-        registry: Arc<ModelRegistry>,
-        first_delta_timeout: Option<Duration>,
-        delta_timeout: Option<Duration>,
-    ) -> Result<Self> {
         // Create event callback that routes model lifecycle events to registry
         let registry_for_events = Arc::clone(&registry);
         let runtime_handle = tokio::runtime::Handle::current();
@@ -408,10 +394,6 @@ impl Client {
             });
 
         let mut ipc = IPCClient::with_event_callback(event_callback);
-        ipc.set_delta_timeouts(
-            first_delta_timeout.unwrap_or(DEFAULT_FIRST_DELTA_TIMEOUT),
-            delta_timeout.unwrap_or(DEFAULT_DELTA_TIMEOUT),
-        );
         ipc.connect()?;
         let ipc = Arc::new(ipc);
 

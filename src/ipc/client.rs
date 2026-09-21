@@ -95,14 +95,14 @@ pub(crate) const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 /// request that can never be answered (the engine cannot reach this client's
 /// response endpoint, or dropped the request) without cutting off a prefill
 /// the engine would have finished.
-pub const DEFAULT_FIRST_DELTA_TIMEOUT: Duration = Duration::from_secs(1800);
+const DEFAULT_FIRST_DELTA_TIMEOUT: Duration = Duration::from_secs(1800);
 /// Longest silence between two deltas of a request with one stream before it
 /// fails; a request with several is held to the first-delta bound throughout.
 ///
 /// Once a request decodes, a gap is a decode step behind other requests'
 /// prefill chunks, or a preempted sequence waiting for cache pages. This is
 /// orchard-py's ceiling on any single delta wait (`DELTA_HARD_TIMEOUT_S`).
-pub const DEFAULT_DELTA_TIMEOUT: Duration = Duration::from_secs(300);
+const DEFAULT_DELTA_TIMEOUT: Duration = Duration::from_secs(300);
 /// How often the listener looks for requests the engine went silent on. A
 /// request therefore fails up to two intervals after its bound.
 const DELTA_WATCHDOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -343,12 +343,9 @@ impl IPCClient {
         self.event_callback = Some(callback);
     }
 
-    /// Bound how long a request waits on a silent engine: `first_delta` from
-    /// send to the first delta, `between_deltas` from one delta to the next.
-    /// A request that exceeds either ends with a final error delta, the way a
-    /// request ends when the engine dies. Takes effect at the next `connect`.
-    /// Defaults: [`DEFAULT_FIRST_DELTA_TIMEOUT`], [`DEFAULT_DELTA_TIMEOUT`].
-    pub fn set_delta_timeouts(&mut self, first_delta: Duration, between_deltas: Duration) {
+    /// Takes effect at the next `connect`.
+    #[cfg(test)]
+    fn set_delta_timeouts(&mut self, first_delta: Duration, between_deltas: Duration) {
         self.delta_timeouts = DeltaTimeouts {
             first: first_delta,
             between: between_deltas,
