@@ -246,7 +246,7 @@ pub struct IPCClient {
     event_socket: Option<Socket>,
     /// Management socket wrapped in Arc<Mutex> for async access via spawn_blocking
     management_socket: Arc<Mutex<Option<Socket>>>,
-    response_channel_id: u64,
+    pub(crate) response_channel_id: u64,
     request_id_counter: AtomicU64,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
     listener_handle: Option<JoinHandle<()>>,
@@ -671,6 +671,8 @@ impl IPCClient {
             let engine_dead = Arc::clone(&self.engine_dead);
             let event_callback = self.event_callback.clone();
             let delta_timeouts = self.delta_timeouts;
+            let management_socket = Arc::clone(&self.management_socket);
+            let engine_advertises_lossless = Arc::clone(&self.engine_advertises_lossless);
             let handle = thread::Builder::new()
                 .name("orchard-ipc-listener".to_string())
                 .spawn(move || {
@@ -683,6 +685,8 @@ impl IPCClient {
                         engine_pid_file,
                         event_callback,
                         delta_timeouts,
+                        management_socket,
+                        engine_advertises_lossless,
                     );
                 });
             match handle {
@@ -825,6 +829,19 @@ fn note_engine_capabilities(capabilities: Option<&Value>, engine_advertises_loss
     }
 }
 
+/// The management command that cancels one request of the client that
+/// listens on `response_channel_id`. Every client counts request ids from 1:
+/// an engine that advertises `lossless_responses` cancels by channel and id,
+/// an older one ignores the channel and cancels every client's request with
+/// that id.
+pub(crate) fn cancel_request_command(response_channel_id: u64, request_id: u64) -> Value {
+    serde_json::json!({
+        "type": "cancel_request",
+        "request_id": request_id,
+        "response_channel_id": response_channel_id,
+    })
+}
+
 /// Hand one response delta (the JSON after the topic) to the request it
 /// belongs to. Never waits on a consumer: the per-request channel is unbounded,
 /// so whatever a consumer has not read yet sits here, not in the engine.
@@ -871,14 +888,15 @@ fn route_response_delta(
 }
 
 /// Fail every request the engine has been silent on for longer than its
-/// bound. A request that waits forever is what an engine that cannot reach
-/// this client's response endpoint looks like from here: it drops that
-/// client's deltas and nothing else tells the client.
+/// bound, and return their ids. A request that waits forever is what an engine
+/// that cannot reach this client's response endpoint looks like from here: it
+/// drops that client's deltas and nothing else tells the client.
 fn fail_silent_requests(
     active_requests: &Mutex<HashMap<u64, ActiveRequest>>,
     timeouts: DeltaTimeouts,
-) {
+) -> Vec<u64> {
     let now = Instant::now();
+    let mut failed = Vec::new();
     let mut requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
     requests.retain(|request_id, entry| {
         if entry.deltas != entry.watched_deltas {
@@ -908,8 +926,10 @@ fn fail_silent_requests(
         let _ = entry
             .sender
             .send(terminal_error_delta(*request_id, &reason));
+        failed.push(*request_id);
         false
     });
+    failed
 }
 
 /// Response listener - runs on dedicated thread for minimal latency.
@@ -927,6 +947,8 @@ fn run_response_listener(
     engine_pid_file: PathBuf,
     event_callback: Option<EventCallback>,
     delta_timeouts: DeltaTimeouts,
+    management_socket: Arc<Mutex<Option<Socket>>>,
+    engine_advertises_lossless: Arc<AtomicBool>,
 ) {
     let response_topic = format!("resp:{:x}:", response_channel_id);
     let response_topic_bytes = response_topic.as_bytes();
@@ -992,7 +1014,33 @@ fn run_response_listener(
         deltas_since_watchdog_check = 0;
         if last_watchdog.elapsed() >= DELTA_WATCHDOG_INTERVAL {
             last_watchdog = Instant::now();
-            fail_silent_requests(&active_requests, delta_timeouts);
+            let timed_out = fail_silent_requests(&active_requests, delta_timeouts);
+            // The engine would decode them to their token limit and keep
+            // their cache pages. An engine that does not advertise
+            // `lossless_responses` is not told: it would cancel every
+            // client's request with that id. On a thread of its own: the
+            // exchange waits for the management socket, which a load_model
+            // can hold for minutes, and this thread receives the deltas.
+            if !timed_out.is_empty() && engine_advertises_lossless.load(Ordering::SeqCst) {
+                let management_socket = Arc::clone(&management_socket);
+                let engine_dead = Arc::clone(&engine_dead);
+                let engine_pid_file = engine_pid_file.clone();
+                let engine_advertises_lossless = Arc::clone(&engine_advertises_lossless);
+                let _ = thread::Builder::new()
+                    .name("orchard-ipc-cancel".to_string())
+                    .spawn(move || {
+                        for request_id in timed_out {
+                            let _ = blocking_management_exchange(
+                                &management_socket,
+                                &engine_dead,
+                                Some(&engine_pid_file),
+                                &cancel_request_command(response_channel_id, request_id),
+                                Duration::from_secs(2),
+                                &engine_advertises_lossless,
+                            );
+                        }
+                    });
+            }
         }
     }
 
@@ -1326,6 +1374,8 @@ mod tests {
             dir.path().join("engine.pid"),
             Some(callback),
             IPCClient::new().delta_timeouts,
+            Arc::new(Mutex::new(None)),
+            Arc::new(AtomicBool::new(false)),
         );
 
         assert!(engine_dead.load(Ordering::SeqCst));
@@ -1453,6 +1503,9 @@ mod tests {
                 .expect("send buffer");
             publisher.listen(&response_url_in(root)).expect("listen");
             let management = Socket::new(Protocol::Rep0).expect("rep socket");
+            management
+                .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_secs(10)))
+                .expect("recv timeout");
             management.listen(&management_url_in(root)).expect("listen");
             Self {
                 root: root.to_path_buf(),
@@ -1515,13 +1568,14 @@ mod tests {
             }
         }
 
-        /// Answer the next management command with `reply`.
-        fn answer_management(&self, reply: &Value) {
-            self.management.recv().expect("a management command");
+        /// Answer the next management command with `reply`, and return it.
+        fn answer_management(&self, reply: &Value) -> Value {
+            let command = self.management.recv().expect("a management command");
             self.management
                 .send(serde_json::to_vec(reply).unwrap().as_slice())
                 .map_err(|(_, error)| error)
                 .expect("reply");
+            serde_json::from_slice(&command).expect("management command")
         }
 
         fn publish_event(&self, name: &str, payload: &Value) {
@@ -2037,6 +2091,36 @@ mod tests {
         assert!(message.contains("first response delta"), "{message}");
         assert!(client.active_requests.lock().unwrap().is_empty());
         assert!(deltas.try_recv().is_err(), "the request ends exactly once");
+    }
+
+    #[test]
+    fn test_a_request_the_watchdog_fails_is_cancelled_in_an_engine_that_cancels_by_channel() {
+        let dir = ipc_dir();
+        let engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        client.set_delta_timeouts(Duration::from_millis(200), Duration::from_secs(60));
+        connect(&mut client, dir.path());
+
+        // Nothing says yet that this engine cancels by channel: it may cancel
+        // every client's request 1, so it is not asked to.
+        let mut deltas = send(&client, 1);
+        engine.next_request();
+        contents_until_error(&mut deltas);
+
+        client.note_lossless_responses();
+        let mut deltas = send(&client, 2);
+        engine.next_request();
+        contents_until_error(&mut deltas);
+
+        let command = engine.answer_management(&serde_json::json!({"status": "accepted"}));
+        assert_eq!(
+            command,
+            serde_json::json!({
+                "type": "cancel_request",
+                "request_id": 2,
+                "response_channel_id": client.response_channel_id,
+            })
+        );
     }
 
     #[test]
