@@ -856,28 +856,20 @@ fn route_response_delta(
 
     let sender = {
         let mut requests = active_requests.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = requests.get_mut(&request_id) {
-            entry.deltas += 1;
-            if is_final {
-                entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
-                if entry.remaining_finals == 0 {
-                    let sender = entry.sender.clone();
-                    requests.remove(&request_id);
-                    Some(sender)
-                } else {
-                    Some(entry.sender.clone())
-                }
-            } else {
-                Some(entry.sender.clone())
+        let Some(entry) = requests.get_mut(&request_id) else {
+            return;
+        };
+        entry.deltas += 1;
+        let sender = entry.sender.clone();
+        if is_final {
+            entry.remaining_finals = entry.remaining_finals.saturating_sub(1);
+            if entry.remaining_finals == 0 {
+                requests.remove(&request_id);
             }
-        } else {
-            None
         }
+        sender
     };
-
-    if let Some(tx) = sender {
-        let _ = tx.send(delta);
-    }
+    let _ = sender.send(delta);
 }
 
 /// Fail every request the engine has been silent on for longer than its
