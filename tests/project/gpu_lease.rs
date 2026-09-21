@@ -66,18 +66,17 @@ pub fn hold_at(path: &str) {
         Err(TryLockError::Error(e)) => panic!("cannot lock the GPU lease {path}: {e}"),
     }
 
-    // The GPU tenant is the engine, not this process, and the engine outlives
-    // it: an example only deregisters on exit, and a killed test binary or a
-    // panic during fixture setup never reaches the shutdown. std opens files
-    // close-on-exec, which would free the lease with the engine still on the
-    // GPU. So let children inherit this descriptor. The engine, spawned later
-    // by the library's plain Command, then shares the open file, and the flock
-    // lasts until this process AND its engine are gone. The price: an engine
-    // wedged on the GPU keeps the lease until someone kills it, and the holder
-    // line may by then name a dead pid. `lsof /tmp/proxy-gpu.lease` shows who
-    // really holds it. The examples run in the default namespace: an engine
-    // they adopt rather than start is not covered, and one they start keeps
-    // the lease for as long as any later client keeps it running.
+    // The GPU tenant is the engine, and it outlives this process: an example
+    // only deregisters on exit, and a killed test binary never reaches the
+    // shutdown. std opens files close-on-exec, which would free the lease with
+    // the engine still on the GPU, so let children inherit this descriptor:
+    // the engine, spawned later by the library's plain Command, shares the
+    // open file, and the flock lasts until this process AND its engine are
+    // gone. The price: a wedged engine keeps the lease until it is killed, and
+    // the holder line may then name a dead pid (`lsof /tmp/proxy-gpu.lease`
+    // shows the real holder). Not covered: an engine an example adopts rather
+    // than starts; one it starts keeps the lease while any later client keeps
+    // it running.
     // SAFETY: fcntl(F_SETFD) on a descriptor this function owns; no memory.
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFD, 0) } == -1 {
         let e = std::io::Error::last_os_error();
@@ -102,16 +101,12 @@ pub fn hold_at(path: &str) {
     // Children inherit the mark from this process's own environment. The
     // engine is spawned by the library's production code, which this must not
     // touch, so there is no Command::env to hang it on. Other threads do exist
-    // by now: in the test binaries this runs on a tokio blocking thread
-    // (get_fixture in fixture.rs) with libtest's test threads and their
-    // runtimes already up, and in the examples the tokio workers are started.
-    // What set_var relies on instead: the engine-backed tests get no further
-    // than the fixture's OnceLock until this returns, std's own env accessors
-    // serialize on std's env lock, and nothing in these targets is known to
-    // read the environment from C (getenv, which std cannot lock) this early.
-    // ensure_test_namespace() sets ORCHARD_CACHE_ROOT at the same point on the
-    // same terms. This crate is edition 2021, where set_var is a safe fn; an
-    // edition-2024 unsafe block needs this argument, not "no other threads".
+    // by now. What set_var relies on instead: the engine-backed tests get no
+    // further than the fixture's OnceLock until this returns, std's own env
+    // accessors serialize on std's env lock, and nothing in these targets is
+    // known to read the environment from C (getenv, which std cannot lock)
+    // this early. ensure_test_namespace() sets ORCHARD_CACHE_ROOT at the same
+    // point on the same terms.
     std::env::set_var("PROXY_GPU_LEASE_HELD", "1");
     // Open until exit: the kernel drops the flock when the last process
     // holding this open file is gone.
