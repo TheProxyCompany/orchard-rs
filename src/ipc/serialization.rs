@@ -233,7 +233,9 @@ pub fn parse_response_delta(data: &[u8]) -> Result<Value> {
 /// `pie_response_<response_channel_id in hex>.ipc`, where the sender must
 /// already be listening (`IPCClient::connect` does), and are not published on
 /// the PUB/SUB endpoint. Without it the request is the one every engine
-/// knows, answered over PUB/SUB. `IPCClient` decides which to send.
+/// knows, answered over PUB/SUB. `IPCClient` decides which to send. The engine
+/// compares the exact string `pull_v1`: any other name is answered over
+/// PUB/SUB by an older engine and rejected by a newer one.
 #[allow(clippy::too_many_arguments)]
 pub fn build_batch_request_payload(
     request_id: u64,
@@ -434,10 +436,6 @@ pub fn build_batch_request_payload(
         "prompts": prompt_metadata_list,
     });
     if lossless_responses {
-        // The engine's flow-controlled response route: it pushes this
-        // request's deltas to the sender's own endpoint instead of publishing
-        // them, so none is dropped when the sender falls behind. The engine
-        // compares the exact string and takes anything else to mean PUB/SUB.
         metadata["response_transport"] = json!("pull_v1");
     }
 

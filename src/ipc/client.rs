@@ -88,13 +88,9 @@ pub(crate) const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 /// awaits `ModelRegistry::ensure_loaded` before it sends, the engine
 /// publishes `model_loaded` only after the weights are materialized, and it
 /// answers a request for a model it has not loaded with an error delta at
-/// once. orchard-py caps the same wait at 300 s, about three times the 91 s
-/// its test gate measured for short prompts queued behind 800 sequences. The
-/// app sends far longer prompts to far larger models: 128k tokens at 100
-/// tokens/s is 21 minutes of prefill with no delta. Half an hour ends a
-/// request that can never be answered (the engine cannot reach this client's
-/// response endpoint, or dropped the request) without cutting off a prefill
-/// the engine would have finished.
+/// once. orchard-py caps the same wait at 300 s, but the app sends far longer
+/// prompts to far larger models: 128k tokens at 100 tokens/s is 21 minutes of
+/// prefill with no delta.
 const DEFAULT_FIRST_DELTA_TIMEOUT: Duration = Duration::from_secs(1800);
 /// Longest silence between two deltas of a request with one stream before it
 /// fails; a request with several is held to the first-delta bound throughout.
