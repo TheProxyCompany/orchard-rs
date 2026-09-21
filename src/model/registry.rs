@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
 use crate::error::Error;
 use crate::formatter::ChatFormatter;
-use crate::ipc::client::IPCClient;
+use crate::ipc::client::{advertises_lossless_responses, IPCClient};
 use crate::model::resolver::{ModelResolver, ResolvedModel};
 
 /// Model load state machine.
@@ -114,6 +115,11 @@ pub struct ModelRegistry {
     local_source_inspection_cache: RwLock<HashMap<String, ResolvedModel>>,
     /// IPC client for sending management commands to PIE
     ipc_client: RwLock<Option<Arc<IPCClient>>>,
+    /// Whether the latest load_model reply or `model_loaded` event listed
+    /// `lossless_responses`. An IPC client only hears it in those two, and a
+    /// model that is Ready is never loaded again, so a later client of this
+    /// registry has to be told (`set_ipc_client`).
+    engine_advertises_lossless: AtomicBool,
 }
 
 impl ModelRegistry {
@@ -125,11 +131,15 @@ impl ModelRegistry {
             alias_cache: RwLock::new(HashMap::new()),
             local_source_inspection_cache: RwLock::new(HashMap::new()),
             ipc_client: RwLock::new(None),
+            engine_advertises_lossless: AtomicBool::new(false),
         })
     }
 
     /// Set the IPC client for sending management commands to PIE.
     pub async fn set_ipc_client(&self, client: Arc<IPCClient>) {
+        if self.engine_advertises_lossless.load(Ordering::SeqCst) {
+            client.note_lossless_responses();
+        }
         let mut ipc = self.ipc_client.write().await;
         *ipc = Some(client);
     }
@@ -294,6 +304,12 @@ impl ModelRegistry {
         match status {
             "ok" => {
                 // Immediate success - extract capabilities and mark ready
+                self.engine_advertises_lossless.store(
+                    advertises_lossless_responses(
+                        response.pointer("/data/load_model/capabilities"),
+                    ),
+                    Ordering::SeqCst,
+                );
                 let capabilities = self.parse_capabilities(&response);
                 let minimum_memory_bytes = self.parse_minimum_memory_bytes(&response);
                 self.complete_activation(canonical_id, capabilities, minimum_memory_bytes)
@@ -1024,6 +1040,11 @@ impl ModelRegistry {
                 return;
             }
         };
+
+        self.engine_advertises_lossless.store(
+            advertises_lossless_responses(payload.get("capabilities")),
+            Ordering::SeqCst,
+        );
 
         // Extract and update capabilities
         if let Some(caps) = payload.get("capabilities").and_then(|c| c.as_object()) {

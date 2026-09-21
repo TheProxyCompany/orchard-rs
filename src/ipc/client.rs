@@ -350,6 +350,13 @@ impl IPCClient {
         };
     }
 
+    /// The engine advertised `lossless_responses` to an earlier client of the
+    /// registry this client now serves (`ModelRegistry::set_ipc_client`).
+    pub(crate) fn note_lossless_responses(&self) {
+        self.engine_advertises_lossless
+            .store(true, Ordering::SeqCst);
+    }
+
     /// Connect to PIE IPC endpoints.
     pub fn connect(&mut self) -> Result<()> {
         let engine_pid_file = current_engine_pid_file()
@@ -796,15 +803,18 @@ fn blocking_management_exchange(
     }
 }
 
-/// Remember that the engine advertises `lossless_responses` when
-/// `capabilities` (name to integers, from a load_model reply or a
-/// `model_loaded` event) lists it with value 1.
-fn note_engine_capabilities(capabilities: Option<&Value>, engine_advertises_lossless: &AtomicBool) {
-    let advertised = capabilities
+/// Whether `capabilities` (name to integers, from a load_model reply or a
+/// `model_loaded` event) lists `lossless_responses` with value 1.
+pub(crate) fn advertises_lossless_responses(capabilities: Option<&Value>) -> bool {
+    capabilities
         .and_then(|capabilities| capabilities.get(LOSSLESS_RESPONSES_CAPABILITY))
         .map(|value| value.get(0).unwrap_or(value))
-        .and_then(Value::as_i64);
-    if advertised == Some(1) {
+        .and_then(Value::as_i64)
+        == Some(1)
+}
+
+fn note_engine_capabilities(capabilities: Option<&Value>, engine_advertises_lossless: &AtomicBool) {
+    if advertises_lossless_responses(capabilities) {
         engine_advertises_lossless.store(true, Ordering::SeqCst);
     }
 }
@@ -1037,8 +1047,9 @@ fn run_event_listener(
                         warned_about_lossy_route = true;
                         tracing::warn!(
                             "PIE answers over PUB/SUB, where deltas are lost without an \
-                             error whenever this process falls behind: it does not \
-                             advertise lossless_responses. Update the engine."
+                             error whenever this process falls behind: no load_model \
+                             reply or model_loaded event has advertised \
+                             lossless_responses."
                         );
                     }
                     route_response_delta(json_data, &active_requests, response_channel_id);
@@ -1924,6 +1935,31 @@ mod tests {
         let _deltas = send(&client, 3);
         let request = engine.next_request();
         assert!(request.get("response_transport").is_none(), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_a_new_client_of_a_registry_that_heard_the_capability_asks_for_the_lossless_route()
+    {
+        let dir = ipc_dir();
+        let engine = FakeEngine::start(dir.path());
+        // Heard through an earlier client of this registry. Its models stay
+        // Ready, so it never sends the load_model whose reply would tell the
+        // next client.
+        let registry = crate::model::registry::ModelRegistry::new().expect("registry");
+        registry
+            .handle_model_loaded(&serde_json::json!({
+                "model_id": "model",
+                "capabilities": {"answer": [3], "lossless_responses": [1]},
+            }))
+            .await;
+
+        let mut client = IPCClient::new();
+        connect_shared(&mut client, dir.path());
+        let client = Arc::new(client);
+        registry.set_ipc_client(Arc::clone(&client)).await;
+
+        let _deltas = send(&client, 1);
+        assert_eq!(engine.next_request()["response_transport"], "pull_v1");
     }
 
     #[test]
