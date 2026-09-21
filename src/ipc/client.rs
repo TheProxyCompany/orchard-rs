@@ -271,10 +271,12 @@ struct DeltaTimeouts {
 struct ActiveRequest {
     sender: mpsc::UnboundedSender<ResponseDelta>,
     remaining_finals: usize,
-    /// The request expects more than one stream (prompts, candidates). One of
-    /// them can be queued or prefilling, which is silent, after another has
-    /// sent deltas, so only the first-delta bound holds for such a request.
-    multi_stream: bool,
+    /// The request has several prompts. One of them can be queued or
+    /// prefilling, which is silent, after another has sent deltas, so only the
+    /// first-delta bound holds for such a request. The candidates of one
+    /// prompt cannot: the engine forks them once that prompt's first token is
+    /// out, so they all decode from then on.
+    several_prompts: bool,
     /// Deltas routed to this request so far. The watchdog compares it with
     /// `watched_deltas` once per interval, so the receive loop pays one
     /// addition per delta and never reads the clock for it.
@@ -577,7 +579,7 @@ impl IPCClient {
                 ActiveRequest {
                     sender: tx,
                     remaining_finals,
-                    multi_stream: remaining_finals > 1,
+                    several_prompts: prompts.len() > 1,
                     deltas: 0,
                     watched_deltas: 0,
                     last_progress: Instant::now(),
@@ -894,7 +896,7 @@ fn fail_silent_requests(
         } else {
             "its next response delta"
         };
-        let limit = if entry.deltas == 0 || entry.multi_stream {
+        let limit = if entry.deltas == 0 || entry.several_prompts {
             timeouts.first
         } else {
             timeouts.between
@@ -1335,7 +1337,7 @@ mod tests {
             ActiveRequest {
                 sender: tx,
                 remaining_finals: 1,
-                multi_stream: false,
+                several_prompts: false,
                 deltas: 0,
                 watched_deltas: 0,
                 last_progress: Instant::now(),
@@ -2096,7 +2098,7 @@ mod tests {
     }
 
     #[test]
-    fn test_a_request_with_several_streams_is_held_to_the_first_delta_timeout_only() {
+    fn test_a_request_with_several_prompts_is_held_to_the_first_delta_timeout_only() {
         let dir = ipc_dir();
         let mut engine = FakeEngine::start(dir.path());
         let mut client = IPCClient::new();
@@ -2120,6 +2122,33 @@ mod tests {
         );
 
         let (_, error) = contents_until_error(&mut deltas);
+        let message = error.error.expect("an error the caller can see");
+        assert!(message.contains("next response delta"), "{message}");
+    }
+
+    #[test]
+    fn test_the_candidates_of_one_prompt_are_held_to_the_delta_timeout() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        client.set_delta_timeouts(Duration::from_secs(60), Duration::from_millis(200));
+        connect(&mut client, dir.path());
+
+        // The engine forks a prompt's candidates once that prompt's first
+        // token is out, so none of them is queued or prefilling, and silent,
+        // while another streams.
+        let prompt = PromptPayload {
+            num_candidates: 2,
+            ..Default::default()
+        };
+        let (_, mut deltas) = client
+            .send_batch_request(1, "model", "/model", &[prompt])
+            .expect("send");
+        let request = engine.next_request();
+        engine.send_delta(&request, "0", false);
+
+        let (contents, error) = contents_until_error(&mut deltas);
+        assert_eq!(contents, counting(1));
         let message = error.error.expect("an error the caller can see");
         assert!(message.contains("next response delta"), "{message}");
     }
