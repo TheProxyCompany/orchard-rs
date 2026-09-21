@@ -70,7 +70,11 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: cargo publish --allow-dirty
+        # Cargo drops [patch] from the manifest it packages, so the build that
+        # verifies the package would resolve nng-sys from crates.io, which
+        # src/ipc/client.rs refuses to compile against. Verify it the way a
+        # consumer has to build it: with the vendored nng-sys patched in.
+        run: cargo publish --allow-dirty --config 'patch.crates-io.nng-sys.path="vendor/nng-sys"'
 
       - name: Commit version bump
         run: |
