@@ -878,6 +878,45 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Every chat profile the template rules below are checked against.
+    const CHAT_PROFILES: [&str; 15] = [
+        "llama",
+        "gemma3",
+        "gemma4",
+        "gemma4u",
+        "qwen3_5",
+        "lfm2",
+        "lfm2_moe",
+        "olmo_hybrid",
+        "nemotron_h",
+        "granite_switch",
+        "gpt_oss",
+        "proxy_i",
+        "afmoe",
+        "glm4_moe",
+        "laguna",
+    ];
+
+    fn message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
+        HashMap::from([
+            ("role".to_string(), serde_json::json!(role)),
+            ("content".to_string(), serde_json::json!(content)),
+        ])
+    }
+
+    /// The formatter for a model directory holding only this `model_type`. The directory
+    /// is returned so it outlives the formatter.
+    fn formatter_for(model_type: &str) -> (tempfile::TempDir, ChatFormatter) {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": model_type}).to_string(),
+        )
+        .unwrap();
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        (model_dir, formatter)
+    }
+
     #[test]
     fn test_determine_model_type() {
         let config = serde_json::json!({"model_type": "llama"});
@@ -974,43 +1013,9 @@ mod tests {
     /// prompt plus the reply, which is what lets the engine reuse all of its cache.
     #[test]
     fn test_a_replayed_reply_extends_the_prompt_it_answered() {
-        let message = |role: &str, content: &str| {
-            HashMap::from([
-                ("role".to_string(), serde_json::json!(role)),
-                ("content".to_string(), serde_json::json!(content)),
-            ])
-        };
-        let profiles = [
-            "llama",
-            "gemma3",
-            "gemma4",
-            "gemma4u",
-            "qwen3_5",
-            "lfm2",
-            "lfm2_moe",
-            "olmo_hybrid",
-            "nemotron_h",
-            "granite_switch",
-            "gpt_oss",
-            "proxy_i",
-            "afmoe",
-            "glm4_moe",
-            "laguna",
-        ];
         let mut broken = Vec::new();
-        // PROFILES=llama,gemma3 narrows the run while one template is being worked on.
-        let only = std::env::var("PROFILES").unwrap_or_default();
-        for model_type in profiles
-            .into_iter()
-            .filter(|p| only.is_empty() || only.split(',').any(|o| o == *p))
-        {
-            let model_dir = tempdir().unwrap();
-            std::fs::write(
-                model_dir.path().join("config.json"),
-                serde_json::json!({"model_type": model_type}).to_string(),
-            )
-            .unwrap();
-            let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        for model_type in CHAT_PROFILES {
+            let (_model_dir, formatter) = formatter_for(model_type);
             // The client renames `assistant` to `agent` before rendering; both must work.
             let cases = [
                 (false, "assistant"),
@@ -1070,48 +1075,14 @@ mod tests {
     /// earlier turn renders: the conversation so far stays a prefix of the conversation.
     #[test]
     fn test_reasoning_stays_in_the_conversation_and_earlier_turns_do_not_move() {
-        let message = |role: &str, content: &str| {
-            HashMap::from([
-                ("role".to_string(), serde_json::json!(role)),
-                ("content".to_string(), serde_json::json!(content)),
-            ])
-        };
         let reply_as = |role: &str, content: &str, reasoning: &str| {
             let mut reply = message(role, content);
             reply.insert("reasoning_content".into(), serde_json::json!(reasoning));
             reply
         };
-        let profiles = [
-            "llama",
-            "gemma3",
-            "gemma4",
-            "gemma4u",
-            "qwen3_5",
-            "lfm2",
-            "lfm2_moe",
-            "olmo_hybrid",
-            "nemotron_h",
-            "granite_switch",
-            "gpt_oss",
-            "proxy_i",
-            "afmoe",
-            "glm4_moe",
-            "laguna",
-        ];
         let mut broken = Vec::new();
-        // PROFILES=llama,gemma3 narrows the run while one template is being worked on.
-        let only = std::env::var("PROFILES").unwrap_or_default();
-        for model_type in profiles
-            .into_iter()
-            .filter(|p| only.is_empty() || only.split(',').any(|o| o == *p))
-        {
-            let model_dir = tempdir().unwrap();
-            std::fs::write(
-                model_dir.path().join("config.json"),
-                serde_json::json!({"model_type": model_type}).to_string(),
-            )
-            .unwrap();
-            let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        for model_type in CHAT_PROFILES {
+            let (_model_dir, formatter) = formatter_for(model_type);
             let keeps_reasoning = formatter.supports_native_thinking();
             // The client renames `assistant` to `agent` before rendering; both must work.
             for (role, thinking) in [

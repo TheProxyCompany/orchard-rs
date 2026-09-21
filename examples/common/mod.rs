@@ -99,3 +99,20 @@ pub async fn run_turn(
         elapsed: t.elapsed(),
     })
 }
+
+/// The exit status follows the RESULT line: `bad` runs that differ fail the process.
+pub fn verdict(bad: usize, what: &str) -> Result<(), Error> {
+    if bad > 0 {
+        return Err(format!("{bad} {what}").into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_differing_run_fails_the_process() {
+        assert!(super::verdict(0, "x").is_ok());
+        assert!(super::verdict(1, "x").is_err());
+    }
+}

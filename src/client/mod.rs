@@ -1036,10 +1036,7 @@ impl Client {
                 let started = std::time::Instant::now();
                 let mut result = WarmResult {
                     model_id: model_id.clone(),
-                    prompt_tokens: 0,
-                    cached_tokens: 0,
-                    elapsed: std::time::Duration::ZERO,
-                    error: None,
+                    ..Default::default()
                 };
                 // achat would download and load a missing model; a warm-up must not.
                 if client.registry.get_if_ready(&model_id).await.is_none() {
@@ -1594,7 +1591,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
 }
 
 /// What warming one model's prefix cache did (see [`Client::awarm_prefix`]).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WarmResult {
     pub model_id: String,
     /// Tokens in the rendered transcript for this model.
@@ -1623,16 +1620,11 @@ async fn join_warm_tasks(
 ) -> Vec<WarmResult> {
     let mut results = Vec::with_capacity(handles.len());
     for (model_id, handle) in handles {
-        match handle.await {
-            Ok(result) => results.push(result),
-            Err(error) => results.push(WarmResult {
-                model_id,
-                prompt_tokens: 0,
-                cached_tokens: 0,
-                elapsed: std::time::Duration::ZERO,
-                error: Some(error.to_string()),
-            }),
-        }
+        results.push(handle.await.unwrap_or_else(|error| WarmResult {
+            model_id,
+            error: Some(error.to_string()),
+            ..Default::default()
+        }));
     }
     results
 }
@@ -2400,18 +2392,7 @@ mod tests {
 
         let warm = warm_params(turn.clone());
 
-        // One token, one candidate.
-        assert_eq!(warm.max_tokens, 1);
-        assert_eq!(warm.n, 1);
-        assert_eq!(warm.best_of, None);
-        assert_eq!(warm.final_candidates, None);
-        // Everything that renders the prompt is the turn's, `reasoning: None` included.
-        assert_eq!(warm.reasoning, None);
-        assert_eq!(warm.reasoning_effort, turn.reasoning_effort);
-        assert_eq!(warm.instructions, turn.instructions);
-        assert_eq!(warm.task_name, turn.task_name);
-        assert_eq!(warm.core_tools, turn.core_tools);
-        // And nothing else moved either.
+        // One token, one candidate; everything else, `reasoning: None` included, is the turn's.
         let expected = SamplingParams {
             max_tokens: 1,
             n: 1,

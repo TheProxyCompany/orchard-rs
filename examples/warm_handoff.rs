@@ -9,8 +9,8 @@
 
 mod common;
 
-use common::{msg, run_turn, Message, QUESTIONS};
-use orchard::{Client, SamplingParams};
+use common::{msg, run_turn, QUESTIONS};
+use orchard::SamplingParams;
 
 /// What every turn is sampled with. The warm-ups get the same params, so they render
 /// the prompt the handoff turn will.
@@ -21,15 +21,6 @@ fn turn_params() -> SamplingParams {
         reasoning: Some(false),
         ..Default::default()
     }
-}
-
-async fn turn(
-    client: &Client,
-    model: &str,
-    messages: Vec<Message>,
-) -> Result<(String, f64, usize, usize), common::Error> {
-    let turn = run_turn(client, model, messages, turn_params(), |_| {}).await?;
-    Ok((turn.text, turn.ttft_ms, turn.prompt_tokens, turn.cached))
 }
 
 #[tokio::main]
@@ -52,12 +43,15 @@ async fn main() -> Result<(), common::Error> {
     let mut warmers = Vec::new();
     for (i, question) in QUESTIONS.iter().take(5).enumerate() {
         transcript.push(msg("user", question));
-        let (text, ttft, prompt, cached) = turn(&client, &model_a, transcript.clone()).await?;
+        let turn = run_turn(&client, &model_a, transcript.clone(), turn_params(), |_| {}).await?;
         println!(
-            "  A turn {} | prompt {prompt:>4} cached {cached:>4} | ttft {ttft:>5.0} ms",
-            i + 1
+            "  A turn {} | prompt {:>4} cached {:>4} | ttft {:>5.0} ms",
+            i + 1,
+            turn.prompt_tokens,
+            turn.cached,
+            turn.ttft_ms
         );
-        transcript.push(msg("assistant", &text));
+        transcript.push(msg("assistant", &turn.text));
         if warm {
             // Fire and forget: B catches up on the transcript while the user reads.
             let (client, model_b, snapshot) = (client.clone(), model_b.clone(), transcript.clone());
@@ -83,10 +77,13 @@ async fn main() -> Result<(), common::Error> {
 
     // The closing "summarize everything above" question.
     transcript.push(msg("user", QUESTIONS[9]));
-    let (_, ttft, prompt, cached) = turn(&client, &model_b, transcript).await?;
+    let turn = run_turn(&client, &model_b, transcript, turn_params(), |_| {}).await?;
     println!(
-        "HANDOFF to B | prompt {prompt} tok, {cached} cached ({:.0}%) | ttft {ttft:.0} ms",
-        100.0 * cached as f64 / prompt.max(1) as f64
+        "HANDOFF to B | prompt {} tok, {} cached ({:.0}%) | ttft {:.0} ms",
+        turn.prompt_tokens,
+        turn.cached,
+        100.0 * turn.cached as f64 / turn.prompt_tokens.max(1) as f64,
+        turn.ttft_ms
     );
     Ok(())
 }
