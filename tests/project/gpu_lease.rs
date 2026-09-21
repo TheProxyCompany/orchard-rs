@@ -16,12 +16,6 @@ use std::fs::{File, Permissions, TryLockError};
 use std::io::{Read, Seek, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::OnceLock;
-
-/// Open until the process exits. The kernel drops the flock when the last
-/// process with this open file is gone, however each dies, so there is
-/// nothing to clean up. The engine this process starts is one of them.
-static LEASE: OnceLock<File> = OnceLock::new();
 
 /// Block until this process is the machine's one heavy GPU tenant. Call it
 /// before starting an engine; there is no timeout, a CI job waits for a local
@@ -119,7 +113,9 @@ pub fn hold_at(path: &str) {
     // same terms. This crate is edition 2021, where set_var is a safe fn; an
     // edition-2024 unsafe block needs this argument, not "no other threads".
     std::env::set_var("PROXY_GPU_LEASE_HELD", "1");
-    let _ = LEASE.set(file);
+    // Open until exit: the kernel drops the flock when the last process
+    // holding this open file is gone.
+    std::mem::forget(file);
 }
 
 /// Local time as ISO-8601 to the second, like the other repos' holder lines.
