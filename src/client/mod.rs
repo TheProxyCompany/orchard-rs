@@ -1888,19 +1888,8 @@ fn value_to_text(value: &Value) -> String {
     }
 }
 
-/// The message text of one reply.
-///
-/// A delta carries two views of the text. `content` is the decoded text of the
-/// sampled tokens. The message `content_delta` events are the engine's text
-/// stream: it holds back the end of the text while that end could still become
-/// a stop sequence, hands it over in a later delta, and never contains a stop
-/// sequence.
-///
-/// An engine that advertises `released_text` (`ModelInfo::releases_held_text`)
-/// completes that stream: when the reply is cut off, the final delta hands the
-/// held text over, and the reply is read from the spans alone. An engine without
-/// the capability never sends that text as a span, so its replies are read as
-/// they were before the capability existed.
+/// The message text of one reply: the spans alone when the engine completes its text
+/// stream (`ModelInfo::releases_held_text`), otherwise read as it was before that existed.
 fn aggregate_message_text(deltas: &[ClientDelta], released_text: bool) -> String {
     if released_text {
         message_text_from_spans(deltas)

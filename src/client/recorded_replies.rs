@@ -1,18 +1,7 @@
 //! Replies written out delta by delta, in the shape PIE sends them, for the
 //! tests of every place that assembles message text.
 //!
-//! Every token delta carries two views of the text. `content` is the decoded
-//! text of the sampled token. The state events are the engine's text stream:
-//! it holds back the end of the text while that end could still become a stop
-//! sequence (or the newline in front of `</think>`), never contains a stop
-//! sequence, and hands held text over in a later delta.
-//!
-//! An engine that advertises the `released_text` capability completes that
-//! stream: when a reply ends without a stop (token limit, cancel) the held text
-//! arrives in the completion delta, which has no tokens and no `content`. Its
-//! replies are assembled from the message spans alone. An engine without the
-//! capability never hands that text over, and its replies are assembled exactly
-//! as they were before the capability existed.
+//! What `released_text` changes about a reply: see `ModelInfo::releases_held_text`.
 
 use serde_json::{json, Value};
 
