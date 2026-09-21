@@ -2392,18 +2392,7 @@ mod tests {
 
         let warm = warm_params(turn.clone());
 
-        // One token, one candidate.
-        assert_eq!(warm.max_tokens, 1);
-        assert_eq!(warm.n, 1);
-        assert_eq!(warm.best_of, None);
-        assert_eq!(warm.final_candidates, None);
-        // Everything that renders the prompt is the turn's, `reasoning: None` included.
-        assert_eq!(warm.reasoning, None);
-        assert_eq!(warm.reasoning_effort, turn.reasoning_effort);
-        assert_eq!(warm.instructions, turn.instructions);
-        assert_eq!(warm.task_name, turn.task_name);
-        assert_eq!(warm.core_tools, turn.core_tools);
-        // And nothing else moved either.
+        // One token, one candidate; everything else, `reasoning: None` included, is the turn's.
         let expected = SamplingParams {
             max_tokens: 1,
             n: 1,
