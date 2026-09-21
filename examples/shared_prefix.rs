@@ -8,19 +8,10 @@
 //!
 //! Exits non-zero when either request differs from its cache-off run.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+mod common;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-type Message = HashMap<String, serde_json::Value>;
-
-fn msg(role: &str, content: &str) -> Message {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
+use common::{msg, run_turn, Message};
+use orchard::{Client, SamplingParams};
 
 struct Run {
     tokens: Vec<i32>,
@@ -35,7 +26,7 @@ async fn run(
     messages: Vec<Message>,
     prefix_cache: bool,
     reproducible: bool,
-) -> Result<Run, Box<dyn std::error::Error>> {
+) -> Result<Run, common::Error> {
     let params = SamplingParams {
         max_tokens: 32,
         temperature: 0.0,
@@ -45,21 +36,10 @@ async fn run(
         top_logprobs: 3,
         ..Default::default()
     };
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
-        unreachable!()
-    };
-    let mut out = Run {
-        tokens: Vec::new(),
-        tops: Vec::new(),
-        prompt: 0,
-        cached: 0,
-    };
-    while let Some(d) = stream.recv().await {
-        if let Some(e) = d.error {
-            return Err(e.into());
-        }
+    let mut tops = Vec::new();
+    let turn = run_turn(client, model, messages, params, |d| {
         if !d.top_logprobs.is_empty() {
-            out.tops.push(
+            tops.push(
                 d.top_logprobs
                     .iter()
                     .map(|t| format!("{:?} {:.4}", t.token, t.logprob))
@@ -67,14 +47,14 @@ async fn run(
                     .join(", "),
             );
         }
-        out.tokens.extend(d.tokens.iter().copied());
-        out.prompt = out.prompt.max(d.prompt_token_count.unwrap_or(0) as usize);
-        out.cached = out.cached.max(d.cached_token_count.unwrap_or(0) as usize);
-        if d.is_final_delta {
-            break;
-        }
-    }
-    Ok(out)
+    })
+    .await?;
+    Ok(Run {
+        tokens: turn.ids,
+        tops,
+        prompt: turn.prompt_tokens,
+        cached: turn.cached,
+    })
 }
 
 fn numbered(count: usize, what: &str, offset: usize) -> String {
@@ -110,9 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|v| v.parse().ok())
             .unwrap_or(default)
     };
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     registry.ensure_loaded(&model).await?;
 
     println!("shared system tok (approx) | first request | second: prompt, cached | tokens match | log-probs match");
