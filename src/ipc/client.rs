@@ -96,7 +96,8 @@ const LOSSLESS_RESPONSES_CAPABILITY: &str = "lossless_responses";
 /// response endpoint, or dropped the request) without cutting off a prefill
 /// the engine would have finished.
 pub const DEFAULT_FIRST_DELTA_TIMEOUT: Duration = Duration::from_secs(1800);
-/// Longest silence between two deltas of one request before it fails.
+/// Longest silence between two deltas of a request with one stream before it
+/// fails; a request with several is held to the first-delta bound throughout.
 ///
 /// Once a request decodes, a gap is a decode step behind other requests'
 /// prefill chunks, or a preempted sequence waiting for cache pages. This is
@@ -274,6 +275,10 @@ struct DeltaTimeouts {
 struct ActiveRequest {
     sender: mpsc::UnboundedSender<ResponseDelta>,
     remaining_finals: usize,
+    /// The request expects more than one stream (prompts, candidates). One of
+    /// them can be queued or prefilling, which is silent, after another has
+    /// sent deltas, so only the first-delta bound holds for such a request.
+    multi_stream: bool,
     /// Deltas routed to this request so far. The watchdog compares it with
     /// `watched_deltas` once per interval, so the receive loop pays one
     /// addition per delta and never reads the clock for it.
@@ -579,6 +584,7 @@ impl IPCClient {
                 ActiveRequest {
                     sender: tx,
                     remaining_finals,
+                    multi_stream: remaining_finals > 1,
                     deltas: 0,
                     watched_deltas: 0,
                     last_progress: Instant::now(),
@@ -880,10 +886,15 @@ fn fail_silent_requests(
             entry.last_progress = now;
             return true;
         }
-        let (limit, awaited) = if entry.deltas == 0 {
-            (timeouts.first, "its first response delta")
+        let awaited = if entry.deltas == 0 {
+            "its first response delta"
         } else {
-            (timeouts.between, "its next response delta")
+            "its next response delta"
+        };
+        let limit = if entry.deltas == 0 || entry.multi_stream {
+            timeouts.first
+        } else {
+            timeouts.between
         };
         let silent_for = now.duration_since(entry.last_progress);
         if silent_for < limit {
@@ -1291,6 +1302,7 @@ mod tests {
             ActiveRequest {
                 sender: tx,
                 remaining_finals: 1,
+                multi_stream: false,
                 deltas: 0,
                 watched_deltas: 0,
                 last_progress: Instant::now(),
@@ -2047,6 +2059,35 @@ mod tests {
         let message = error.error.expect("an error the caller can see");
         assert!(message.contains("next response delta"), "{message}");
         assert!(client.active_requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_a_request_with_several_streams_is_held_to_the_first_delta_timeout_only() {
+        let dir = ipc_dir();
+        let mut engine = FakeEngine::start(dir.path());
+        let mut client = IPCClient::new();
+        client.set_delta_timeouts(Duration::from_secs(4), Duration::from_millis(100));
+        connect(&mut client, dir.path());
+
+        let prompts = [PromptPayload::default(), PromptPayload::default()];
+        let (_, mut deltas) = client
+            .send_batch_request(1, "model", "/model", &prompts)
+            .expect("send");
+        let request = engine.next_request();
+        // One prompt's stream runs and ends while the other is still queued
+        // or prefilling, which the engine is silent through.
+        engine.answer(&request, 3);
+        assert_eq!(contents(&mut deltas), counting(3));
+
+        thread::sleep(Duration::from_millis(2300));
+        assert!(
+            deltas.try_recv().is_err(),
+            "failed by the between-deltas bound while a stream had yet to start"
+        );
+
+        let (_, error) = contents_until_error(&mut deltas);
+        let message = error.error.expect("an error the caller can see");
+        assert!(message.contains("next response delta"), "{message}");
     }
 
     #[test]
