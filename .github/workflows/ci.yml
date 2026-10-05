@@ -77,5 +77,37 @@ jobs:
         run: ./scripts/build.sh -t Release
 
       - name: Run full Orchard RS suite
+        env:
+          ORCHARD_GOLDEN_DIFF_DIR: ${{ runner.temp }}/orchard-rs-golden-diffs-${{ github.run_id }}-${{ github.run_attempt }}
+          ORCHARD_REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          python3 - <<'PY'
+          import json, os, pathlib, platform, subprocess
+          def git(path, *args):
+              return subprocess.check_output(["git", "-C", path, *args], text=True).strip()
+          output = pathlib.Path(os.environ["ORCHARD_GOLDEN_DIFF_DIR"])
+          output.mkdir(parents=True, exist_ok=True)
+          metadata = {
+              "requested_client_revision": os.environ["ORCHARD_REQUESTED_HEAD"],
+              "tested_client_revision": git(".", "rev-parse", "HEAD"),
+              "engine_revision": git(".ci/proxy-inference-engine", "rev-parse", "HEAD"),
+              "profile_revision": git("profiles", "rev-parse", "HEAD"),
+              "engine_submodules": git(".ci/proxy-inference-engine", "submodule", "status", "--recursive").splitlines(),
+              "platform": platform.platform(),
+              "machine": platform.machine(),
+              "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),
+          }
+          if platform.system() == "Darwin":
+              metadata["cpu"] = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
+          (output / "revisions.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
           RUST_BACKTRACE=1 PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release" cargo test --release --test buckshot -- --nocapture
+
+      - name: Upload golden-drift evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchard-rs-golden-drift-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/orchard-rs-golden-diffs-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
