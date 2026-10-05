@@ -900,7 +900,8 @@
           }
         },
         "stop_token_id": 11,
-        "stop_token": "<|im_end|>"
+        "stop_token": "<|im_end|>",
+        "generation": {"model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16","tokens": [1784,3330,25747,1058,1429,7493,1395,1032,1049,1055,1867,1032,1050,1054,1063,124963,1454,2586,1278,2782,4043,4268,2534,1317,24002,1032,1049,1055,1867,1032,1050,1054,1376,1032,1052,1051,1046,4493,22695,1429,1052,1051,3871,3501,7185,3403,1626,13,1010,1052,1051],"thinking": true}
       }
     },
     {
@@ -1077,7 +1078,8 @@
           }
         },
         "stop_token_id": 11,
-        "stop_token": "<|im_end|>"
+        "stop_token": "<|im_end|>",
+        "generation": {"model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16","tokens": [1052,1051],"thinking": false}
       }
     },
     {

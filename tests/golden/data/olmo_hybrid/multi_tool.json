@@ -318,7 +318,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [100268,517,262,330,609,794,330,456,70464,761,262,330,16774,794,341,286,330,2588,794,330,24661,13175,702,262,457,92,100269],"thinking": false}
       }
     },
     {
@@ -632,7 +633,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [100268,90,330,609,794,330,456,3084,498,330,16774,794,314,330,44371,794,330,39563,17146,564,16417,1,335,335,100269],"thinking": false}
       }
     },
     {
@@ -1385,7 +1387,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [791,1510,9282,304,5960,13175,374,31349,4680,449,264,9499,315,220,2397,59572,13,1102,374,5131,220,1419,25,410,304,27286,320,21872,10,2545,25,410,570,2650,775,649,358,7945,499,30,100265],"thinking": false}
       }
     },
     {

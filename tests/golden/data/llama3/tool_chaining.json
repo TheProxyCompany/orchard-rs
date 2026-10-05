@@ -166,7 +166,8 @@
           }
         },
         "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>"
+        "stop_token": "<|eom_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [128010,3990,3173,36950,429,18556,909],"thinking": false}
       }
     },
     {
@@ -444,7 +445,8 @@
           }
         },
         "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>"
+        "stop_token": "<|eom_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [128010,56121,4231,478,4962,429,42,22,5364,1929,73421,12,24242,16,909],"thinking": false}
       }
     },
     {
@@ -1026,7 +1028,8 @@
           }
         },
         "stop_token_id": 128009,
-        "stop_token": "<|eot_id|>"
+        "stop_token": "<|eot_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [791,1401,374,8340,304,279,6875,11,323,279,32726,15489,374,36718,449,433,13,28468,279,15489,11,499,1505,264,86115,26161,56755,483,13],"thinking": false}
       }
     },
     {

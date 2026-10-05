@@ -324,7 +324,8 @@
           }
         },
         "stop_token_id": 0,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "moondream/moondream3-preview","tokens": [44603,1282,41185,1985,41207,2019,12913,34,3,14299],"thinking": true}
       }
     },
     {
