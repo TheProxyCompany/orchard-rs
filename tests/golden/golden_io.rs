@@ -5,9 +5,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use orchard::{
-    OutputFunctionCall, ResponseCompletedEvent, ResponseEvent, ResponseOutputItem, ResponseUsage,
+    ModalArtifact, OutputFunctionCall, ResponseCompletedEvent, ResponseEvent, ResponseOutputItem,
+    ResponseUsage, ResponsesRequest,
 };
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 const ID_KEYS: &[&str] = &["id", "item_id", "call_id", "response_id"];
 const TIMESTAMP_KEYS: &[&str] = &["created_at", "completed_at"];
@@ -268,6 +270,87 @@ pub(crate) fn golden_path(template_type: &str, scenario: &str) -> PathBuf {
         .join(format!("{scenario}.json"))
 }
 
+/// Opt-in evidence for image self-loops. This records caller requests, not the
+/// engine's rendered prompt or tokenized input. It never changes a golden.
+pub(crate) struct ImageCapture {
+    directory: PathBuf,
+}
+
+impl ImageCapture {
+    pub(crate) fn from_env(
+        scenario: &str,
+        image: &ModalArtifact,
+        self_loop: (&str, &ResponsesRequest),
+        verifier: (&str, &ResponsesRequest),
+    ) -> Option<Self> {
+        let root = std::env::var_os("ORCHARD_GOLDEN_DIFF_DIR")?;
+        Some(
+            Self::create(Path::new(&root), scenario, image, self_loop, verifier)
+                .unwrap_or_else(|error| panic!("could not capture image inputs: {error}")),
+        )
+    }
+
+    fn create(
+        root: &Path,
+        scenario: &str,
+        image: &ModalArtifact,
+        self_loop: (&str, &ResponsesRequest),
+        verifier: (&str, &ResponsesRequest),
+    ) -> Result<Self, String> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let label: String = scenario
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        fs::create_dir_all(root).map_err(|e| e.to_string())?;
+        let directory = root.join(format!(
+            "image-inputs-{label}-{at}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).map_err(|e| e.to_string())?;
+        let capture = Self { directory };
+        fs::write(capture.directory.join("image.bin"), &image.data).map_err(|e| e.to_string())?;
+        capture.write_json("inputs.json", &json!({
+            "schema_version": 1,
+            "scenario": scenario,
+            "scope": "Caller requests and exact image bytes; rendered prompt and input token IDs are not captured.",
+            "image": {
+                "file": "image.bin", "mime_type": image.mime_type,
+                "decoder_id": image.decoder_id, "metadata": image.metadata,
+                "sha256": format!("{:x}", Sha256::digest(&image.data)),
+            },
+            "self_loop": {"model": self_loop.0, "request": self_loop.1},
+            "verifier": {"model": verifier.0, "request": verifier.1},
+        }))?;
+        Ok(capture)
+    }
+
+    fn write_json(&self, name: &str, value: &Value) -> Result<(), String> {
+        let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+        fs::write(self.directory.join(name), bytes).map_err(|e| e.to_string())
+    }
+
+    /// Save both streams before any strict comparison can panic. A capture is
+    /// evidence only: even an incomplete/error stream is saved, never certified.
+    pub(crate) fn save_streams(&self, self_loop: &[ResponseEvent], verifier: &[ResponseEvent]) {
+        for (name, events) in [("self-loop.json", self_loop), ("verifier.json", verifier)] {
+            self.write_json(name, &Value::Array(normalize(events)))
+                .unwrap_or_else(|error| panic!("could not capture {name}: {error}"));
+        }
+    }
+}
+
 pub(crate) fn normalize(events: &[ResponseEvent]) -> Vec<Value> {
     let mut ids: HashMap<String, String> = HashMap::new();
     let mut counts: HashMap<String, usize> = HashMap::new();
@@ -391,6 +474,73 @@ pub(crate) fn usage_from_completed(turn: &Turn) -> Option<&ResponseUsage> {
 mod diagnostic_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn image_evidence_preserves_verifier_when_strict_comparison_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let image = ModalArtifact {
+            mime_type: "image/png".into(),
+            data: vec![1, 2, 3, 4],
+            ..Default::default()
+        };
+        let request = ResponsesRequest::from_text("What is in this image?");
+        let capture = ImageCapture::create(
+            root.path(),
+            "image/case",
+            &image,
+            ("self-loop-model", &request),
+            ("verifier-model", &request),
+        )
+        .unwrap();
+        // Include an error so a saved stream cannot be mistaken for success.
+        let failed = ResponseEvent::Error(orchard::StreamErrorEvent {
+            sequence_number: 0,
+            error: orchard::StreamErrorDetail {
+                error_type: "server_error".into(),
+                message: "fixture failure".into(),
+            },
+        });
+        let self_loop = vec![failed, ResponseEvent::Done];
+        let verifier = vec![ResponseEvent::Done];
+        capture.save_streams(&self_loop, &verifier);
+        assert!(compare_strictly(
+            &json!([]),
+            &normalize(&self_loop),
+            "image/case",
+            root.path()
+        )
+        .is_err());
+        assert_eq!(
+            fs::read(capture.directory.join("image.bin")).unwrap(),
+            image.data
+        );
+        let inputs: Value =
+            serde_json::from_slice(&fs::read(capture.directory.join("inputs.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            inputs["image"]["sha256"],
+            format!("{:x}", Sha256::digest(&image.data))
+        );
+        assert_eq!(
+            inputs["verifier"]["request"],
+            serde_json::to_value(&request).unwrap()
+        );
+        for (name, events) in [("self-loop.json", &self_loop), ("verifier.json", &verifier)] {
+            let saved: Value =
+                serde_json::from_slice(&fs::read(capture.directory.join(name)).unwrap()).unwrap();
+            assert_eq!(saved, Value::Array(normalize(events)));
+        }
+        let second = ImageCapture::create(
+            root.path(),
+            "image/case",
+            &image,
+            ("self-loop-model", &request),
+            ("verifier-model", &request),
+        )
+        .unwrap();
+        assert_ne!(capture.directory, second.directory);
+        assert!(capture.directory.join("verifier.json").exists());
+    }
 
     #[test]
     fn a_mismatch_still_fails_and_saves_the_complete_pair() {

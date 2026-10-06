@@ -16,7 +16,7 @@ use crate::fixture::{
     QWEN3_ASR_1_7B_MODEL_ID, QWEN3_TTS_0_6B_MODEL_ID, QWEN3_TTS_1_7B_MODEL_ID,
     QWEN_IMAGE_EDIT_MODEL_ID,
 };
-use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
+use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, ImageCapture, Turn};
 
 const WEATHER_SYSTEM: &str = "You are a helpful assistant with tool calling. Reason about the request, then call a tool when needed and use its result to answer.";
 const TTS_MODELS: [(&str, &str); 2] = [
@@ -1052,12 +1052,21 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
         effort: "medium".to_string(),
     });
 
+    let capture = ImageCapture::from_env(
+        "image_tool_self_loop",
+        artifact,
+        (GEMMA4_MODEL_ID, &self_loop_request),
+        (MOONDREAM_MODEL_ID, &verifier_request),
+    );
     // Both turns consume the already-generated image and nothing from each
     // other: overlap the gemma self-loop with the moondream verifier.
     let (self_loop, verifier) = tokio::join!(
         run_stream(gemma, self_loop_request),
         run_stream(moondream, verifier_request)
     );
+    if let Some(capture) = capture {
+        capture.save_streams(&self_loop.events, &verifier.events);
+    }
     assert_or_record("gemma4", "image_tool_self_loop", "turn2", &self_loop.events);
 
     assert_response_lifecycle(&self_loop);
@@ -1238,12 +1247,21 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
         effort: "medium".to_string(),
     });
 
+    let capture = ImageCapture::from_env(
+        "image_tool_self_loop_flux",
+        artifact,
+        (GEMMA4_MODEL_ID, &self_loop_request),
+        (MOONDREAM_MODEL_ID, &verifier_request),
+    );
     // Both turns consume the already-generated image and nothing from each
     // other: overlap the gemma self-loop with the moondream verifier.
     let (self_loop, verifier) = tokio::join!(
         run_stream(gemma, self_loop_request),
         run_stream(moondream, verifier_request)
     );
+    if let Some(capture) = capture {
+        capture.save_streams(&self_loop.events, &verifier.events);
+    }
     assert_or_record(
         "gemma4",
         "image_tool_self_loop_flux",
