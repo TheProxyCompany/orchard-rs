@@ -25,6 +25,8 @@ async fn test_responses_structured_json_schema() {
         "Return the capital of France and population 2148327 as JSON. Use the integer literal 2148327 without a decimal point.",
     );
     request.temperature = Some(0.0);
+    // Match the Python JSON-schema fixture: check the structured visible reply.
+    request.reasoning = Some(false.into());
     request.max_output_tokens = Some(64);
     request.text = Some(serde_json::json!({
         "format": {
