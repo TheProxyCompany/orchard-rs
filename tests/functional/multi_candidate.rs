@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test non-streaming multi-candidate responses return the expected number of choices.
 /// Mirrors: test_multi_candidate.py::test_chat_completion_multi_candidate_non_streaming
@@ -18,7 +18,7 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
-            max_tokens: 10,
+            max_tokens: completion_budget(model_id, 10),
             temperature: 0.0,
             n: candidate_count,
             reasoning: Some(false),
@@ -87,7 +87,7 @@ async fn test_chat_completion_multi_candidate_streaming() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
-            max_tokens: 10,
+            max_tokens: completion_budget(model_id, 10),
             temperature: 0.0,
             n: candidate_count,
             reasoning: Some(false),

@@ -8,7 +8,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test that best_of fan-out returns only the top-n candidates while reflecting total work in usage.
 /// Mirrors: test_best_of.py::test_chat_completion_best_of_selects_top_n
@@ -19,7 +19,7 @@ async fn test_chat_completion_best_of_selects_top_n() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let best_of = 3;
         let params = SamplingParams {
-            max_tokens: 8, // max_completion_tokens in Python
+            max_tokens: completion_budget(model_id, 8), // max_completion_tokens in Python
             temperature: 0.2,
             n: 1,
             best_of: Some(best_of),

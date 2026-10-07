@@ -5,7 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test chat completion with logprobs enabled.
 /// Mirrors: test_logprobs.py::test_chat_completion_with_logprobs
@@ -15,7 +15,7 @@ async fn test_chat_completion_with_logprobs() {
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: 3,
+            max_tokens: completion_budget(model_id, 3),
             temperature: 1.0,
             top_logprobs: 5,
             reasoning: Some(false),

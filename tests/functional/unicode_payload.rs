@@ -5,7 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test that unicode (emoji) payloads round-trip correctly without corruption.
 /// Mirrors: test_unicode_payload.py::test_unicode_payload_round_trip
@@ -33,9 +33,9 @@ async fn test_unicode_payload_round_trip() {
     let params = &params;
     let messages = &messages;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
-        let result = client
-            .achat(model_id, messages.clone(), params.clone(), true)
-            .await;
+        let mut params = params.clone();
+        params.max_tokens = completion_budget(model_id, params.max_tokens);
+        let result = client.achat(model_id, messages.clone(), params, true).await;
         assert!(
             result.is_ok(),
             "Chat request failed for {}: {:?}",

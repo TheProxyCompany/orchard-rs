@@ -5,7 +5,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test stop sequence on "blue" - the reply stops in front of it: the stop sequence ends the
 /// reply and is not part of it (the engine's text stream leaves it out, only the decoded
@@ -20,7 +20,7 @@ async fn test_chat_completion_respects_stop_sequence() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
-            max_tokens: 32,
+            max_tokens: completion_budget(model_id, 32),
             stop: vec!["blue".to_string()],
             top_logprobs: 10,
             reasoning: Some(false),

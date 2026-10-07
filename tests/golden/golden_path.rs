@@ -321,7 +321,13 @@ fn generate_image_tool() -> Value {
 /// start + model preload) stays outside this window.
 const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
 
-async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
+async fn run_stream(model: Model, mut request: ResponsesRequest) -> Turn {
+    // The stored LFM tool-chain includes 516 generated IDs. The old engine's
+    // visible-only cap hid those reasoning tokens; its semantic fixture needs
+    // enough total budget to reach the same recorded completion now.
+    if model.thinking == Thinking::Required {
+        request.max_output_tokens = Some(request.max_output_tokens.unwrap_or(512).max(1024));
+    }
     let fixture = get_fixture().await;
     tokio::time::timeout(STREAM_TIMEOUT, async {
         let result = fixture

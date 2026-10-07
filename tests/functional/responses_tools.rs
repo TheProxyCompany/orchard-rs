@@ -8,7 +8,7 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::{fanout, get_fixture, tool_model_ids};
+use crate::fixture::{completion_budget, fanout, get_fixture, tool_model_ids};
 
 fn weather_tool() -> serde_json::Value {
     serde_json::json!({
@@ -78,7 +78,7 @@ async fn test_responses_tool_call_non_streaming() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(completion_budget(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -159,7 +159,7 @@ async fn test_responses_tool_call_streaming() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(completion_budget(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -268,7 +268,7 @@ async fn test_responses_tool_result_continuation() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(completion_budget(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -344,7 +344,7 @@ async fn test_responses_tool_result_continuation() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(completion_budget(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),

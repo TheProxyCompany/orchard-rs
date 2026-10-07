@@ -136,6 +136,19 @@ pub(crate) const MODELS: &[Model] = &[
     },
 ];
 
+/// Semantic checks need room for mandatory reasoning before visible output.
+/// Literal token-cap tests intentionally bypass this helper.
+pub(crate) fn completion_budget(model_id: &str, visible_budget: i32) -> i32 {
+    if MODELS
+        .iter()
+        .any(|model| model.checkpoint == model_id && model.thinking == Thinking::Required)
+    {
+        visible_budget.max(512)
+    } else {
+        visible_budget
+    }
+}
+
 pub(crate) const TEXT_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
     GEMMA4_MODEL_ID,
