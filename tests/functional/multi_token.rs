@@ -3,6 +3,7 @@
 //! Mirrors orchard-py/tests/functional/test_multi_token.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
@@ -16,7 +17,7 @@ async fn test_chat_completion_multi_token_non_streaming() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
-            max_tokens: 10,
+            max_tokens: semantic_token_limit(model_id, 10),
             top_logprobs: 5,
             reasoning: Some(false),
             ..Default::default()
@@ -87,7 +88,7 @@ async fn test_chat_completion_multi_token_streaming() {
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: 10,
+            max_tokens: semantic_token_limit(model_id, 10),
             temperature: 0.0,
             reasoning: Some(false),
             ..Default::default()

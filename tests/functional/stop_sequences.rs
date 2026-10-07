@@ -3,6 +3,7 @@
 //! Mirrors orchard-py/tests/functional/test_stop_sequences.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
@@ -20,7 +21,7 @@ async fn test_chat_completion_respects_stop_sequence() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
             temperature: 0.0,
-            max_tokens: 32,
+            max_tokens: semantic_token_limit(model_id, 32),
             stop: vec!["blue".to_string()],
             top_logprobs: 10,
             reasoning: Some(false),
