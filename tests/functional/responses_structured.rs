@@ -52,7 +52,13 @@ async fn test_responses_structured_json_schema() {
             ResponsesResult::Stream { .. } => panic!("expected complete response, got stream"),
         };
 
-        assert_eq!(response.status, OutputStatus::Completed);
+        assert_eq!(
+            response.status,
+            OutputStatus::Completed,
+            "structured response did not complete for {}: {:?}",
+            model_id,
+            response
+        );
 
         let raw_text = response
             .output
