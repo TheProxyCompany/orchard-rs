@@ -1,7 +1,7 @@
 //! Engine binary fetching and installation.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 use reqwest::Client;
@@ -15,6 +15,20 @@ const DEFAULT_CHANNEL: &str = "stable";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const DOWNLOAD_TIMEOUT_SECS: u64 = 600;
 const MAX_RETRIES: u32 = 3;
+
+/// Helpers may live in MacOS, Resources, or nested Helpers directories.
+fn bundled_root(executable: &Path) -> Option<PathBuf> {
+    executable
+        .ancestors()
+        .find(|path| {
+            path.file_name().is_some_and(|name| name == "Contents")
+                && path
+                    .parent()
+                    .and_then(Path::extension)
+                    .is_some_and(|ext| ext == "app")
+        })
+        .map(|contents| contents.join("Resources/Orchard"))
+}
 
 /// Engine binary fetcher.
 ///
@@ -56,6 +70,23 @@ impl EngineFetcher {
             if local_path.exists() {
                 tracing::debug!("Using local PIE build: {:?}", local_path);
                 return Ok(local_path);
+            }
+        }
+
+        if let Some(root) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| bundled_root(&exe))
+        {
+            if root.is_dir() {
+                let binary = root.join("bin/proxy_inference_engine");
+                if !binary.is_file() {
+                    return Err(Error::StartupFailed(format!(
+                        "The app's bundled Orchard engine is incomplete: {}",
+                        binary.display()
+                    )));
+                }
+                tracing::debug!("Using app-bundled PIE: {:?}", binary);
+                return Ok(binary);
             }
         }
 
@@ -128,7 +159,12 @@ impl EngineFetcher {
 
     /// Get the currently installed version.
     pub fn get_installed_version(&self) -> Option<String> {
-        let version_file = self.orchard_home.join("version.txt");
+        let root = std::env::current_exe()
+            .ok()
+            .and_then(|exe| bundled_root(&exe))
+            .filter(|root| root.is_dir())
+            .unwrap_or_else(|| self.orchard_home.clone());
+        let version_file = root.join("version.txt");
         std::fs::read_to_string(version_file)
             .ok()
             .map(|s| s.trim().to_string())
@@ -276,7 +312,7 @@ impl EngineFetcher {
             std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))?;
         }
 
-        // Write version file
+        // Write version file into the separately downloaded installation.
         let version_file = self.orchard_home.join("version.txt");
         std::fs::write(version_file, version)?;
 
@@ -293,6 +329,27 @@ impl Default for EngineFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_engine_follows_app_helpers_and_never_a_development_contents_directory() {
+        let root = PathBuf::from("/Applications/Proxy Preview.app/Contents/Resources/Orchard");
+        assert_eq!(
+            bundled_root(Path::new(
+                "/Applications/Proxy Preview.app/Contents/MacOS/Proxy"
+            )),
+            Some(root.clone())
+        );
+        assert_eq!(
+            bundled_root(Path::new(
+                "/Applications/Proxy Preview.app/Contents/Resources/bin/grand-central"
+            )),
+            Some(root)
+        );
+        assert_eq!(
+            bundled_root(Path::new("/work/Contents/MacOS/grand-central")),
+            None
+        );
+    }
 
     #[test]
     fn test_fetcher_creation() {

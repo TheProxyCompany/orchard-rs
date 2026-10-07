@@ -107,6 +107,11 @@ pub(crate) fn current_engine_pid_file() -> Option<PathBuf> {
         .clone()
 }
 
+fn admission_during_shutdown(error: &Error, pid: Option<u32>) -> bool {
+    matches!(error, Error::Other(message) if message.contains("Engine is shutting down; cannot register new clients."))
+        || pid.is_some_and(|pid| !pid_is_alive(pid) || !pid_is_engine(pid))
+}
+
 fn set_current_engine_pid_file(pid_file: Option<PathBuf>) {
     *GLOBAL_CONTEXT
         .pid_file
@@ -285,49 +290,60 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_exclusive_with_timeout(&lock_file)?;
 
-        let engine_pid = read_pid_file(&self.paths.pid_file);
-        let engine_running = engine_pid
-            .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
-            .unwrap_or(false);
-        let mut launched_engine = false;
+        let deadline = Instant::now() + self.startup_timeout;
+        loop {
+            let engine_pid = read_pid_file(&self.paths.pid_file);
+            let engine_running = engine_pid
+                .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
+                .unwrap_or(false);
+            let mut launched_engine = false;
 
-        // Launch engine if needed
-        if !engine_running {
-            tracing::debug!("Inference engine not running. Launching new instance.");
-
-            // Clean up stale state files
-            remove_if_exists(&self.paths.pid_file);
-            remove_if_exists(&self.paths.ready_file);
-            remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
-
-            // Clean up stale IPC socket files (left over from crashed engine)
-            let ipc_dir = self.paths.cache_dir.join("ipc");
-            if ipc_dir.exists() {
-                remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
-                remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
-                remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+            if !engine_running {
+                tracing::debug!("Inference engine not running. Launching new instance.");
+                remove_if_exists(&self.paths.pid_file);
+                remove_if_exists(&self.paths.ready_file);
+                remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
+                let ipc_dir = self.paths.cache_dir.join("ipc");
+                if ipc_dir.exists() {
+                    remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
+                    remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
+                    remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+                }
+                self.launch_engine().await?;
+                self.wait_for_engine_ready().await?;
+                launched_engine = true;
             }
 
-            self.launch_engine().await?;
-            self.wait_for_engine_ready().await?;
-            launched_engine = true;
-        }
-
-        if let Err(e) =
-            self.send_client_lifecycle_command("client_register", Duration::from_secs(5))
-        {
-            if launched_engine {
-                if let Some(pid) = read_pid_file(&self.paths.pid_file) {
-                    if let Err(stop_err) = self.stop_engine_locked(pid) {
-                        tracing::warn!(
-                            "Failed to clean up newly launched engine {} after register failure: {}",
-                            pid,
-                            stop_err
-                        );
+            match self.send_client_lifecycle_command("client_register", Duration::from_secs(5)) {
+                Ok(()) => break,
+                Err(error) if !launched_engine && admission_during_shutdown(&error, engine_pid) => {
+                    // The previous last client can commit PIE's idle shutdown
+                    // before this process acquires the lifecycle lock. Never
+                    // signal that engine: wait for its own exit, then restart.
+                    tracing::debug!("Waiting for retiring PIE before client admission: {error}");
+                    while engine_pid.is_some_and(|pid| pid_is_alive(pid) && pid_is_engine(pid)) {
+                        if Instant::now() >= deadline {
+                            return Err(Error::StartupFailed(format!(
+                                "PIE did not finish shutdown before the startup deadline: {error}"
+                            )));
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(error);
                     }
                 }
+                Err(error) => {
+                    if launched_engine {
+                        if let Some(pid) = read_pid_file(&self.paths.pid_file) {
+                            if let Err(stop_error) = self.stop_engine_locked(pid) {
+                                tracing::warn!("Failed to clean up newly launched engine {pid} after register failure: {stop_error}");
+                            }
+                        }
+                    }
+                    return Err(error);
+                }
             }
-            return Err(e);
         }
 
         // Update global context
