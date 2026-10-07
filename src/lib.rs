@@ -1,6 +1,8 @@
 //! Orchard - Rust client for high-performance LLM inference on Apple Silicon.
 
 mod defaults;
+#[cfg(feature = "duplex")]
+pub mod duplex;
 pub mod error;
 
 pub mod client;
@@ -32,8 +34,8 @@ pub use formatter::multimodal::{
 pub use formatter::ChatFormatter;
 
 pub use client::{
-    response_input_items, BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse,
-    ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
+    response_input_items, BatchChatResult, CaptionWithMetrics, ChatResult, Client, ClientDelta,
+    ClientResponse, ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
     FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
     InputTokensDetails, ModalArtifact, OpenAIPrivacyFilterClient, OutputFunctionCall,
     OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,

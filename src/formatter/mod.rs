@@ -1,7 +1,7 @@
 //! Chat formatting for LLM prompts.
 
 pub mod control_tokens;
-mod embedded_profiles {
+pub(crate) mod embedded_profiles {
     include!(concat!(env!("OUT_DIR"), "/embedded_profiles.rs"));
 }
 pub mod multimodal;

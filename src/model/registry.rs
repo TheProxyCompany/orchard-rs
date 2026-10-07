@@ -134,6 +134,10 @@ pub struct ModelRegistry {
     local_source_inspection_cache: RwLock<HashMap<String, ResolvedModel>>,
     /// IPC client for sending management commands to PIE
     ipc_client: RwLock<Option<Arc<IPCClient>>>,
+    /// Native streaming architectures share the registry but do not pretend to
+    /// be text requests sent to PIE. Holding the gate also deduplicates loads.
+    #[cfg(feature = "duplex")]
+    duplex_models: Mutex<HashMap<String, Arc<crate::duplex::MoshiModel>>>,
 }
 
 impl ModelRegistry {
@@ -145,7 +149,128 @@ impl ModelRegistry {
             alias_cache: RwLock::new(HashMap::new()),
             local_source_inspection_cache: RwLock::new(HashMap::new()),
             ipc_client: RwLock::new(None),
+            #[cfg(feature = "duplex")]
+            duplex_models: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Open a real-time Moshi/Mimi session with an Orchard-owned resident model.
+    /// This does not require a PIE connection; a Client uses this same registry
+    /// alongside its Gemma/Moondream runtimes.
+    #[cfg(feature = "duplex")]
+    pub async fn duplex(
+        &self,
+        model_id: &str,
+        options: crate::duplex::DuplexOptions,
+    ) -> Result<crate::duplex::DuplexSession, Error> {
+        options.validate()?;
+        let model = self.ensure_duplex_model(model_id, &options).await?;
+        crate::duplex::DuplexSession::start(model, options)
+    }
+
+    #[cfg(feature = "duplex")]
+    async fn ensure_duplex_model(
+        &self,
+        model_id: &str,
+        options: &crate::duplex::DuplexOptions,
+    ) -> Result<Arc<crate::duplex::MoshiModel>, Error> {
+        if !crate::duplex::is_moshi_model(model_id) {
+            return Err(Error::ModelNotFound(format!(
+                "No native duplex architecture for {model_id}"
+            )));
+        }
+        let key = format!("{model_id}:{:?}:{}", options.device, options.mimi_cpu);
+        let mut native_models = self.duplex_models.lock().await;
+        if let Some(model) = native_models.get(&key) {
+            return Ok(Arc::clone(model));
+        }
+        {
+            let mut entries = self.entries.write().await;
+            let entry = entries.entry(model_id.to_owned()).or_default();
+            entry.state = ModelLoadState::Downloading;
+            entry.error = None;
+            entry.notify.notify_waiters();
+        }
+        self.alias_cache
+            .write()
+            .await
+            .insert(model_id.to_owned(), model_id.to_owned());
+        let result = async {
+            let files = crate::duplex::resolve_files(model_id).await?;
+            {
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry was inserted");
+                entry.state = ModelLoadState::Loading;
+                entry.bytes_total = Some(files.weight_bytes);
+                entry.bytes_downloaded = Some(files.weight_bytes);
+                entry.notify.notify_waiters();
+            }
+            let device = options.device;
+            let mimi_cpu = options.mimi_cpu;
+            tokio::task::spawn_blocking(move || {
+                crate::duplex::MoshiModel::load(files, device, mimi_cpu)
+            })
+            .await
+            .map_err(|e| Error::Other(format!("Moshi loading task: {e}")))?
+        }
+        .await;
+        match result {
+            Ok(model) => {
+                let model = Arc::new(model);
+                let info = ModelInfo {
+                    model_id: model_id.to_owned(),
+                    model_path: model.directory.to_string_lossy().into_owned(),
+                    formatter: None,
+                    capabilities: Some(HashMap::from([
+                        ("duplex_audio".into(), vec![24_000, 1, 1_920]),
+                        ("speech_conditioning".into(), vec![]),
+                    ])),
+                    minimum_memory_bytes: Some(model.weight_bytes),
+                };
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry was inserted");
+                entry.info = Some(info);
+                entry.state = ModelLoadState::Ready;
+                entry.notify.notify_waiters();
+                native_models.insert(key, Arc::clone(&model));
+                Ok(model)
+            }
+            Err(error) => {
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry was inserted");
+                entry.state = ModelLoadState::Failed;
+                entry.error = Some(error.to_string());
+                entry.notify.notify_waiters();
+                Err(error)
+            }
+        }
+    }
+
+    /// Release a native model only after its streaming session has closed.
+    #[cfg(feature = "duplex")]
+    pub async fn unload_duplex(&self, model_id: &str) -> Result<(), Error> {
+        let mut models = self.duplex_models.lock().await;
+        if models
+            .values()
+            .any(|model| model.model_id == model_id && model.is_busy())
+        {
+            return Err(Error::ModelNotReady(
+                "Close the duplex session before unloading Moshi".into(),
+            ));
+        }
+        models.retain(|_, model| model.model_id != model_id);
+        if let Some(entry) = self.entries.write().await.get_mut(model_id) {
+            entry.state = ModelLoadState::Idle;
+            entry.info = None;
+            entry.notify.notify_waiters();
+        }
+        Ok(())
     }
 
     /// Set the IPC client for sending management commands to PIE.
@@ -163,6 +288,14 @@ impl ModelRegistry {
     /// 4. Send load_model command to PIE
     /// 5. Wait for engine activation
     pub async fn ensure_loaded(&self, requested_model_id: &str) -> Result<ModelInfo, Error> {
+        #[cfg(feature = "duplex")]
+        if crate::duplex::is_moshi_model(requested_model_id) {
+            self.ensure_duplex_model(requested_model_id, &crate::duplex::DuplexOptions::default())
+                .await?;
+            return self.get_if_ready(requested_model_id).await.ok_or_else(|| {
+                Error::ModelNotReady("Native duplex model did not become ready".into())
+            });
+        }
         let (_state, canonical_id) = self
             .schedule_model(requested_model_id, false)
             .await
@@ -427,6 +560,18 @@ impl ModelRegistry {
         requested_model_id: &str,
         force_reload: bool,
     ) -> Result<(ModelLoadState, String), String> {
+        #[cfg(feature = "duplex")]
+        if crate::duplex::is_moshi_model(requested_model_id) {
+            if force_reload {
+                self.unload_duplex(requested_model_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            self.ensure_duplex_model(requested_model_id, &crate::duplex::DuplexOptions::default())
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok((ModelLoadState::Ready, requested_model_id.to_owned()));
+        }
         if !force_reload {
             if let Ok(canonical_id) = self.canonicalize(requested_model_id).await {
                 let entries = self.entries.read().await;

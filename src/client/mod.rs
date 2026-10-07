@@ -32,8 +32,8 @@ use crate::ipc::serialization::{
 use crate::model::registry::ModelRegistry;
 
 pub use moondream::{
-    BoundingBox, CaptionResult, DetectResult, DetectedObject, GazeResult, GroundingSpan,
-    MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
+    BoundingBox, CaptionResult, CaptionWithMetrics, DetectResult, DetectedObject, GazeResult,
+    GroundingSpan, MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
     MOONDREAM_MODEL_ID,
 };
 pub use privacy_filter::{OpenAIPrivacyFilterClient, OPENAI_PRIVACY_FILTER_MODEL_ID};
@@ -307,6 +307,16 @@ impl Client {
     /// Create a new client with the given IPC client and model registry.
     pub fn new(ipc: Arc<IPCClient>, registry: Arc<ModelRegistry>) -> Self {
         Self { ipc, registry }
+    }
+
+    /// Start full-duplex Moshi audio while this client keeps serving PIE models.
+    #[cfg(feature = "duplex")]
+    pub async fn duplex(
+        &self,
+        model_id: &str,
+        options: crate::duplex::DuplexOptions,
+    ) -> Result<crate::duplex::DuplexSession> {
+        self.registry.duplex(model_id, options).await
     }
 
     /// Create a client and connect to the engine (async).

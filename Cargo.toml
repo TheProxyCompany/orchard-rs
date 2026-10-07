@@ -12,7 +12,24 @@ categories = ["api-bindings", "asynchronous"]
 name = "orchard"
 crate-type = ["lib"]
 
+[features]
+default = []
+# Native Moshi/Mimi inference; the default client remains lightweight.
+duplex = ["dep:moshi", "dep:candle-core", "dep:candle-transformers", "dep:sentencepiece"]
+duplex-metal = ["duplex", "moshi/metal", "candle-core/metal", "dep:candle-metal-kernels"]
+
+[[bin]]
+name = "orchard-duplex"
+path = "src/bin/duplex.rs"
+required-features = ["duplex"]
+
 [dependencies]
+# Kyutai's actual Moshi temporal/depth transformers and Mimi streaming codec.
+moshi = { version = "=0.6.4", optional = true }
+candle-core = { version = "=0.9.1", optional = true }
+candle-metal-kernels = { version = "=0.9.1", optional = true }
+candle-transformers = { version = "=0.9.1", optional = true }
+sentencepiece = { version = "=0.11.2", optional = true }
 # NNG for IPC communication with PIE
 nng = "1.0"
 
