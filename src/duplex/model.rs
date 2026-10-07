@@ -7,14 +7,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_transformers::generation::{LogitsProcessor, Sampling};
 use hf_hub::{Cache, Repo, RepoType};
 use serde::{Deserialize, Serialize};
 
-use super::{DuplexDevice, DuplexOptions};
+use super::{language::LanguageModel, DuplexDevice, DuplexOptions};
 use crate::{Error, Result};
 
-pub const DEFAULT_MODEL: &str = "kyutai/moshiko-candle-q8";
+pub const RAG_MODEL: &str = "kyutai/moshika-rag-candle-bf16";
+pub const DEFAULT_MODEL: &str = RAG_MODEL;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DuplexArchitecture {
@@ -31,6 +31,22 @@ pub struct DuplexArchitecture {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Checkpoint {
     pub revision: String,
+    #[serde(default)]
+    pub model_file: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub acoustic_delay: Option<usize>,
+    #[serde(default)]
+    pub reference_encoder: Option<ModelAsset>,
+    #[serde(default)]
+    pub reference_tokenizer: Option<ModelAsset>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ModelAsset {
+    pub repo: String,
+    pub revision: String,
+    pub filename: String,
 }
 
 pub fn architecture() -> Result<DuplexArchitecture> {
@@ -80,87 +96,110 @@ pub(crate) struct ModelFiles {
     codec: PathBuf,
     tokenizer: PathBuf,
     pub weight_bytes: u64,
+    reference_encoder: Option<PathBuf>,
+    reference_tokenizer: Option<PathBuf>,
+    acoustic_delay: usize,
 }
 
+async fn asset(repo_id: &str, revision: &str, filename: &str) -> Result<PathBuf> {
+    let root = Cache::from_env();
+    let direct = root
+        .path()
+        .join(format!("models--{}", repo_id.replace('/', "--")))
+        .join("snapshots")
+        .join(revision)
+        .join(filename);
+    if direct.is_file() {
+        return Ok(direct);
+    }
+    let api = hf_hub::api::tokio::ApiBuilder::from_env()
+        .with_progress(false)
+        .build()
+        .map_err(|e| Error::HfApiInit(e.to_string()))?;
+    api.repo(Repo::with_revision(
+        repo_id.to_owned(),
+        RepoType::Model,
+        revision.to_owned(),
+    ))
+    .get(filename)
+    .await
+    .map_err(|e| Error::DownloadFailed(repo_id.into(), format!("{filename}: {e}")))
+}
 pub(crate) async fn resolve_files(model_id: &str) -> Result<ModelFiles> {
     let profile = architecture()?;
     let local = Path::new(model_id);
-    let names = [
-        &profile.model_file,
-        &profile.codec_file,
-        &profile.tokenizer_file,
-    ];
+    let checkpoint = profile.checkpoints.get(model_id);
+    let model_file = checkpoint
+        .and_then(|c| c.model_file.as_deref())
+        .unwrap_or(&profile.model_file);
     let paths = if local.is_dir() {
-        names
-            .iter()
-            .map(|name| local.join(name))
-            .collect::<Vec<_>>()
+        [
+            model_file,
+            profile.codec_file.as_str(),
+            profile.tokenizer_file.as_str(),
+        ]
+        .iter()
+        .map(|n| local.join(n))
+        .collect::<Vec<_>>()
     } else {
-        let checkpoint = profile.checkpoints.get(model_id).ok_or_else(|| {
+        let checkpoint = checkpoint.ok_or_else(|| {
             Error::ModelNotFound(format!("No Pantheon Moshi checkpoint for {model_id}"))
         })?;
-        let repo = Repo::with_revision(
-            model_id.to_owned(),
-            RepoType::Model,
-            checkpoint.revision.clone(),
-        );
-        let cache_root = Cache::from_env();
-        let snapshot = cache_root
-            .path()
-            .join(format!("models--{}", model_id.replace('/', "--")))
-            .join("snapshots")
-            .join(&checkpoint.revision);
-        let cache = cache_root.repo(repo.clone());
-        let api = hf_hub::api::tokio::ApiBuilder::from_env()
-            .with_progress(false)
-            .build()
-            .map_err(|e| Error::HfApiInit(e.to_string()))?;
-        let api_repo = api.repo(repo);
         let mut paths = Vec::new();
-        for name in names {
-            // Python's hub cache omits refs/<commit> for an immutable revision;
-            // hf-hub 0.5's CacheRepo::get only consults refs and would download an
-            // already cached multi-GB model again. Check the exact snapshot first.
-            let pinned = snapshot.join(name);
-            paths.push(
-                match pinned
-                    .is_file()
-                    .then_some(pinned)
-                    .or_else(|| cache.get(name))
-                {
-                    Some(path) => path,
-                    None => api_repo.get(name).await.map_err(|e| {
-                        Error::DownloadFailed(model_id.into(), format!("{name}: {e}"))
-                    })?,
-                },
-            );
+        for filename in [
+            model_file,
+            profile.codec_file.as_str(),
+            profile.tokenizer_file.as_str(),
+        ] {
+            paths.push(asset(model_id, &checkpoint.revision, filename).await?);
         }
         paths
     };
-    let mut bytes = 0;
+    let mut weight_bytes = 0;
     for path in &paths {
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| Error::ModelNotFound(format!("Moshi asset {}: {e}", path.display())))?;
+        let metadata = std::fs::metadata(path)?;
         if !metadata.is_file() || metadata.len() == 0 {
             return Err(Error::ModelNotFound(format!(
-                "Moshi asset {} is empty or not a file",
+                "Empty Moshi asset {}",
                 path.display()
             )));
         }
-        bytes += metadata.len();
+        weight_bytes += metadata.len();
+    }
+    let mut reference_encoder = None;
+    let mut reference_tokenizer = None;
+    if let Some(checkpoint) = checkpoint {
+        if checkpoint.mode.as_deref() == Some("reference_conditioning") {
+            let encoder = checkpoint
+                .reference_encoder
+                .as_ref()
+                .ok_or_else(|| Error::Other("MoshiRAG profile has no ARC encoder".into()))?;
+            let tokenizer = checkpoint
+                .reference_tokenizer
+                .as_ref()
+                .ok_or_else(|| Error::Other("MoshiRAG profile has no ARC tokenizer".into()))?;
+            let encoder_path = asset(&encoder.repo, &encoder.revision, &encoder.filename).await?;
+            weight_bytes += std::fs::metadata(&encoder_path)?.len();
+            reference_encoder = Some(encoder_path);
+            reference_tokenizer =
+                Some(asset(&tokenizer.repo, &tokenizer.revision, &tokenizer.filename).await?);
+        }
     }
     Ok(ModelFiles {
-        model_id: model_id.to_owned(),
+        model_id: model_id.into(),
         directory: paths[0].parent().unwrap_or(local).to_path_buf(),
         model: paths[0].clone(),
         codec: paths[1].clone(),
         tokenizer: paths[2].clone(),
-        weight_bytes: bytes,
+        weight_bytes,
+        reference_encoder,
+        reference_tokenizer,
+        acoustic_delay: checkpoint.and_then(|c| c.acoustic_delay).unwrap_or(2),
     })
 }
 
 pub(crate) struct MoshiModel {
-    lm: moshi::lm::LmModel,
+    lm: LanguageModel,
     mimi: moshi::mimi::Mimi,
     tokenizer: Arc<sentencepiece::SentencePieceProcessor>,
     device: Device,
@@ -169,6 +208,34 @@ pub(crate) struct MoshiModel {
     pub directory: PathBuf,
     pub weight_bytes: u64,
     active_sessions: AtomicUsize,
+    active_references: AtomicUsize,
+    pub acoustic_delay: usize,
+    reference_encoder: Option<ReferenceEncoder>,
+}
+
+struct ReferenceActivity<'a>(&'a AtomicUsize);
+impl Drop for ReferenceActivity<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+struct ReferenceEncoder {
+    encoder: moshi_rag::conditioner::ArcEncoderConditioner,
+    device: Device,
+}
+impl ReferenceEncoder {
+    fn encode(&self, text: &str) -> Result<Tensor> {
+        let tensor = self
+            .encoder
+            .condition(text, &self.device)
+            .map_err(native_error)?;
+        self.device.synchronize().map_err(native_error)?;
+        // Only CPU tensors cross the worker boundary. Uploading or synchronizing
+        // the voice device here could commit its in-progress Metal encoder.
+        let tensor = tensor.to_device(&Device::Cpu).map_err(native_error)?;
+        Ok(tensor)
+    }
 }
 
 fn native_error(error: impl std::fmt::Display) -> Error {
@@ -187,8 +254,76 @@ impl MoshiModel {
         };
         // This mirrors the official Candle backend: F32 on Metal/CPU, quantized
         // GGUF for Moshi and F32 Mimi. No MLX/Candle tensor conversion is involved.
-        let lm =
-            moshi::lm::load_streaming(&files.model, DType::F32, &device).map_err(native_error)?;
+        let mut reference_encoder = None;
+        let lm = match (&files.reference_encoder, &files.reference_tokenizer) {
+            (Some(encoder), Some(tokenizer)) => {
+                let dtype = if device.is_metal() {
+                    DType::F16
+                } else {
+                    DType::F32
+                };
+                let tokenizer = tokenizer
+                    .to_str()
+                    .ok_or_else(|| Error::Other("ARC tokenizer path must be UTF-8".into()))?;
+                let mut config = moshi_rag::lm::Config::v0_1_streaming_rag(8, tokenizer.to_owned());
+                // The ARC encoder has a separate Metal queue and lifecycle from
+                // the live voice decoder. Only the first-speaker LUT stays in
+                // the voice model; prepared reference embeddings enter forward.
+                let arc_config = match config
+                    .conditioners
+                    .as_mut()
+                    .and_then(|c| c.remove("reference_with_time"))
+                {
+                    Some(moshi_rag::conditioner::ConditionerConfig::ArcEncoder(config)) => config,
+                    _ => return Err(Error::Other("MoshiRAG has no ARC configuration".into())),
+                };
+                let voice_weights = super::quantization::q8_voice(&files.model)?;
+                let model =
+                    moshi_rag::lm::load_lm_model(config, &voice_weights, DType::F32, &device)
+                        .map_err(native_error)?;
+                if model.get_lut_condition("first_speaker", "user").is_none() {
+                    return Err(Error::Other(
+                        "MoshiRAG first-speaker conditioner missing".into(),
+                    ));
+                }
+                let reference_device = if device.is_metal() {
+                    Device::new_metal(0).map_err(native_error)?
+                } else {
+                    Device::Cpu
+                };
+                let vb = unsafe {
+                    candle_nn::VarBuilder::from_mmaped_safetensors(
+                        &[&files.model],
+                        dtype,
+                        &reference_device,
+                    )
+                }
+                .map_err(native_error)?;
+                let vb = moshi_rag::nn::MaybeQuantizedVarBuilder::Real(
+                    vb.pp("condition_provider.conditioners.reference_with_time"),
+                );
+                let mut encoder_model =
+                    moshi_rag::conditioner::ArcEncoderConditioner::new(4096, &arc_config, vb)
+                        .map_err(native_error)?;
+                encoder_model
+                    .reload_from_hf(encoder, dtype, &reference_device)
+                    .map_err(native_error)?;
+                reference_encoder = Some(ReferenceEncoder {
+                    encoder: encoder_model,
+                    device: reference_device,
+                });
+                LanguageModel::Rag(model)
+            }
+            (None, None) => LanguageModel::Base(
+                moshi::lm::load_streaming(&files.model, DType::F32, &device)
+                    .map_err(native_error)?,
+            ),
+            _ => {
+                return Err(Error::Other(
+                    "Incomplete MoshiRAG conditioning assets".into(),
+                ))
+            }
+        };
         let mimi_device = if mimi_cpu {
             Device::Cpu
         } else {
@@ -215,18 +350,50 @@ impl MoshiModel {
             directory: files.directory,
             weight_bytes: files.weight_bytes,
             active_sessions: AtomicUsize::new(0),
+            active_references: AtomicUsize::new(0),
+            acoustic_delay: files.acoustic_delay,
+            reference_encoder,
         });
         // Compile the actual Metal kernels and exercise both codec directions
         // before reporting readiness. Otherwise the first microphone frames
         // arrive during a multi-second first-use compilation and are discarded.
         {
-            let mut warmup = model.acquire(&DuplexOptions::default())?;
-            for _ in 0..6 {
-                warmup.process(&vec![0.0; super::FRAME_SAMPLES], Some(3))?;
+            if model.is_rag() {
+                let reference =
+                    model.encode_reference("The local assistant is preparing its tools.")?;
+                model.device.synchronize().map_err(native_error)?;
+                if reference.elem_count() == 0 {
+                    return Err(Error::Other(
+                        "MoshiRAG ARC warm-up returned no embeddings".into(),
+                    ));
+                }
             }
+            super::codec_pool(DuplexOptions::default().codec_threads)?.install(
+                || -> Result<()> {
+                    let mut warmup = model.acquire(&DuplexOptions::default())?;
+                    for _ in 0..6 {
+                        warmup.process(&vec![0.0; super::FRAME_SAMPLES], Some(3))?;
+                    }
+                    Ok(())
+                },
+            )?;
         }
         Arc::try_unwrap(model)
             .map_err(|_| Error::Internal("Moshi warm-up retained an unexpected model owner".into()))
+    }
+
+    pub fn is_rag(&self) -> bool {
+        self.lm.is_rag()
+    }
+    pub fn encode_reference(&self, text: &str) -> Result<Tensor> {
+        self.active_references.fetch_add(1, Ordering::AcqRel);
+        let _activity = ReferenceActivity(&self.active_references);
+        self.reference_encoder
+            .as_ref()
+            .ok_or_else(|| {
+                Error::Other("Choose MoshiRAG for trained reference conditioning".into())
+            })?
+            .encode(text)
     }
 
     pub fn acquire(self: &Arc<Self>, options: &DuplexOptions) -> Result<ModelSession> {
@@ -242,12 +409,13 @@ impl MoshiModel {
 
     pub fn is_busy(&self) -> bool {
         self.active_sessions.load(Ordering::Acquire) != 0
+            || self.active_references.load(Ordering::Acquire) != 0
     }
 }
 
 pub(crate) struct ModelSession {
     owner: Arc<MoshiModel>,
-    state: moshi::lm_generate_multistream::State,
+    state: super::generation::State,
     mimi: moshi::mimi::Mimi,
     previous_text: u32,
     previous_text_piece: u32,
@@ -256,6 +424,8 @@ pub(crate) struct ModelSession {
 pub(crate) struct ModelFrame {
     pub pcm: Option<Vec<f32>>,
     pub text: Option<String>,
+    pub consumed_text: bool,
+    pub retrieval_requested: bool,
 }
 
 impl ModelSession {
@@ -266,29 +436,7 @@ impl ModelSession {
         mimi.reset_state();
         let config = moshi::lm_generate_multistream::Config::v0_1();
         let previous_text = config.text_start_token;
-        let sampling = |temperature: f64, k: usize| {
-            if temperature <= 0.0 {
-                Sampling::ArgMax
-            } else {
-                Sampling::TopK { k, temperature }
-            }
-        };
-        let state = moshi::lm_generate_multistream::State::new(
-            lm,
-            options.max_steps,
-            LogitsProcessor::from_sampling(
-                options.seed,
-                sampling(options.audio_temperature, options.audio_top_k),
-            ),
-            LogitsProcessor::from_sampling(
-                options.seed.wrapping_add(1),
-                sampling(options.text_temperature, options.text_top_k),
-            ),
-            None,
-            None,
-            None,
-            config,
-        );
+        let state = super::generation::State::new(lm, options, owner.acoustic_delay);
         Self {
             owner,
             state,
@@ -303,6 +451,28 @@ impl ModelSession {
         // old codec/KV state balances this temporary increment normally.
         self.owner.active_sessions.fetch_add(1, Ordering::AcqRel);
         *self = Self::new(Arc::clone(&self.owner), options);
+    }
+
+    pub fn is_rag(&self) -> bool {
+        self.owner.is_rag()
+    }
+    pub fn set_reference(&mut self, tensor: Tensor) -> Result<()> {
+        // The quantized voice model operates in F32. This runs on its own actor,
+        // never on the asynchronous ARC encoder thread.
+        let tensor = tensor
+            .to_dtype(DType::F32)
+            .map_err(native_error)?
+            .to_device(&self.owner.device)
+            .map_err(native_error)?;
+        self.state.set_reference(tensor);
+        Ok(())
+    }
+
+    pub fn reference_remaining(&self) -> usize {
+        self.state.reference_remaining()
+    }
+    pub fn clear_reference(&mut self) {
+        self.state.clear_reference();
     }
 
     pub fn step_idx(&self) -> usize {
@@ -328,6 +498,8 @@ impl ModelSession {
             return Ok(ModelFrame {
                 pcm: None,
                 text: None,
+                consumed_text: false,
+                retrieval_requested: false,
             });
         };
         let (_, codebooks, frames) = encoded.dims3().map_err(native_error)?;
@@ -340,17 +512,20 @@ impl ModelSession {
             .i((0, .., 0))
             .and_then(|v| v.to_vec1::<u32>())
             .map_err(native_error)?;
-        let text_token = self
+        let step = self
             .state
-            .step(self.previous_text, &codes, forced_text, None)
+            .step(self.previous_text, &codes, forced_text)
             .map_err(native_error)?;
+        let text_token = step.text_token;
         let config = self.state.config();
-        let text = if [
-            config.text_pad_token,
-            config.text_eop_token,
-            config.text_start_token,
-        ]
-        .contains(&text_token)
+        let retrieval_requested = self.is_rag() && text_token == 4;
+        let text = if retrieval_requested
+            || [
+                config.text_pad_token,
+                config.text_eop_token,
+                config.text_start_token,
+            ]
+            .contains(&text_token)
         {
             None
         } else {
@@ -406,7 +581,12 @@ impl ModelSession {
             None
         };
         self.owner.device.synchronize().map_err(native_error)?;
-        Ok(ModelFrame { pcm, text })
+        Ok(ModelFrame {
+            pcm,
+            text,
+            consumed_text: step.consumed_text,
+            retrieval_requested,
+        })
     }
 }
 

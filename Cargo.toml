@@ -16,8 +16,8 @@ crate-type = ["lib"]
 default = []
 diarization = ["dep:libloading"]
 # Native Moshi/Mimi inference; the default client remains lightweight.
-duplex = ["dep:moshi", "dep:candle-core", "dep:candle-transformers", "dep:sentencepiece"]
-duplex-metal = ["duplex", "moshi/metal", "candle-core/metal", "dep:candle-metal-kernels"]
+duplex = ["dep:moshi", "dep:moshi-rag", "dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:sentencepiece", "dep:rayon"]
+duplex-metal = ["duplex", "moshi/metal", "moshi-rag/metal", "candle-core/metal", "dep:candle-metal-kernels"]
 
 [[bin]]
 name = "orchard-duplex"
@@ -28,10 +28,13 @@ required-features = ["duplex"]
 libloading = { version = "0.8", optional = true }
 # Kyutai's actual Moshi temporal/depth transformers and Mimi streaming codec.
 moshi = { version = "=0.6.4", optional = true }
+moshi-rag = { package = "moshi", git = "https://github.com/kyutai-labs/moshi-rag", rev = "8c6dfc101b7871baa428424bcdc583b74fb561d9", optional = true }
 candle-core = { version = "=0.9.1", optional = true }
+candle-nn = { version = "=0.9.1", optional = true }
 candle-metal-kernels = { version = "=0.9.1", optional = true }
 candle-transformers = { version = "=0.9.1", optional = true }
 sentencepiece = { version = "=0.11.2", optional = true }
+rayon = { version = "1.12", optional = true }
 # NNG for IPC communication with PIE
 nng = "1.0"
 
@@ -94,3 +97,12 @@ nng-sys = { path = "vendor/nng-sys" }
 [[example]]
 name = "diarization_acceptance"
 required-features = ["diarization"]
+
+[[bin]]
+name = "orchard-diarize"
+path = "src/bin/diarize.rs"
+required-features = ["diarization"]
+
+[[example]]
+name = "media_concurrency"
+required-features = ["duplex", "diarization"]

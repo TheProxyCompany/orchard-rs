@@ -3,10 +3,14 @@
 //!
 //! PCM is mono float32 at 24 kHz, in exactly 1,920-sample frames. Input and
 //! output are independent streams. `text_delta` describes the assistant's
-//! speech, **not** a transcript of the microphone. Controlled mode receives
-//! speech text from the caller's language model while continuing to hear PCM.
+//! generated speech text, **not** a transcript of the microphone. The default
+//! MoshiRAG model receives factual references from a separate thinking model
+//! while continuing to hear PCM; its spoken wording remains model-generated.
 
+mod generation;
+mod language;
 mod model;
+mod quantization;
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -17,7 +21,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 
 use crate::{Error, Result};
-pub use model::{architecture, is_moshi_model, Checkpoint, DuplexArchitecture, DEFAULT_MODEL};
+pub use model::{
+    architecture, is_moshi_model, Checkpoint, DuplexArchitecture, DEFAULT_MODEL, RAG_MODEL,
+};
 pub(crate) use model::{resolve_files, MoshiModel};
 
 pub const SAMPLE_RATE: u32 = 24_000;
@@ -41,6 +47,8 @@ pub struct DuplexOptions {
     pub device: DuplexDevice,
     /// Run the small streaming codec on CPU while the language model uses Metal.
     pub mimi_cpu: bool,
+    /// Bound the CPU codec pool so one audio stream does not consume every core.
+    pub codec_threads: usize,
     /// False means only queued PCM advances the model, useful for file clients.
     pub realtime: bool,
     /// True lets Moshi choose its own words; false speaks only queued text.
@@ -48,7 +56,7 @@ pub struct DuplexOptions {
     pub max_pending_frames: usize,
     /// A bounded timeline is rolled over between utterances without reloading weights.
     pub max_steps: usize,
-    /// Controlled text cadence, in 80 ms codec frames per SentencePiece token.
+    /// Maximum natural text-pad wait, in 80 ms frames, before advancing a queued token.
     pub text_token_interval: usize,
     pub audio_temperature: f64,
     pub audio_top_k: usize,
@@ -62,11 +70,12 @@ impl Default for DuplexOptions {
         Self {
             device: DuplexDevice::Auto,
             mimi_cpu: true,
+            codec_threads: 4,
             realtime: true,
             autonomous: false,
             max_pending_frames: 6,
             max_steps: 45_000,
-            text_token_interval: 4,
+            text_token_interval: 12,
             audio_temperature: 0.8,
             audio_top_k: 250,
             text_temperature: 0.8,
@@ -78,9 +87,10 @@ impl Default for DuplexOptions {
 
 impl DuplexOptions {
     pub(crate) fn validate(&self) -> Result<()> {
-        if !(1..=32).contains(&self.max_pending_frames)
+        if !(1..=16).contains(&self.codec_threads)
+            || !(1..=32).contains(&self.max_pending_frames)
             || !(256..=90_000).contains(&self.max_steps)
-            || !(1..=12).contains(&self.text_token_interval)
+            || !(1..=25).contains(&self.text_token_interval)
             || !(1..=2_048).contains(&self.audio_top_k)
             || !(1..=32_000).contains(&self.text_top_k)
             || !self.audio_temperature.is_finite()
@@ -149,6 +159,20 @@ pub enum DuplexEvent {
     Error {
         message: String,
     },
+    ReferenceQueued {
+        epoch: u64,
+        version: u64,
+    },
+    ReferenceApplied {
+        epoch: u64,
+        version: u64,
+        steps: usize,
+        encode_ms: f64,
+    },
+    RetrievalRequested {
+        epoch: u64,
+        sequence: u64,
+    },
     Closed,
 }
 
@@ -165,6 +189,12 @@ struct InputFrame {
     received_at: Instant,
 }
 enum Command {
+    ReferenceReady {
+        epoch: u64,
+        version: u64,
+        encode_ms: f64,
+        result: Result<candle_core::Tensor>,
+    },
     Speak {
         epoch: u64,
         text: String,
@@ -189,6 +219,12 @@ struct OutputQueue {
     done: bool,
 }
 
+struct ReferenceJob {
+    epoch: u64,
+    version: u64,
+    text: String,
+}
+
 struct Shared {
     input: Mutex<InputQueue>,
     wake: Condvar,
@@ -199,10 +235,14 @@ struct Shared {
     dropped_input: AtomicU64,
     dropped_output: AtomicU64,
     max_pending_frames: usize,
+    supports_reference: bool,
+    reference_input: Mutex<Option<ReferenceJob>>,
+    reference_wake: Condvar,
+    reference_version: AtomicU64,
 }
 
 impl Shared {
-    fn new(max_pending_frames: usize) -> Self {
+    fn new(max_pending_frames: usize, supports_reference: bool) -> Self {
         Self {
             input: Mutex::new(InputQueue::default()),
             wake: Condvar::new(),
@@ -213,7 +253,17 @@ impl Shared {
             dropped_input: AtomicU64::new(0),
             dropped_output: AtomicU64::new(0),
             max_pending_frames,
+            supports_reference,
+            reference_input: Mutex::new(None),
+            reference_wake: Condvar::new(),
+            reference_version: AtomicU64::new(0),
         }
+    }
+
+    fn stop(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.wake.notify_all();
+        self.reference_wake.notify_all();
     }
 
     fn emit(&self, event: DuplexEvent) {
@@ -246,7 +296,7 @@ impl Shared {
     }
 
     fn finish(&self) {
-        self.closed.store(true, Ordering::Release);
+        self.stop();
         self.emit(DuplexEvent::Closed);
         self.output.lock().unwrap_or_else(|p| p.into_inner()).done = true;
         self.output_ready.notify_one();
@@ -260,6 +310,57 @@ pub struct DuplexControl {
 }
 
 impl DuplexControl {
+    pub fn supports_reference(&self) -> bool {
+        self.shared.supports_reference
+    }
+
+    /// Supply facts/tool results through the trained MoshiRAG reference encoder.
+    /// Epoch checks prevent a late result from a cancelled turn steering speech.
+    pub fn reference(&self, text: String, expected_epoch: u64) -> Result<u64> {
+        if !self.supports_reference() {
+            return Err(Error::Other(
+                "Select MoshiRAG for trained reference conditioning".into(),
+            ));
+        }
+        if text.trim().is_empty() || text.chars().count() > 4096 {
+            return Err(Error::Other(
+                "A speech reference must contain 1 to 4096 characters".into(),
+            ));
+        }
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(Error::ChannelClosed);
+        }
+        let _input = self.shared.input.lock().unwrap_or_else(|p| p.into_inner());
+        if self.epoch() != expected_epoch {
+            return Err(Error::Other(
+                "Speech reference belongs to an interrupted epoch".into(),
+            ));
+        }
+        // Match the factual-document format used to train and serve MoshiRAG.
+        // Callers should keep one reference concise (about fifty words).
+        let text = if text.trim_start().starts_with("Reference:") {
+            text.trim().to_owned()
+        } else {
+            format!("Reference: {}", text.trim())
+        };
+        let version = self.shared.reference_version.fetch_add(1, Ordering::AcqRel) + 1;
+        *self
+            .shared
+            .reference_input
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(ReferenceJob {
+            epoch: expected_epoch,
+            version,
+            text,
+        });
+        self.shared.emit(DuplexEvent::ReferenceQueued {
+            epoch: expected_epoch,
+            version,
+        });
+        self.shared.reference_wake.notify_one();
+        Ok(version)
+    }
+
     pub fn epoch(&self) -> u64 {
         self.shared.epoch.load(Ordering::Acquire)
     }
@@ -301,6 +402,11 @@ impl DuplexControl {
     /// Append a bounded chunk of the backbone's speech. `replace` starts a new
     /// epoch, so audio already sent for the previous reply can be discarded.
     pub fn speak(&self, text: String, replace: bool) -> Result<u64> {
+        if self.supports_reference() {
+            let epoch = self.epoch();
+            self.reference(text, epoch)?;
+            return Ok(epoch);
+        }
         if text.trim().is_empty() || text.chars().count() > MAX_SPEECH_CHARS {
             return Err(Error::Other(
                 "Speech text must contain 1 to 8192 characters".into(),
@@ -352,6 +458,7 @@ impl DuplexControl {
         let epoch = self.shared.epoch.fetch_add(1, Ordering::AcqRel) + 1;
         input.commands.clear();
         input.frames.clear();
+        input.last_sequence = None;
         input.commands.push_front(Command::Reset { epoch });
         drop(input);
         self.shared.wake.notify_one();
@@ -359,8 +466,7 @@ impl DuplexControl {
     }
 
     pub fn close(&self) -> Result<()> {
-        self.shared.closed.store(true, Ordering::Release);
-        self.shared.wake.notify_one();
+        self.shared.stop();
         Ok(())
     }
 }
@@ -395,15 +501,23 @@ impl DuplexSession {
 
     pub(crate) fn start(model: Arc<MoshiModel>, options: DuplexOptions) -> Result<Self> {
         options.validate()?;
+        let pool = codec_pool(options.codec_threads)?;
         let model_session = model.acquire(&options)?;
-        let shared = Arc::new(Shared::new(options.max_pending_frames));
+        let shared = Arc::new(Shared::new(options.max_pending_frames, model.is_rag()));
+        if model.is_rag() {
+            let encoder_shared = Arc::clone(&shared);
+            let encoder_model = Arc::clone(&model);
+            std::thread::Builder::new()
+                .name("orchard-moshi-reference".into())
+                .spawn(move || reference_worker(encoder_shared, encoder_model))?;
+        }
         let worker_shared = Arc::clone(&shared);
         let model_id = model.model_id.clone();
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("orchard-moshi".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run(worker_shared.as_ref(), model_id, model_session, &options)
+                    pool.install(|| run(worker_shared.as_ref(), model_id, model_session, &options))
                 }));
                 match result {
                     Ok(Err(error)) => worker_shared.emit(DuplexEvent::Error {
@@ -415,22 +529,75 @@ impl DuplexSession {
                     Ok(Ok(())) => {}
                 }
                 worker_shared.finish();
-            })
-            .map_err(Error::Io)?;
+            });
+        if let Err(error) = worker {
+            shared.stop();
+            return Err(Error::Io(error));
+        }
         Ok(Self { shared })
     }
 }
 
 impl Drop for DuplexSession {
     fn drop(&mut self) {
-        self.shared.closed.store(true, Ordering::Release);
-        self.shared.wake.notify_one();
+        self.shared.stop();
+    }
+}
+
+pub(super) fn codec_pool(threads: usize) -> Result<rayon::ThreadPool> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .thread_name(|i| format!("orchard-mimi-{i}"))
+        .build()
+        .map_err(|e| Error::Other(format!("Mimi CPU pool: {e}")))
+}
+
+fn reference_worker(shared: Arc<Shared>, model: Arc<MoshiModel>) {
+    loop {
+        let job = {
+            let mut input = shared
+                .reference_input
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            while input.is_none() && !shared.closed.load(Ordering::Acquire) {
+                input = shared
+                    .reference_wake
+                    .wait(input)
+                    .unwrap_or_else(|p| p.into_inner());
+            }
+            if shared.closed.load(Ordering::Acquire) {
+                return;
+            }
+            input.take().expect("reference available")
+        };
+        if job.epoch != shared.epoch.load(Ordering::Acquire)
+            || job.version != shared.reference_version.load(Ordering::Acquire)
+        {
+            continue;
+        }
+        let began = Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            model.encode_reference(&job.text)
+        }))
+        .unwrap_or_else(|_| Err(Error::Other("MoshiRAG reference encoder panicked".into())));
+        let encode_ms = began.elapsed().as_secs_f64() * 1000.0;
+        if shared.closed.load(Ordering::Acquire) {
+            return;
+        }
+        let mut input = shared.input.lock().unwrap_or_else(|p| p.into_inner());
+        input.commands.push_back(Command::ReferenceReady {
+            epoch: job.epoch,
+            version: job.version,
+            encode_ms,
+            result,
+        });
+        drop(input);
+        shared.wake.notify_one();
     }
 }
 
 struct Speech {
     tokens: VecDeque<u32>,
-    countdown: usize,
     tail: usize,
     end_pending: bool,
 }
@@ -439,7 +606,6 @@ impl Speech {
     fn new() -> Self {
         Self {
             tokens: VecDeque::new(),
-            countdown: 0,
             tail: 0,
             end_pending: false,
         }
@@ -447,23 +613,26 @@ impl Speech {
     fn active(&self) -> bool {
         !self.tokens.is_empty() || self.tail != 0 || self.end_pending
     }
-    fn next(&mut self, interval: usize) -> u32 {
-        if self.countdown != 0 {
-            self.countdown -= 1;
-            return 3;
+    fn requested(&self) -> u32 {
+        self.tokens
+            .front()
+            .copied()
+            .unwrap_or(if self.end_pending { 0 } else { 3 })
+    }
+    fn advance(&mut self, consumed: bool) {
+        if !self.tokens.is_empty() {
+            if consumed {
+                self.tokens.pop_front();
+                self.tail = 8;
+                self.end_pending = self.tokens.is_empty();
+            }
+        } else if self.end_pending {
+            if consumed {
+                self.end_pending = false;
+            }
+        } else {
+            self.tail = self.tail.saturating_sub(1);
         }
-        if let Some(token) = self.tokens.pop_front() {
-            self.countdown = interval - 1;
-            self.tail = 8;
-            self.end_pending = self.tokens.is_empty();
-            return token;
-        }
-        if self.end_pending {
-            self.end_pending = false;
-            return 0;
-        }
-        self.tail = self.tail.saturating_sub(1);
-        3
     }
 }
 
@@ -517,16 +686,42 @@ fn run(
         epoch: 0,
     });
     let started = Instant::now();
-    let mut next_deadline = started;
+    let mut next_deadline = started + FRAME_DURATION;
     let mut metrics = DuplexMetrics::default();
     let mut speech = Speech::new();
     let mut output_sequence = 0;
     let mut frame_count = 0;
+    let is_rag = model.is_rag();
+    let mut rag_can_speak = options.autonomous;
+    let mut reference_receipt: Option<(u64, u64, usize, f64)> = None;
     loop {
         let (pcm, queue_ms) = match take_work(shared, options, next_deadline) {
             Work::End => break,
             Work::Command(command) => {
                 match command {
+                    Command::ReferenceReady {
+                        epoch,
+                        version,
+                        encode_ms,
+                        result,
+                    } => {
+                        if epoch != shared.epoch.load(Ordering::Acquire)
+                            || version != shared.reference_version.load(Ordering::Acquire)
+                        {
+                            continue;
+                        }
+                        match result {
+                            Ok(embedding) => {
+                                let steps =
+                                    embedding.dim(1).map_err(|e| Error::Other(e.to_string()))?;
+                                model.set_reference(embedding)?;
+                                reference_receipt = Some((epoch, version, steps, encode_ms));
+                            }
+                            Err(error) => shared.emit(DuplexEvent::Error {
+                                message: error.to_string(),
+                            }),
+                        }
+                    }
                     Command::Speak {
                         epoch,
                         text,
@@ -557,12 +752,20 @@ fn run(
                         });
                     }
                     Command::Interrupt { epoch } => {
-                        model.reset(options);
+                        if is_rag {
+                            model.clear_reference();
+                            rag_can_speak = false;
+                            reference_receipt = None;
+                        } else {
+                            model.reset(options);
+                        }
                         speech = Speech::new();
                         shared.emit(DuplexEvent::Interrupted { epoch });
                     }
                     Command::Reset { epoch } => {
                         model.reset(options);
+                        rag_can_speak = options.autonomous;
+                        reference_receipt = None;
                         speech = Speech::new();
                         shared.emit(DuplexEvent::Reset {
                             epoch,
@@ -589,6 +792,10 @@ fn run(
         // external-language-model speech and resident model weights.
         if model.step_idx() + 16 >= options.max_steps {
             model.reset(options);
+            if is_rag {
+                rag_can_speak = options.autonomous;
+                reference_receipt = None;
+            }
             let epoch = shared.epoch.fetch_add(1, Ordering::AcqRel) + 1;
             shared.emit(DuplexEvent::Reset {
                 epoch,
@@ -597,20 +804,27 @@ fn run(
         }
         let epoch = shared.epoch.load(Ordering::Acquire);
         let was_speaking = speech.active();
-        let forced_text = if options.autonomous && !speech.active() {
+        let forced_text = if is_rag {
+            if rag_can_speak {
+                None
+            } else {
+                Some(3)
+            }
+        } else if options.autonomous && !speech.active() {
             None
         } else {
-            Some(speech.next(options.text_token_interval))
+            Some(speech.requested())
         };
         let began = Instant::now();
         let mut frame = model.process(&pcm, forced_text)?;
+        speech.advance(frame.consumed_text);
         let compute_ms = began.elapsed().as_secs_f64() * 1_000.0;
         metrics.compute_ms_total += compute_ms;
         metrics.compute_ms_max = metrics.compute_ms_max.max(compute_ms);
         metrics.queue_ms_max = metrics.queue_ms_max.max(queue_ms);
         if shared.epoch.load(Ordering::Acquire) == epoch {
             if let Some(pcm) = frame.pcm.as_mut() {
-                if !options.autonomous && !was_speaking {
+                if (is_rag && !rag_can_speak) || (!is_rag && !options.autonomous && !was_speaking) {
                     pcm.fill(0.0);
                 }
                 if pcm.iter().any(|sample| !sample.is_finite()) {
@@ -626,12 +840,32 @@ fn run(
                 metrics.output_frames += 1;
             }
             if let Some(text) = frame.text {
-                if options.autonomous || was_speaking {
+                if (is_rag && rag_can_speak) || (!is_rag && (options.autonomous || was_speaking)) {
                     shared.emit(DuplexEvent::TextDelta {
                         epoch,
                         sequence: output_sequence,
                         text,
                     });
+                }
+            }
+            if frame.retrieval_requested && is_rag && rag_can_speak {
+                shared.emit(DuplexEvent::RetrievalRequested {
+                    epoch,
+                    sequence: output_sequence,
+                });
+            }
+            if model.reference_remaining() == 0 {
+                if let Some((reference_epoch, version, steps, encode_ms)) = reference_receipt.take()
+                {
+                    if reference_epoch == epoch {
+                        rag_can_speak = true;
+                        shared.emit(DuplexEvent::ReferenceApplied {
+                            epoch,
+                            version,
+                            steps,
+                            encode_ms,
+                        });
+                    }
                 }
             }
             if was_speaking && !speech.active() {
@@ -648,10 +882,10 @@ fn run(
                 metrics: metrics.clone(),
             });
         }
+        // Keep the standalone clock anchored: after a slow frame, overdue
+        // steps can catch up instead of permanently adding input latency.
+        // With realtime=false the microphone clock owns pacing entirely.
         next_deadline += FRAME_DURATION;
-        if next_deadline < Instant::now() {
-            next_deadline = Instant::now();
-        }
     }
     metrics.elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
     metrics.dropped_input_frames = shared.dropped_input.load(Ordering::Relaxed);
@@ -665,7 +899,7 @@ mod tests {
     use super::*;
     fn control(capacity: usize) -> DuplexControl {
         DuplexControl {
-            shared: Arc::new(Shared::new(capacity)),
+            shared: Arc::new(Shared::new(capacity, false)),
         }
     }
 
@@ -721,18 +955,48 @@ mod tests {
     }
 
     #[test]
-    fn controlled_text_has_silence_between_tokens_and_a_bounded_audio_tail() {
+    fn a_waiting_word_survives_natural_padding_and_audio_has_a_bounded_tail() {
         let mut speech = Speech::new();
         speech.tokens.extend([100, 101]);
-        assert_eq!(
-            (0..8).map(|_| speech.next(4)).collect::<Vec<_>>(),
-            [100, 3, 3, 3, 101, 3, 3, 3]
-        );
-        assert_eq!(speech.next(4), 0);
+        assert_eq!(speech.requested(), 100);
+        speech.advance(false);
+        assert_eq!(speech.requested(), 100);
+        speech.advance(true);
+        assert_eq!(speech.requested(), 101);
+        speech.advance(true);
+        assert_eq!(speech.requested(), 0);
+        speech.advance(false);
+        assert_eq!(speech.requested(), 0);
+        speech.advance(true);
+        assert_eq!(speech.requested(), 3);
         for _ in 0..8 {
-            assert_eq!(speech.next(4), 3);
+            speech.advance(false);
         }
         assert!(!speech.active());
+    }
+
+    #[test]
+    fn reference_results_cannot_cross_barge_in_and_pending_context_is_bounded() {
+        let control = DuplexControl {
+            shared: Arc::new(Shared::new(2, true)),
+        };
+        let first = control.reference("old fact".into(), 0).unwrap();
+        let second = control.reference("new fact".into(), 0).unwrap();
+        assert!(second > first);
+        {
+            let pending = control.shared.reference_input.lock().unwrap();
+            let pending = pending.as_ref().unwrap();
+            assert_eq!(pending.version, second);
+            assert_eq!(pending.text, "Reference: new fact");
+        }
+        let epoch = control.interrupt().unwrap();
+        assert!(control.reference("late tool result".into(), 0).is_err());
+        control
+            .reference("Reference: current fact".into(), epoch)
+            .unwrap();
+        let pending = control.shared.reference_input.lock().unwrap();
+        assert_eq!(pending.as_ref().unwrap().text, "Reference: current fact");
+        assert_eq!(pending.as_ref().unwrap().epoch, epoch);
     }
 
     #[test]

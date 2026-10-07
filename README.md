@@ -267,3 +267,52 @@ client behavior:
 ## License
 
 Apache-2.0
+
+## Native voice and speaker streams
+
+Build with `--features duplex-metal,diarization` for the native Moshi/Mimi and
+NVIDIA Nemotron 3 backends. They share the Orchard model registry with PIE's
+Gemma, Moondream and Parakeet models. Each backend owns its runtime; audio input
+and output advance independently of a thinking-model request.
+
+```rust
+use orchard::duplex::{DuplexOptions, DEFAULT_MODEL};
+use orchard::diarization::DiarizationOptions;
+
+let mut diarizer = client.diarization(
+    "nvidia/Nemotron-3-Diarization", DiarizationOptions::default()
+).await?;
+let mut voice = client.duplex(DEFAULT_MODEL, DuplexOptions::default()).await?;
+let control = voice.control();
+control.push_audio(0, vec![0.0; 1920])?; // one 80 ms frame, mono float32 at 24 kHz
+let turn = control.epoch();
+control.reference("The test flag is purple.".into(), turn)?;
+// Drain voice.next_event() and diarizer.next_event() concurrently with input.
+// A barge-in invalidates old output and late reference results immediately.
+let next_turn = control.interrupt()?;
+```
+
+The default source checkpoint is `kyutai/moshika-rag-candle-bf16` with its pinned
+ARC encoder/tokenizer assets from Pantheon. Rust converts voice weights to a
+versioned Q8 GGUF cache on first load, using an atomic write; no Python conversion
+or external inference server is required. The original assets stay unchanged.
+MoshiRAG's reference channel is trained for concise factual documents (about
+fifty words). It chooses spoken wording, so `text_delta` is its generated voice
+text, distinct from both the root model's reply and microphone ASR. References
+are versioned and epoch-checked; `reference_applied` means the entire embedding
+sequence has entered the live model. Audio stays muted until a reference is
+applied in controlled mode. An interrupt preserves the incoming audio context.
+
+Use `codec_threads` to bound the CPU Mimi pool (default four); this does not
+change the application's global Rayon configuration. Read `metrics` and audio
+admission receipts for dropped frames and measured compute/queue time. Sessions
+start ticking immediately: drain them during preparation and gate public
+readiness on actual inference from every required backend.
+
+Nemotron 3 returns eight anonymous, session-local speaker channels with 10 ms
+posterior frames and overlapping segments. A speaker channel is not a person's
+identity. Entity binding belongs to the application and needs confirmed evidence.
+The PIE artifact includes the pinned NVIDIA C ABI and its relocatable dylib
+closure; app bundles carry those dylibs and their notices. `orchard-duplex` and
+`orchard-diarize` provide the same native session APIs over bounded JSON-lines
+transports for Python and other clients.

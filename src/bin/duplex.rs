@@ -19,6 +19,10 @@ enum Command {
         #[serde(default)]
         replace: bool,
     },
+    Reference {
+        text: String,
+        expected_epoch: u64,
+    },
     Interrupt,
     Reset,
     Close,
@@ -73,7 +77,7 @@ async fn run() -> orchard::Result<()> {
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON]\n\nReads audio/speak/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is controlled by speak commands. --autonomous lets Moshi choose its words.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
+                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON]\n\nReads audio/speak/reference/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is controlled by speak commands. --autonomous lets Moshi choose its words.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
                 return Ok(());
             }
             _ => return Err(orchard::Error::Other(format!("Unknown argument {arg}"))),
@@ -94,6 +98,8 @@ async fn run() -> orchard::Result<()> {
                     .map(|admission| Some(json!({"type":"audio_ack","id":id,"sequence":sequence,"epoch":admission.epoch,"dropped_frames":admission.dropped_frames}))),
                 Command::Speak { text, replace } => control.speak(text, replace)
                     .map(|epoch| Some(json!({"type":"control_ack","id":id,"action":"speak","epoch":epoch}))),
+                Command::Reference { text, expected_epoch } => control.reference(text, expected_epoch)
+                    .map(|version| Some(json!({"type":"control_ack","id":id,"action":"reference","epoch":expected_epoch,"version":version}))),
                 Command::Interrupt => control.interrupt()
                     .map(|epoch| Some(json!({"type":"control_ack","id":id,"action":"interrupt","epoch":epoch}))),
                 Command::Reset => control.reset()
