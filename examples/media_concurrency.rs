@@ -43,9 +43,9 @@ fn params() -> SamplingParams {
 #[tokio::main]
 async fn main() -> Result<(), common::Error> {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 5 {
+    if !(5..=6).contains(&args.len()) {
         return Err(
-            "usage: media_concurrency FIRST_24K.wav SECOND_24K.wav ASR_16K.wav OUTPUT_DIR".into(),
+            "usage: media_concurrency FIRST_24K.wav SECOND_24K.wav ASR_16K.wav OUTPUT_DIR [IMAGE.jpg]".into(),
         );
     }
     let first = wav(Path::new(&args[1]), 24000)?;
@@ -69,8 +69,11 @@ async fn main() -> Result<(), common::Error> {
         VISION,
     )
     .await?;
-    let image =
-        std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/apple.jpg"))?;
+    let image_path = args
+        .get(5)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/assets/apple.jpg"));
+    let image = std::fs::read(image_path)?;
     let image_url = format!(
         "data:image/jpeg;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(image)

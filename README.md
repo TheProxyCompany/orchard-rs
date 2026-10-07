@@ -304,7 +304,8 @@ sequence has entered the live model. Audio stays muted until a reference is
 applied in controlled mode. An interrupt preserves the incoming audio context.
 
 Use `codec_threads` to bound the CPU Mimi pool (default four); this does not
-change the application's global Rayon configuration. Read `metrics` and audio
+change the application's global Rayon configuration. Use `realtime: false` when the microphone supplies every frame, including
+silence; that capture clock then owns pacing. Read `metrics` and audio
 admission receipts for dropped frames and measured compute/queue time. Sessions
 start ticking immediately: drain them during preparation and gate public
 readiness on actual inference from every required backend.
