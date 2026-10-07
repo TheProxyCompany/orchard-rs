@@ -319,6 +319,16 @@ impl Client {
         self.registry.duplex(model_id, options).await
     }
 
+    /// Stream anonymous speaker tracks independently of transcription/voice.
+    #[cfg(feature = "diarization")]
+    pub async fn diarization(
+        &self,
+        model_id: &str,
+        options: crate::diarization::DiarizationOptions,
+    ) -> Result<crate::diarization::DiarizationSession> {
+        self.registry.diarization(model_id, options).await
+    }
+
     /// Create a client and connect to the engine (async).
     ///
     /// This sets up:

@@ -138,6 +138,8 @@ pub struct ModelRegistry {
     /// be text requests sent to PIE. Holding the gate also deduplicates loads.
     #[cfg(feature = "duplex")]
     duplex_models: Mutex<HashMap<String, Arc<crate::duplex::MoshiModel>>>,
+    #[cfg(feature = "diarization")]
+    diarization_models: Mutex<HashMap<String, Arc<crate::diarization::NativeModel>>>,
 }
 
 impl ModelRegistry {
@@ -151,6 +153,8 @@ impl ModelRegistry {
             ipc_client: RwLock::new(None),
             #[cfg(feature = "duplex")]
             duplex_models: Mutex::new(HashMap::new()),
+            #[cfg(feature = "diarization")]
+            diarization_models: Mutex::new(HashMap::new()),
         })
     }
 
@@ -273,6 +277,120 @@ impl ModelRegistry {
         Ok(())
     }
 
+    /// Open the exact eight-speaker Nemotron 3 streaming architecture.
+    #[cfg(feature = "diarization")]
+    pub async fn diarization(
+        &self,
+        model_id: &str,
+        options: crate::diarization::DiarizationOptions,
+    ) -> Result<crate::diarization::DiarizationSession, Error> {
+        options.validate()?;
+        let model = self.ensure_diarization_model(model_id, &options).await?;
+        crate::diarization::DiarizationSession::start(model, options)
+    }
+
+    #[cfg(feature = "diarization")]
+    async fn ensure_diarization_model(
+        &self,
+        model_id: &str,
+        options: &crate::diarization::DiarizationOptions,
+    ) -> Result<Arc<crate::diarization::NativeModel>, Error> {
+        if !crate::diarization::is_diarization_model(model_id) {
+            return Err(Error::ModelNotFound(format!(
+                "No Nemotron3 architecture for {model_id}"
+            )));
+        }
+        let key = options.model_key(model_id);
+        let mut models = self.diarization_models.lock().await;
+        if let Some(model) = models.get(&key) {
+            return Ok(Arc::clone(model));
+        }
+        {
+            let mut entries = self.entries.write().await;
+            let entry = entries.entry(model_id.to_owned()).or_default();
+            entry.state = ModelLoadState::Downloading;
+            entry.error = None;
+            entry.notify.notify_waiters();
+        }
+        self.alias_cache
+            .write()
+            .await
+            .insert(model_id.to_owned(), model_id.to_owned());
+        let result = async {
+            let (library, path, profile) = crate::diarization::resolve(model_id).await?;
+            {
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry inserted");
+                entry.state = ModelLoadState::Loading;
+                entry.bytes_total = Some(profile.size_bytes);
+                entry.bytes_downloaded = Some(profile.size_bytes);
+                entry.notify.notify_waiters();
+            }
+            let options = options.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::diarization::load_verified(library, path, profile, options)
+            })
+            .await
+            .map_err(|e| Error::Other(format!("Diarization loading task: {e}")))?
+        }
+        .await;
+        match result {
+            Ok(model) => {
+                let model = Arc::new(model);
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry inserted");
+                entry.info = Some(ModelInfo {
+                    model_id: model_id.to_owned(),
+                    model_path: model.model_path.to_string_lossy().into_owned(),
+                    formatter: None,
+                    minimum_memory_bytes: Some(model.weight_bytes),
+                    capabilities: Some(HashMap::from([
+                        ("speaker_diarization".into(), vec![8, 100]),
+                        ("overlapping_speech".into(), vec![]),
+                    ])),
+                });
+                entry.state = ModelLoadState::Ready;
+                entry.notify.notify_waiters();
+                models.insert(key, Arc::clone(&model));
+                Ok(model)
+            }
+            Err(error) => {
+                let mut entries = self.entries.write().await;
+                let entry = entries
+                    .get_mut(model_id)
+                    .expect("native model entry inserted");
+                entry.state = ModelLoadState::Failed;
+                entry.error = Some(error.to_string());
+                entry.notify.notify_waiters();
+                Err(error)
+            }
+        }
+    }
+
+    #[cfg(feature = "diarization")]
+    pub async fn unload_diarization(&self, model_id: &str) -> Result<(), Error> {
+        let mut models = self.diarization_models.lock().await;
+        if models
+            .iter()
+            .any(|(key, model)| key.starts_with(&format!("{model_id}:")) && model.is_busy())
+        {
+            return Err(Error::ModelNotReady(
+                "Close diarization sessions before unloading the model".into(),
+            ));
+        }
+        models.retain(|key, _| !key.starts_with(&format!("{model_id}:")));
+        if let Some(entry) = self.entries.write().await.get_mut(model_id) {
+            entry.state = ModelLoadState::Idle;
+            entry.info = None;
+            entry.notify.notify_waiters();
+        }
+        Ok(())
+    }
+
     /// Set the IPC client for sending management commands to PIE.
     pub async fn set_ipc_client(&self, client: Arc<IPCClient>) {
         let mut ipc = self.ipc_client.write().await;
@@ -288,6 +406,17 @@ impl ModelRegistry {
     /// 4. Send load_model command to PIE
     /// 5. Wait for engine activation
     pub async fn ensure_loaded(&self, requested_model_id: &str) -> Result<ModelInfo, Error> {
+        #[cfg(feature = "diarization")]
+        if crate::diarization::is_diarization_model(requested_model_id) {
+            self.ensure_diarization_model(
+                requested_model_id,
+                &crate::diarization::DiarizationOptions::default(),
+            )
+            .await?;
+            return self.get_if_ready(requested_model_id).await.ok_or_else(|| {
+                Error::ModelNotReady("Native diarization model did not become ready".into())
+            });
+        }
         #[cfg(feature = "duplex")]
         if crate::duplex::is_moshi_model(requested_model_id) {
             self.ensure_duplex_model(requested_model_id, &crate::duplex::DuplexOptions::default())
@@ -560,6 +689,21 @@ impl ModelRegistry {
         requested_model_id: &str,
         force_reload: bool,
     ) -> Result<(ModelLoadState, String), String> {
+        #[cfg(feature = "diarization")]
+        if crate::diarization::is_diarization_model(requested_model_id) {
+            if force_reload {
+                self.unload_diarization(requested_model_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            self.ensure_diarization_model(
+                requested_model_id,
+                &crate::diarization::DiarizationOptions::default(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            return Ok((ModelLoadState::Ready, requested_model_id.to_owned()));
+        }
         #[cfg(feature = "duplex")]
         if crate::duplex::is_moshi_model(requested_model_id) {
             if force_reload {

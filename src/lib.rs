@@ -1,6 +1,8 @@
 //! Orchard - Rust client for high-performance LLM inference on Apple Silicon.
 
 mod defaults;
+#[cfg(feature = "diarization")]
+pub mod diarization;
 #[cfg(feature = "duplex")]
 pub mod duplex;
 pub mod error;

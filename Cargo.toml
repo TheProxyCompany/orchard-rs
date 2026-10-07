@@ -14,6 +14,7 @@ crate-type = ["lib"]
 
 [features]
 default = []
+diarization = ["dep:libloading"]
 # Native Moshi/Mimi inference; the default client remains lightweight.
 duplex = ["dep:moshi", "dep:candle-core", "dep:candle-transformers", "dep:sentencepiece"]
 duplex-metal = ["duplex", "moshi/metal", "candle-core/metal", "dep:candle-metal-kernels"]
@@ -24,6 +25,7 @@ path = "src/bin/duplex.rs"
 required-features = ["duplex"]
 
 [dependencies]
+libloading = { version = "0.8", optional = true }
 # Kyutai's actual Moshi temporal/depth transformers and Mimi streaming codec.
 moshi = { version = "=0.6.4", optional = true }
 candle-core = { version = "=0.9.1", optional = true }
@@ -71,6 +73,7 @@ rand = "0.8"
 libc = "0.2"
 
 [dev-dependencies]
+hound = "3.5"
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
 ctor = "0.2"
@@ -87,3 +90,7 @@ serde_json = "1"
 # consume orchard-rs must repeat this [patch] at their own root.
 [patch.crates-io]
 nng-sys = { path = "vendor/nng-sys" }
+
+[[example]]
+name = "diarization_acceptance"
+required-features = ["diarization"]
