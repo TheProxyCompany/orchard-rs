@@ -157,6 +157,18 @@ async fn run_sequential_request_determinism() {
             match result.unwrap() {
                 orchard::ChatResult::Complete(response) => {
                     let content = response.text.clone();
+                    println!(
+                        "{} repeat {} sequence {:?}, usage {:?}, token IDs {:?}",
+                        model_id,
+                        i,
+                        response.deltas.iter().find_map(|delta| delta.sequence_id),
+                        response.usage,
+                        response
+                            .deltas
+                            .iter()
+                            .flat_map(|delta| &delta.tokens)
+                            .collect::<Vec<_>>()
+                    );
 
                     if first_response.is_none() {
                         first_response = Some(content.clone());
