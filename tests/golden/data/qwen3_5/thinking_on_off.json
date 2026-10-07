@@ -2528,8 +2528,8 @@
         ],
         "usage": {
           "input_tokens": 44,
-          "output_tokens": 4,
-          "total_tokens": 48,
+          "output_tokens": 169,
+          "total_tokens": 213,
           "input_tokens_details": {
             "cached_tokens": 0
           },

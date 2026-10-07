@@ -1164,8 +1164,8 @@
         ],
         "usage": {
           "input_tokens": 252,
-          "output_tokens": 22,
-          "total_tokens": 274,
+          "output_tokens": 85,
+          "total_tokens": 337,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -2597,8 +2597,8 @@
         ],
         "usage": {
           "input_tokens": 307,
-          "output_tokens": 34,
-          "total_tokens": 341,
+          "output_tokens": 104,
+          "total_tokens": 411,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -4635,8 +4635,8 @@
         ],
         "usage": {
           "input_tokens": 369,
-          "output_tokens": 44,
-          "total_tokens": 413,
+          "output_tokens": 122,
+          "total_tokens": 491,
           "input_tokens_details": {
             "cached_tokens": 0
           },

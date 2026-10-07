@@ -802,6 +802,7 @@ pub struct OutputTokensDetails {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponseUsage {
     pub input_tokens: u32,
+    /// All generated tokens; output_tokens_details.reasoning_tokens is a subset.
     pub output_tokens: u32,
     pub total_tokens: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1560,14 +1561,8 @@ fn update_usage_from_delta(delta: &ResponseDelta, usage: &mut ResponseUsage) {
         usage.output_tokens_details = Some(OutputTokensDetails { reasoning_tokens });
     }
     if let Some(generation_len) = delta.generation_len {
-        let reasoning_tokens = usage
-            .output_tokens_details
-            .as_ref()
-            .map(|details| details.reasoning_tokens)
-            .unwrap_or(0);
-        usage.output_tokens = usage
-            .output_tokens
-            .max(generation_len.saturating_sub(reasoning_tokens));
+        // Reasoning is a subset of all generated output, not an extra charge.
+        usage.output_tokens = usage.output_tokens.max(generation_len);
     }
     usage.total_tokens = usage.input_tokens + usage.output_tokens;
 }
@@ -2525,6 +2520,33 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn response_usage_counts_reasoning_as_a_subset_of_total_output() {
+        let mut usage = ResponseUsage::default();
+        update_usage_from_delta(
+            &ResponseDelta {
+                prompt_token_count: Some(20),
+                generation_len: Some(5),
+                reasoning_tokens: Some(5),
+                ..Default::default()
+            },
+            &mut usage,
+        );
+        assert_eq!(usage.output_tokens, 5);
+        assert_eq!(usage.total_tokens, 25);
+        update_usage_from_delta(
+            &ResponseDelta {
+                generation_len: Some(8),
+                reasoning_tokens: Some(5),
+                ..Default::default()
+            },
+            &mut usage,
+        );
+        assert_eq!(usage.output_tokens, 8);
+        assert_eq!(usage.total_tokens, 28);
+        assert_eq!(usage.output_tokens_details.unwrap().reasoning_tokens, 5);
+    }
 
     #[test]
     fn test_response_event_type_names() {

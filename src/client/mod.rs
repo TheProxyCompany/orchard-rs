@@ -585,9 +585,6 @@ impl Client {
                         if let Some(count) = delta.prompt_token_count {
                             state.prompt_tokens = state.prompt_tokens.max(count);
                         }
-                        if let Some(reasoning_tokens) = delta.reasoning_tokens {
-                            state.reasoning_tokens = state.reasoning_tokens.max(reasoning_tokens);
-                        }
 
                         let client_delta = ClientDelta::from(delta.clone());
                         state.deltas.push(client_delta);
@@ -598,8 +595,8 @@ impl Client {
                             state.cumulative_logprob = delta.cumulative_logprob;
                             state.generation_len = delta.generation_len;
                             if let Some(generation_len) = delta.generation_len {
-                                state.completion_tokens =
-                                    generation_len.saturating_sub(state.reasoning_tokens);
+                                // Completion usage includes reasoning and visible output.
+                                state.completion_tokens = generation_len;
                             }
                             remaining_sequences -= 1;
                         }
@@ -1667,7 +1664,6 @@ struct CandidateState {
     content: String,
     finish_reason: Option<String>,
     completion_tokens: u32,
-    reasoning_tokens: u32,
     prompt_tokens: u32,
     cumulative_logprob: Option<f64>,
     generation_len: Option<u32>,
@@ -1977,19 +1973,13 @@ fn aggregate_response(deltas: Vec<ClientDelta>, released_text: bool) -> ClientRe
 
 fn extract_usage(deltas: &[ClientDelta]) -> UsageStats {
     let mut usage = UsageStats::default();
-    let mut reasoning_tokens = 0;
 
     for delta in deltas {
         if let Some(count) = delta.prompt_token_count {
             usage.prompt_tokens = usage.prompt_tokens.max(count);
         }
-        if let Some(count) = delta.reasoning_tokens {
-            reasoning_tokens = reasoning_tokens.max(count);
-        }
         if let Some(len) = delta.generation_len {
-            usage.completion_tokens = usage
-                .completion_tokens
-                .max(len.saturating_sub(reasoning_tokens));
+            usage.completion_tokens = usage.completion_tokens.max(len);
         }
     }
 
@@ -2000,6 +1990,24 @@ fn extract_usage(deltas: &[ClientDelta]) -> UsageStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completion_usage_counts_reasoning_even_when_no_visible_text_is_emitted() {
+        let response = aggregate_response(
+            vec![ClientDelta {
+                prompt_token_count: Some(20),
+                generation_len: Some(5),
+                reasoning_tokens: Some(5),
+                is_final: true,
+                finish_reason: Some("length".into()),
+                ..Default::default()
+            }],
+            false,
+        );
+        assert!(response.text.is_empty());
+        assert_eq!(response.usage.completion_tokens, 5);
+        assert_eq!(response.usage.total_tokens, 25);
+    }
 
     #[test]
     fn test_sampling_params_default() {
