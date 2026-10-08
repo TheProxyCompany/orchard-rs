@@ -31,7 +31,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
@@ -39,6 +38,20 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Install pinned Rust tools
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          if ! command -v rustup >/dev/null; then
+            export PATH="$(brew --prefix rustup)/bin:$PATH"
+            echo "$(brew --prefix rustup)/bin" >> "$GITHUB_PATH"
+          fi
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+          echo "RUSTUP_TOOLCHAIN=1.97.1" >> "$GITHUB_ENV"
+          rustup run 1.97.1 cargo fmt --version
+          rustup run 1.97.1 cargo clippy --version
 
       - name: Check formatting
         run: cargo fmt --check
