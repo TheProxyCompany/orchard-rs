@@ -6,7 +6,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, requires_reasoning, ALL_MODELS};
 
 async fn run_client_chat_non_streaming(prompt: &str) {
     let fixture = get_fixture().await;
@@ -35,21 +35,22 @@ async fn run_client_chat_non_streaming(prompt: &str) {
             orchard::ChatResult::Complete(response) => {
                 output_lines.push(format!("{}: {}", model_id, response.text));
                 println!("{}", output_lines.join("\n"));
-                assert!(
-                    !response.text.trim().is_empty(),
-                    "Response should have content for {}",
-                    model_id
-                );
-                assert!(
-                    response.usage.completion_tokens > 0,
-                    "Should have generated tokens for {}",
-                    model_id
-                );
+                // Five is a total-token cap, including mandatory reasoning.
                 assert_eq!(
-                    response.usage.completion_tokens, 5,
-                    "Expected exactly 5 completion tokens for {}, got {}",
-                    model_id, response.usage.completion_tokens
+                    response
+                        .deltas
+                        .iter()
+                        .filter_map(|delta| delta.generation_len)
+                        .max(),
+                    Some(5)
                 );
+                if !requires_reasoning(model_id) {
+                    assert!(
+                        !response.text.trim().is_empty(),
+                        "Response should have content for {model_id}"
+                    );
+                    assert_eq!(response.usage.completion_tokens, 5);
+                }
             }
             orchard::ChatResult::Stream(_) => {
                 panic!("Expected complete response, got stream for {}", model_id);
