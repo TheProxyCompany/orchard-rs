@@ -1,9 +1,10 @@
-//! JSON-lines transport for Orchard's native Nemotron 3 session API.
+//! Thin JSON-lines transport for PIE-owned Nemotron3 sessions.
 use orchard::diarization::{self, DiarizationDevice, DiarizationEvent, DiarizationOptions};
-use orchard::ModelRegistry;
+use orchard::{Client, InferenceEngine, ModelRegistry};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -53,7 +54,7 @@ async fn run() -> orchard::Result<()> {
             }
             "--capabilities" => {
                 write_json(
-                    &json!({"architecture":"nemotron3_diarization","diarization":diarization::architecture()?}),
+                    &json!({"architecture":"nemotron3_diarization","backend":"pie","diarization":diarization::architecture()?}),
                 )?;
                 return Ok(());
             }
@@ -64,8 +65,10 @@ async fn run() -> orchard::Result<()> {
             _ => return Err(orchard::Error::Other(format!("Unknown argument {arg}"))),
         }
     }
-    let registry = ModelRegistry::new()?;
-    let mut session = registry.diarization(&model, options).await?;
+    let _engine = InferenceEngine::new().await?;
+    let registry = Arc::new(ModelRegistry::new()?);
+    let client = Client::connect(registry).await?;
+    let mut session = client.diarization(&model, options).await?;
     let control = session.control();
     let runtime = tokio::runtime::Handle::current();
     std::thread::Builder::new().name("orchard-diar-input".into()).spawn(move||{

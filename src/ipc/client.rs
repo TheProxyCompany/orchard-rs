@@ -452,6 +452,220 @@ impl IPCClient {
         .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
     }
 
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    pub(crate) fn send_management_command_blocking(
+        &self,
+        command: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        let engine_pid_file = self.engine_pid_file.as_deref().ok_or(Error::NotConnected)?;
+        // Continuous audio and priority controls must not wait behind the
+        // generic management mutex (model activation may hold it for seconds).
+        // Each exchange owns its REQ socket, including its request/reply state,
+        // so a timed-out input cannot strand or cancel a later close/interrupt.
+        let deadline = Instant::now() + timeout;
+        let socket = Socket::new(Protocol::Req0)?;
+        socket.set_opt::<nng::options::RecvMaxSize>(1024 * 1024)?;
+        socket.dial_async(&management_url())?;
+        let socket = Mutex::new(Some(socket));
+        blocking_management_exchange(
+            &socket,
+            &self.engine_dead,
+            Some(engine_pid_file),
+            &command,
+            deadline.saturating_duration_since(Instant::now()),
+        )
+    }
+
+    /// Bind before open. Dedicated PULL flow control protects continuous audio
+    /// from PUB/SUB drops and avoids the generic unbounded text receiver.
+    #[cfg(feature = "duplex")]
+    pub(crate) fn bind_duplex_route(
+        &self,
+        request_id: u64,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<DuplexResponseRoute> {
+        self.bind_stream_route(request_id, "duplex", 1024 * 1024, handler)
+    }
+
+    #[cfg(feature = "diarization")]
+    pub(crate) fn bind_diarization_route(
+        &self,
+        request_id: u64,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<StreamResponseRoute> {
+        // Metadata is bounded at 16 MiB by PIE. Its JSON-string encoding in
+        // ResponseDelta can double in size before decoding that metadata.
+        self.bind_stream_route(request_id, "diarization", 33 * 1024 * 1024, handler)
+    }
+
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    fn bind_stream_route(
+        &self,
+        request_id: u64,
+        kind: &'static str,
+        max_bytes: usize,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<StreamResponseRoute> {
+        if self.engine_dead.load(Ordering::Acquire) {
+            return Err(Error::EngineDead);
+        }
+        let pid_file = self.engine_pid_file.clone().ok_or(Error::NotConnected)?;
+        let channel_id = rand_u64();
+        let url = crate::ipc::endpoints::pull_response_url(channel_id);
+        let socket = Socket::new(Protocol::Pull0)?;
+        socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(50)))?;
+        socket.set_opt::<nng::options::RecvBufferSize>(64)?;
+        socket.set_opt::<nng::options::RecvMaxSize>(max_bytes)?;
+        socket.listen(&url)?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let engine_dead = Arc::clone(&self.engine_dead);
+        let original_pid = read_pid_file(&pid_file);
+        let handle = thread::Builder::new()
+            .name(format!("orchard-{kind}-response"))
+            .spawn(move || {
+                let prefix = format!("resp:{channel_id:x}:");
+                while !worker_stop.load(Ordering::Acquire) {
+                    match socket.recv() {
+                        Ok(message) => {
+                            let bytes = message.as_slice();
+                            let Some(body) = bytes.strip_prefix(prefix.as_bytes()) else {
+                                continue;
+                            };
+                            match serde_json::from_slice::<ResponseDelta>(body) {
+                                Ok(delta) => {
+                                    let finished = delta.is_final_delta;
+                                    handler(delta, true);
+                                    if finished {
+                                        break;
+                                    }
+                                }
+                                Err(error) => {
+                                    handler(
+                                        ResponseDelta {
+                                            request_id,
+                                            is_final_delta: true,
+                                            error: Some(format!(
+                                                "Invalid PIE {kind} response: {error}"
+                                            )),
+                                            ..Default::default()
+                                        },
+                                        false,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                        Err(nng::Error::TimedOut) => {}
+                        Err(error) => {
+                            if !worker_stop.load(Ordering::Acquire) {
+                                handler(
+                                    ResponseDelta {
+                                        request_id,
+                                        is_final_delta: true,
+                                        error: Some(format!(
+                                            "PIE {kind} response route closed: {error}"
+                                        )),
+                                        ..Default::default()
+                                    },
+                                    false,
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    if engine_dead.load(Ordering::Acquire)
+                        || read_pid_file(&pid_file) != original_pid
+                        || !engine_process_is_alive(&pid_file)
+                    {
+                        handler(
+                            ResponseDelta {
+                                request_id,
+                                is_final_delta: true,
+                                error: Some(format!("PIE {kind} engine exited or changed")),
+                                ..Default::default()
+                            },
+                            false,
+                        );
+                        break;
+                    }
+                }
+            })
+            .map_err(Error::Io)?;
+        Ok(StreamResponseRoute {
+            channel_id,
+            stop,
+            handle: Some(handle),
+        })
+    }
+
+    #[cfg(feature = "duplex")]
+    pub(crate) fn send_duplex_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        self.send_stream_request(
+            request_id,
+            model_id,
+            model_path,
+            channel_id,
+            RequestType::Duplex,
+            prompt,
+        )
+    }
+
+    #[cfg(feature = "diarization")]
+    pub(crate) fn send_diarization_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        self.send_stream_request(
+            request_id,
+            model_id,
+            model_path,
+            channel_id,
+            RequestType::Diarization,
+            prompt,
+        )
+    }
+
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    fn send_stream_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        request_type: RequestType,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        if self.engine_dead.load(Ordering::Acquire) {
+            return Err(Error::EngineDead);
+        }
+        let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
+        let payload = crate::ipc::serialization::build_batch_request_payload_with_transport(
+            request_id,
+            model_id,
+            model_path,
+            request_type,
+            channel_id,
+            &[prompt],
+            Some("pull_v1"),
+        )?;
+        socket
+            .send(nng::Message::from(payload.as_slice()))
+            .map_err(|(_, error)| Error::from(error))
+    }
+
     /// Start the response listener thread.
     fn start_listener(&mut self, engine_pid_file: PathBuf) {
         let response_socket = self.response_socket.take();
@@ -480,6 +694,24 @@ impl IPCClient {
         match handle {
             Ok(h) => self.listener_handle = Some(h),
             Err(e) => tracing::error!("Failed to spawn IPC listener thread: {}", e),
+        }
+    }
+}
+
+#[cfg(feature = "duplex")]
+pub(crate) type DuplexResponseRoute = StreamResponseRoute;
+#[cfg(any(feature = "duplex", feature = "diarization"))]
+pub(crate) struct StreamResponseRoute {
+    pub channel_id: u64,
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+#[cfg(any(feature = "duplex", feature = "diarization"))]
+impl Drop for StreamResponseRoute {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
         }
     }
 }

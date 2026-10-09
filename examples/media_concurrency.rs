@@ -14,12 +14,19 @@ use std::{
     io::Write,
     path::Path,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 const BRAIN: &str = "google/gemma-4-E2B-it";
 const VISION: &str = "moondream/moondream3-preview";
 const VOICE: &str = "kyutai/moshika-rag-candle-bf16";
 const ASR: &str = "mlx-community/parakeet-tdt-0.6b-v3";
+fn activity(began: Instant, model: &str, operation: &str, phase: &str) {
+    println!(
+        "ACTIVITY {}",
+        json!({"model":model,"operation":operation,"phase":phase,
+            "observed_seconds":began.elapsed().as_secs_f64()})
+    );
+}
 fn wav(path: &Path, rate: u32) -> Result<Vec<f32>, common::Error> {
     let mut wav = hound::WavReader::open(path)?;
     let spec = wav.spec();
@@ -48,13 +55,15 @@ async fn main() -> Result<(), common::Error> {
             "usage: media_concurrency FIRST_24K.wav SECOND_24K.wav ASR_16K.wav OUTPUT_DIR [IMAGE.jpg]".into(),
         );
     }
+    let brain = std::env::var("ORCHARD_MEDIA_BRAIN").unwrap_or_else(|_| BRAIN.to_owned());
+    let brain = brain.as_str();
     let first = wav(Path::new(&args[1]), 24000)?;
     let second = wav(Path::new(&args[2]), 24000)?;
     let asr_pcm = wav(Path::new(&args[3]), 16000)?;
     let output = Path::new(&args[4]);
     std::fs::create_dir_all(output)?;
     let (_engine, registry, client) = common::connect().await?;
-    for model in [BRAIN, VISION, ASR] {
+    for model in [brain, VISION, ASR] {
         let t = Instant::now();
         let info =
             tokio::time::timeout(Duration::from_secs(300), registry.ensure_loaded(model)).await??;
@@ -88,7 +97,7 @@ async fn main() -> Result<(), common::Error> {
     println!("VISION_WARM {}", serde_json::to_string(&warm_caption)?);
     let warm_brain = common::run_turn(
         &client,
-        BRAIN,
+        brain,
         vec![common::msg("user", "Reply only: ready")],
         params(),
         |_| {},
@@ -117,7 +126,8 @@ async fn main() -> Result<(), common::Error> {
     let began = Instant::now();
     println!(
         "ALL_MODELS_READY {}",
-        json!({"pid":std::process::id(),"models":[BRAIN,VISION,VOICE,"nvidia/Nemotron-3-Diarization",ASR]})
+        json!({"pid":std::process::id(),"models":[brain,VISION,VOICE,"nvidia/Nemotron-3-Diarization",ASR],
+            "wall_unix_ms":SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs_f64()*1000.})
     );
     let feeding = async {
         for i in 0..400u64 {
@@ -144,9 +154,21 @@ async fn main() -> Result<(), common::Error> {
         let mut turns = vec![];
         for (at,question,fact) in [(3.,"What is the secret word for this test?","The one-word answer is telescope. Nothing else is known about this test."),(18.,"What color is the flag?","This test flag is plain purple. It is not a national flag and no country is associated with it.")] {
             tokio::time::sleep_until((began+Duration::from_secs_f64(at)).into()).await;
-            let turn=common::run_turn(&client,BRAIN,vec![common::msg("system","Write a factual reference for a voice model. Use only the supplied facts, no additional claims. Fewer than forty words. No markdown."),common::msg("user",&format!("Question: {question}\nVerified local facts: {fact}"))],params(), |_|{}).await?;
+            let started_seconds=began.elapsed().as_secs_f64();
+            let mut first_token_seconds=None;
+            activity(began,brain,"reference_generation","start");
+            let turn=common::run_turn(&client,brain,vec![common::msg("system","Write a factual reference for a voice model. Use only the supplied facts, no additional claims. Fewer than forty words. No markdown."),common::msg("user",&format!("Question: {question}\nVerified local facts: {fact}"))],params(), |delta| {
+                if first_token_seconds.is_none() && !delta.tokens.is_empty() {
+                    first_token_seconds=Some(began.elapsed().as_secs_f64());
+                    activity(began,brain,"reference_generation","first_token");
+                }
+            }).await?;
+            let generation_finished_seconds=began.elapsed().as_secs_f64();
+            activity(began,brain,"reference_generation","finish");
             let reference=turn.text.clone();let epoch=vc.epoch();let version=vc.reference(reference.clone(),epoch)?;
-            let receipt=json!({"epoch":epoch,"version":version,"reference":reference,"elapsed_ms":turn.elapsed.as_secs_f64()*1000.,"cached_tokens":turn.cached,"observed_seconds":began.elapsed().as_secs_f64()});
+            let receipt=json!({"epoch":epoch,"version":version,"reference":reference,"elapsed_ms":turn.elapsed.as_secs_f64()*1000.,"cached_tokens":turn.cached,"observed_seconds":began.elapsed().as_secs_f64(),
+                "started_seconds":started_seconds,"first_token_seconds":first_token_seconds,
+                "generation_finished_seconds":generation_finished_seconds,"ttft_ms":turn.ttft_ms,"generated_tokens":turn.ids.len()});
             println!("BRAIN {}",receipt);turns.push(receipt);
         }
         Ok::<_, common::Error>(turns)
@@ -155,9 +177,11 @@ async fn main() -> Result<(), common::Error> {
         tokio::time::sleep_until((began + Duration::from_secs(6)).into()).await;
         let mut captions = vec![];
         for _ in 0..2 {
+            activity(began, VISION, "caption", "start");
             let caption = vision
                 .caption_with_metrics(&image_url, "normal", params())
                 .await?;
+            activity(began, VISION, "caption", "finish");
             println!("VISION {}", serde_json::to_string(&caption)?);
             captions.push(caption);
         }
@@ -167,7 +191,9 @@ async fn main() -> Result<(), common::Error> {
         {
             return Err("Cached Moondream caption differed from the uncached baseline".into());
         }
+        activity(began, VISION, "point", "start");
         let points = vision.point(&image_url, "apple", params()).await?;
+        activity(began, VISION, "point", "finish");
         println!("POINTS {}", serde_json::to_string(&points)?);
         if points.points.is_empty() {
             return Err("Moondream returned no apple point".into());
@@ -180,10 +206,12 @@ async fn main() -> Result<(), common::Error> {
     let listening = async {
         tokio::time::sleep_until((began + Duration::from_secs(9)).into()).await;
         let t = Instant::now();
+        activity(began, ASR, "transcription", "start");
         let text = client.atranscribe_audio(ASR, &asr_pcm).await?;
+        activity(began, ASR, "transcription", "finish");
         println!(
             "ASR {}",
-            json!({"text":text,"elapsed_ms":t.elapsed().as_secs_f64()*1000.})
+            json!({"text":text,"elapsed_ms":t.elapsed().as_secs_f64()*1000.,"observed_seconds":began.elapsed().as_secs_f64()})
         );
         Ok::<_, common::Error>(text)
     };
@@ -210,7 +238,9 @@ async fn main() -> Result<(), common::Error> {
                     )?;
                 }
                 _ => {
-                    serde_json::to_writer(&mut events, &event)?;
+                    let mut value = serde_json::to_value(&event)?;
+                    value["observed_seconds"] = began.elapsed().as_secs_f64().into();
+                    serde_json::to_writer(&mut events, &value)?;
                     writeln!(events)?;
                 }
             }
@@ -244,7 +274,9 @@ async fn main() -> Result<(), common::Error> {
         let mut frames = 0;
         let mut errors = vec![];
         while let Some(event) = diar.next_event().await {
-            serde_json::to_writer(&mut file, &event)?;
+            let mut value = serde_json::to_value(&event)?;
+            value["observed_seconds"] = began.elapsed().as_secs_f64().into();
+            serde_json::to_writer(&mut file, &value)?;
             writeln!(file)?;
             match event {
                 DiarizationEvent::Update { probabilities, .. } => frames += probabilities.len(),

@@ -1,11 +1,11 @@
-//! Native Orchard duplex transport for non-Rust clients. Model lifecycle and
-//! inference are the same library path the app uses; this is not another model
-//! server or a Python inference implementation.
+//! Thin JSON-lines transport for native PIE duplex sessions.
+//! Model tensors and inference live exclusively in the PIE process.
 use orchard::duplex::{self, DuplexDevice, DuplexEvent, DuplexOptions};
-use orchard::ModelRegistry;
+use orchard::{Client, InferenceEngine, ModelRegistry};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -73,18 +73,20 @@ async fn run() -> orchard::Result<()> {
             }
             "--capabilities" => {
                 let profile = duplex::architecture()?;
-                write_json(&json!({"architecture":"moshi","backend":"candle","duplex":profile}))?;
+                write_json(&json!({"architecture":"moshi","backend":"pie","duplex":profile}))?;
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON]\n\nReads audio/speak/reference/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is controlled by speak commands. --autonomous lets Moshi choose its words.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
+                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON]\n\nReads audio/speak/reference/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is native autonomous duplex; references provide factual conditioning.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
                 return Ok(());
             }
             _ => return Err(orchard::Error::Other(format!("Unknown argument {arg}"))),
         }
     }
-    let registry = ModelRegistry::new()?;
-    let mut session = registry.duplex(&model, options).await?;
+    let _engine = InferenceEngine::new().await?;
+    let registry = Arc::new(ModelRegistry::new()?);
+    let client = Client::connect(Arc::clone(&registry)).await?;
+    let mut session = client.duplex(&model, options).await?;
     let control = session.control();
     std::thread::Builder::new().name("orchard-duplex-input".into()).spawn(move || {
         for line in std::io::stdin().lock().lines() {

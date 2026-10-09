@@ -178,6 +178,11 @@ pub fn response_url() -> String {
     as_ipc_url(ipc_root().join("pie_responses.ipc"))
 }
 
+/// A flow-controlled, client-owned response route on the existing IPC root.
+pub fn pull_response_url(channel_id: u64) -> String {
+    as_ipc_url(ipc_root().join(format!("pie_response_{channel_id:x}.ipc")))
+}
+
 /// The endpoint for synchronous management commands (e.g., load_model).
 /// Pattern: REQ/REP (One client sends a REQ, one engine sends a REP)
 pub fn management_url() -> String {

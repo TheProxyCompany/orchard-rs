@@ -294,6 +294,49 @@ fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Val
     )
 }
 
+pub(crate) fn model_event_callback(registry: &Arc<ModelRegistry>) -> EventCallback {
+    // Registry owns IPC; its callback must not own the registry back. Upgrade
+    // only in the runtime task, so the last owner cannot drop on the IPC listener
+    // thread and try to join that same listener during destruction.
+    let registry_for_events = Arc::downgrade(registry);
+    let runtime_handle = tokio::runtime::Handle::current();
+    let event_callback: EventCallback =
+        Arc::new(move |event_name: &str, payload: &Value| match event_name {
+            "model_loaded" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_model_loaded(&payload).await;
+                    }
+                });
+            }
+            "model_load_failed" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_model_load_failed(&payload).await;
+                    }
+                });
+            }
+            "engine_died" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_engine_died(&payload).await;
+                    }
+                });
+            }
+            _ => {}
+        });
+    event_callback
+}
+
 /// A high-level client for the Proxy Inference Engine.
 ///
 /// Provides an asynchronous interface for LLM inference.
@@ -319,7 +362,7 @@ impl Client {
         self.registry.duplex(model_id, options).await
     }
 
-    /// Stream anonymous speaker tracks independently of transcription/voice.
+    /// Stream PIE-owned anonymous speaker tracks independently of transcription/voice.
     #[cfg(feature = "diarization")]
     pub async fn diarization(
         &self,
@@ -335,38 +378,7 @@ impl Client {
     /// - Event callback for handling model lifecycle events
     /// - IPC client shared with registry for management commands
     pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
-        // Create event callback that routes model lifecycle events to registry
-        let registry_for_events = Arc::clone(&registry);
-        let runtime_handle = tokio::runtime::Handle::current();
-        let event_callback: EventCallback =
-            Arc::new(move |event_name: &str, payload: &Value| match event_name {
-                "model_loaded" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_model_loaded(&payload).await;
-                    });
-                }
-                "model_load_failed" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_model_load_failed(&payload).await;
-                    });
-                }
-                "engine_died" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_engine_died(&payload).await;
-                    });
-                }
-                _ => {}
-            });
-
+        let event_callback = model_event_callback(&registry);
         let mut ipc = IPCClient::with_event_callback(event_callback);
         ipc.connect()?;
         let ipc = Arc::new(ipc);
@@ -1989,6 +2001,33 @@ fn extract_usage(deltas: &[ClientDelta]) -> UsageStats {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn registry_ownership_ends_after_last_client_even_with_retained_event_callback() {
+        let registry = std::sync::Arc::new(crate::ModelRegistry::new().unwrap());
+        let weak_registry = std::sync::Arc::downgrade(&registry);
+        let callback = super::model_event_callback(&registry);
+        let ipc = std::sync::Arc::new(crate::IPCClient::with_event_callback(callback.clone()));
+        let weak_ipc = std::sync::Arc::downgrade(&ipc);
+        registry.set_ipc_client(ipc.clone()).await;
+        let client = super::Client::new(ipc, registry.clone());
+        drop(registry);
+        assert!(weak_registry.upgrade().is_some());
+        drop(client);
+        assert!(
+            weak_registry.upgrade().is_none(),
+            "IPC callback retained the registry and its native model cache"
+        );
+        assert!(
+            weak_ipc.upgrade().is_none(),
+            "registry/IPC ownership did not end"
+        );
+        callback(
+            "model_loaded",
+            &serde_json::json!({"model_id":"already-dropped"}),
+        );
+        tokio::task::yield_now().await;
+        assert!(weak_registry.upgrade().is_none());
+    }
     use super::*;
 
     #[test]

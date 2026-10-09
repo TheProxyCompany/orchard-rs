@@ -14,10 +14,11 @@ crate-type = ["lib"]
 
 [features]
 default = []
-diarization = ["dep:libloading"]
-# Native Moshi/Mimi inference; the default client remains lightweight.
-duplex = ["dep:moshi", "dep:moshi-rag", "dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:sentencepiece", "dep:rayon"]
-duplex-metal = ["duplex", "moshi/metal", "moshi-rag/metal", "candle-core/metal", "dep:candle-metal-kernels"]
+diarization = []
+# Stateful audio is inferred by PIE; these flags expose the lightweight IPC client.
+duplex = []
+# Compatibility alias for callers that previously selected an SDK Metal backend.
+duplex-metal = ["duplex"]
 
 [[bin]]
 name = "orchard-duplex"
@@ -25,16 +26,6 @@ path = "src/bin/duplex.rs"
 required-features = ["duplex"]
 
 [dependencies]
-libloading = { version = "0.8", optional = true }
-# Kyutai's actual Moshi temporal/depth transformers and Mimi streaming codec.
-moshi = { version = "=0.6.4", optional = true }
-moshi-rag = { package = "moshi", git = "https://github.com/kyutai-labs/moshi-rag", rev = "8c6dfc101b7871baa428424bcdc583b74fb561d9", optional = true }
-candle-core = { version = "=0.9.1", optional = true }
-candle-nn = { version = "=0.9.1", optional = true }
-candle-metal-kernels = { version = "=0.9.1", optional = true }
-candle-transformers = { version = "=0.9.1", optional = true }
-sentencepiece = { version = "=0.11.2", optional = true }
-rayon = { version = "1.12", optional = true }
 # NNG for IPC communication with PIE
 nng = "1.0"
 

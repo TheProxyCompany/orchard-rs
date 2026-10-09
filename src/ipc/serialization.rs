@@ -186,6 +186,10 @@ pub enum RequestType {
     PrefillTask = 7,
     Audio = 8,
     Image = 9,
+    /// Persistent, engine-owned speech-to-speech session.
+    Duplex = 10,
+    /// Persistent, engine-owned speaker diarization session.
+    Diarization = 11,
 }
 
 /// Align offset to payload alignment boundary
@@ -240,6 +244,27 @@ pub fn build_batch_request_payload(
     request_type: RequestType,
     response_channel_id: u64,
     prompts: &[PromptPayload],
+) -> Result<Vec<u8>> {
+    build_batch_request_payload_with_transport(
+        request_id,
+        model_id,
+        model_path,
+        request_type,
+        response_channel_id,
+        prompts,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_batch_request_payload_with_transport(
+    request_id: u64,
+    model_id: &str,
+    model_path: &str,
+    request_type: RequestType,
+    response_channel_id: u64,
+    prompts: &[PromptPayload],
+    response_transport: Option<&str>,
 ) -> Result<Vec<u8>> {
     if prompts.is_empty() {
         return Err(Error::Serialization(
@@ -444,7 +469,7 @@ pub fn build_batch_request_payload(
     }
 
     // Build full metadata
-    let metadata = json!({
+    let mut metadata = json!({
         "request_id": request_id,
         "model_id": model_id,
         "model_path": model_path,
@@ -453,6 +478,10 @@ pub fn build_batch_request_payload(
         "response_channel_id": response_channel_id,
         "prompts": prompt_metadata_list,
     });
+
+    if let Some(transport) = response_transport {
+        metadata["response_transport"] = transport.into();
+    }
 
     // Use compact JSON serialization (no spaces, matching Python)
     let metadata_bytes = serialize_json_compact(&metadata)?;

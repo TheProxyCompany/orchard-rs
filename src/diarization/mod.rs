@@ -1,24 +1,21 @@
-//! NVIDIA Nemotron 3 streaming speaker diarization, owned by Orchard.
-//!
-//! Eight arrival-order acoustic speaker tracks at 10 ms resolution, with the
-//! actual NVIDIA AOSC/FIFO state. Speaker IDs are anonymous and session-local;
-//! this module never invents a person's identity or collapses overlapping speech.
-mod native;
+//! Thin IPC for NVIDIA Nemotron3 diarization. PIE exclusively owns its model,
+//! native library, AOSC/FIFO state and inference. Speaker IDs remain anonymous.
+mod model;
+pub(crate) use model::{engine_source, runtime_key};
 
-use std::collections::HashMap;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-
-use hf_hub::{Cache, Repo, RepoType};
+use crate::ipc::client::{IPCClient, ResponseDelta, StreamResponseRoute};
+use crate::ipc::serialization::PromptPayload;
+use crate::{Error, ModelInfo, Result};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tokio::sync::mpsc;
+use serde_json::{json, Value};
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::Notify;
 
-use crate::{Error, Result};
-pub(crate) use native::NativeModel;
 pub const DEFAULT_MODEL: &str = "nvidia/Nemotron-3-Diarization";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,6 +59,13 @@ pub fn architecture() -> Result<DiarizationArchitecture> {
 pub fn is_diarization_model(model_id: &str) -> bool {
     if model_id == DEFAULT_MODEL {
         return true;
+    }
+    if let Ok(bytes) = std::fs::read(Path::new(model_id).join("config.json")) {
+        if serde_json::from_slice::<Value>(&bytes)
+            .is_ok_and(|config| config["model_type"] == "nemotron3_diarization")
+        {
+            return true;
+        }
     }
     let Ok(profile) = architecture() else {
         return false;
@@ -144,17 +148,6 @@ impl DiarizationOptions {
         }
         Ok(())
     }
-    pub(crate) fn model_key(&self, model_id: &str) -> String {
-        format!(
-            "{model_id}:{:?}:{}:{}:{}:{}:{}",
-            self.device,
-            self.chunk_frames,
-            self.right_context_frames,
-            self.fifo_frames,
-            self.speaker_cache_frames,
-            self.update_period_frames
-        )
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -219,398 +212,647 @@ pub struct DiarizationAdmission {
     pub missing_frames: u64,
 }
 
-enum Command {
-    Audio { pcm: Vec<f32>, missing_frames: u64 },
-    Finish,
-    Close,
+const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_EVENTS: usize = 64;
+const MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
+pub const IPC_PROTOCOL_VERSION: u32 = 1;
+
+#[derive(Default)]
+struct AdmissionState {
+    last_sequence: Option<u64>,
+    finish_confirmed: bool,
+}
+#[derive(Default)]
+struct OutputQueue {
+    events: VecDeque<(DiarizationEvent, usize)>,
+    bytes: usize,
+    done: bool,
+}
+struct CommandFailure {
+    error: Error,
+    rejected: bool,
+}
+impl From<Error> for CommandFailure {
+    fn from(error: Error) -> Self {
+        Self {
+            error,
+            rejected: false,
+        }
+    }
+}
+struct Shared {
+    ipc: Arc<IPCClient>,
+    model_id: String,
+    public_model_id: String,
+    session_id: String,
+    request_id: u64,
+    channel_id: AtomicU64,
+    sample_rate: u32,
+    frame_samples: usize,
+    ready: AtomicBool,
+    closed: AtomicBool,
+    finishing: AtomicBool,
+    close_requested: AtomicBool,
+    remote_final: AtomicBool,
+    ended: AtomicBool,
+    admission: Mutex<AdmissionState>,
+    output: Mutex<OutputQueue>,
+    output_ready: Notify,
+    terminal: Notify,
+    failure: Mutex<Option<String>>,
+}
+impl Shared {
+    fn command(&self, name: &str, fields: Value) -> std::result::Result<Value, CommandFailure> {
+        let mut command = json!({"type":name,"model_id":self.model_id,
+            "request_id":self.request_id,"response_channel_id":self.channel_id.load(Ordering::Acquire)});
+        if let Some(fields) = fields.as_object() {
+            command
+                .as_object_mut()
+                .expect("command object")
+                .extend(fields.clone());
+        }
+        let response = self
+            .ipc
+            .send_management_command_blocking(command, CONTROL_TIMEOUT)?;
+        if response["status"] != "ok" {
+            let message = response["message"]
+                .as_str()
+                .unwrap_or("PIE rejected diarization command")
+                .to_owned();
+            return Err(CommandFailure {
+                error: Error::Other(message),
+                rejected: matches!(
+                    response["data"]["diarization"]["error_code"].as_str(),
+                    Some("queue_full" | "invalid_sequence" | "invalid_frame" | "gap_too_large")
+                ),
+            });
+        }
+        let data = response["data"]["diarization"].clone();
+        if !data.is_object()
+            || data["queue_depth"].as_u64().is_none()
+            || !matches!(
+                data["session_state"].as_str(),
+                Some("open" | "finishing" | "closing" | "closed")
+            )
+        {
+            return Err(Error::Other("PIE diarization ACK has no valid typed state".into()).into());
+        }
+        Ok(data)
+    }
+
+    fn require_open(&self) -> Result<()> {
+        if self.closed.load(Ordering::Acquire) || self.finishing.load(Ordering::Acquire) {
+            return Err(Error::ChannelClosed);
+        }
+        if !self.ready.load(Ordering::Acquire) {
+            return Err(Error::ModelNotReady(
+                "PIE diarization session is not ready".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn request_close(self: &Arc<Self>) {
+        self.closed.store(true, Ordering::Release);
+        if self.close_requested.swap(true, Ordering::AcqRel)
+            || self.remote_final.load(Ordering::Acquire)
+        {
+            return;
+        }
+        let shared = Arc::clone(self);
+        if let Err(error) = std::thread::Builder::new()
+            .name("orchard-diarization-close".into())
+            .spawn(move || {
+                let _serial = shared
+                    .admission
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if !shared.remote_final.load(Ordering::Acquire) {
+                    if let Err(error) = shared.command("diarization_close", json!({})) {
+                        if !shared.remote_final.load(Ordering::Acquire) {
+                            shared
+                                .finish(Some(format!("Closing PIE diarization: {}", error.error)));
+                        }
+                    }
+                }
+            })
+        {
+            self.finish(Some(format!("Starting diarization close: {error}")));
+        }
+    }
+
+    fn emit(self: &Arc<Self>, event: DiarizationEvent, bytes: usize) {
+        let mut output = self
+            .output
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if output.done {
+            return;
+        }
+        if output.events.len() >= MAX_EVENTS - 2
+            || output.bytes.saturating_add(bytes) > MAX_EVENT_BYTES
+        {
+            output.events.clear();
+            output.bytes = 0;
+            drop(output);
+            self.finish(Some(
+                "Diarization consumer is not draining its bounded event queue".into(),
+            ));
+            self.request_close();
+            return;
+        }
+        output.bytes += bytes;
+        output.events.push_back((event, bytes));
+        drop(output);
+        self.output_ready.notify_one();
+    }
+
+    fn finish(&self, failure: Option<String>) {
+        if self.ended.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.closed.store(true, Ordering::Release);
+        let mut output = self
+            .output
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(message) = failure {
+            *self
+                .failure
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = Some(message.clone());
+            output
+                .events
+                .push_back((DiarizationEvent::Error { message }, 0));
+        }
+        output.events.push_back((DiarizationEvent::Closed, 0));
+        output.done = true;
+        drop(output);
+        self.output_ready.notify_one();
+        self.terminal.notify_waiters();
+    }
+
+    fn receive(self: &Arc<Self>, delta: ResponseDelta, from_engine: bool) {
+        if delta.request_id != self.request_id {
+            self.finish(Some(
+                "PIE diarization response belongs to a different request".into(),
+            ));
+            self.request_close();
+            return;
+        }
+        if delta.is_final_delta && from_engine {
+            self.remote_final.store(true, Ordering::Release);
+            self.terminal.notify_waiters();
+        }
+        if self.ended.load(Ordering::Acquire) {
+            return;
+        }
+        if let Some(error) = delta.error.as_ref() {
+            self.finish(Some(error.clone()));
+            if !delta.is_final_delta || !from_engine {
+                self.request_close();
+            }
+            return;
+        }
+        let bytes = delta.modal_metadata_json.as_ref().map_or(0, String::len);
+        let result = decode_event(&delta, &self.session_id);
+        match result {
+            Ok(Some(mut event)) => {
+                match &mut event {
+                    DiarizationEvent::Ready {
+                        model_id,
+                        sample_rate,
+                        frame_samples,
+                        ..
+                    } => {
+                        if *model_id != self.model_id
+                            || *sample_rate != self.sample_rate
+                            || *frame_samples != self.frame_samples
+                            || self.ready.swap(true, Ordering::AcqRel)
+                        {
+                            self.finish(Some(
+                                "PIE returned incompatible diarization readiness".into(),
+                            ));
+                            self.request_close();
+                            return;
+                        }
+                        *model_id = self.public_model_id.clone();
+                    }
+                    DiarizationEvent::Closed => {
+                        if !delta.is_final_delta {
+                            self.finish(Some(
+                                "PIE diarization closed without a terminal lifecycle marker".into(),
+                            ));
+                            self.request_close();
+                        } else {
+                            self.finish(None);
+                        }
+                        return;
+                    }
+                    DiarizationEvent::Error { message } => {
+                        self.finish(Some(message.clone()));
+                        if !delta.is_final_delta {
+                            self.request_close();
+                        }
+                        return;
+                    }
+                    _ if !self.ready.load(Ordering::Acquire) => {
+                        self.finish(Some("PIE diarization emitted output before ready".into()));
+                        self.request_close();
+                        return;
+                    }
+                    _ => {}
+                }
+                self.emit(event, bytes);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.finish(Some(error.to_string()));
+                self.request_close();
+                return;
+            }
+        }
+        if delta.is_final_delta {
+            self.finish(None);
+        }
+    }
+}
+
+fn decode_event(delta: &ResponseDelta, session_id: &str) -> Result<Option<DiarizationEvent>> {
+    let Some(name) = delta.modal_event.as_deref() else {
+        return Ok(None);
+    };
+    let suffix = name
+        .strip_prefix("diarization.")
+        .ok_or_else(|| Error::Other("Unexpected diarization event type".into()))?;
+    let raw = delta.modal_metadata_json.as_deref().unwrap_or("{}");
+    if raw.len() > MAX_EVENT_BYTES {
+        return Err(Error::Other(
+            "Diarization event exceeds its metadata bound".into(),
+        ));
+    }
+    let mut value: Value = serde_json::from_str(raw)?;
+    if !value.is_object() || value["diarization_version"] != IPC_PROTOCOL_VERSION {
+        return Err(Error::Other("Unsupported diarization event version".into()));
+    }
+    if value["session_id"].as_str() != Some(session_id) {
+        return Err(Error::Other(
+            "Diarization event belongs to a different session".into(),
+        ));
+    }
+    value["type"] = suffix.into();
+    if suffix == "error" {
+        value["message"] = delta
+            .content
+            .clone()
+            .unwrap_or_else(|| "PIE diarization failed".into())
+            .into();
+    }
+    let event: DiarizationEvent = serde_json::from_value(value)
+        .map_err(|error| Error::Other(format!("Invalid diarization event: {error}")))?;
+    let nonnegative = |value: f64| value.is_finite() && value >= 0.0;
+    match &event {
+        DiarizationEvent::Ready {
+            speakers,
+            output_frame_seconds,
+            ..
+        } if *speakers != 8 || *output_frame_seconds != 0.01 => {
+            return Err(Error::Other(
+                "PIE diarization requires eight speakers at 10 ms".into(),
+            ))
+        }
+        DiarizationEvent::Update {
+            frame_seconds,
+            probabilities,
+            segments,
+            replace_segments_from_seconds,
+            compute_ms,
+            audio_seconds,
+            ..
+        } => {
+            if *frame_seconds != 0.01
+                || probabilities.len() > 240_000
+                || segments.len() > 1_000_000
+                || !nonnegative(*replace_segments_from_seconds)
+                || !nonnegative(*compute_ms)
+                || !nonnegative(*audio_seconds)
+                || probabilities
+                    .iter()
+                    .flatten()
+                    .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+                || segments.iter().any(|segment| {
+                    !(1..=8).contains(&segment.speaker_index)
+                        || segment.speaker_id
+                            != format!("{session_id}:speaker-{}", segment.speaker_index)
+                        || !nonnegative(segment.start_seconds)
+                        || !nonnegative(segment.end_seconds)
+                        || segment.end_seconds < segment.start_seconds
+                        || segment.mean_probability.is_some_and(|value| {
+                            !value.is_finite() || !(0.0..=1.0).contains(&value)
+                        })
+                })
+            {
+                return Err(Error::Other(
+                    "PIE diarization returned invalid probabilities, segments or timing".into(),
+                ));
+            }
+        }
+        DiarizationEvent::Gap {
+            start_seconds,
+            end_seconds,
+            missing_frames,
+            ..
+        } if !nonnegative(*start_seconds)
+            || !nonnegative(*end_seconds)
+            || end_seconds < start_seconds
+            || *missing_frames > 50 =>
+        {
+            return Err(Error::Other(
+                "PIE diarization returned an invalid gap".into(),
+            ))
+        }
+        DiarizationEvent::Metrics {
+            compute_ms_total,
+            compute_ms_max,
+            elapsed_ms,
+            ..
+        } if !nonnegative(*compute_ms_total)
+            || !nonnegative(*compute_ms_max)
+            || !nonnegative(*elapsed_ms) =>
+        {
+            return Err(Error::Other(
+                "PIE diarization returned invalid metrics".into(),
+            ))
+        }
+        _ => {}
+    }
+    Ok(Some(event))
 }
 
 #[derive(Clone)]
 pub struct DiarizationControl {
-    input: mpsc::Sender<Command>,
-    closed: Arc<AtomicBool>,
-    last_sequence: Arc<Mutex<Option<u64>>>,
-    frame_samples: usize,
+    shared: Arc<Shared>,
 }
 impl DiarizationControl {
-    /// Accept one 80 ms frame without waiting for inference. Queue pressure is
-    /// explicit. If the caller skips a rejected sequence, the next admission
-    /// records a gap and preserves the timestamp with the missing duration.
+    /// Admit one 80 ms frame after PIE's bounded queue ACK, without waiting for
+    /// inference. A rejected queue-full sequence may be retried unchanged.
     pub fn push_audio(&self, sequence: u64, pcm: Vec<f32>) -> Result<DiarizationAdmission> {
-        if pcm.len() != self.frame_samples || pcm.iter().any(|x| !x.is_finite() || x.abs() > 1.0) {
+        if pcm.len() != self.shared.frame_samples
+            || pcm.iter().any(|x| !x.is_finite() || x.abs() > 1.0)
+        {
             return Err(Error::Other(
                 "Diarization requires one 80 ms frame of finite mono PCM in [-1, 1]".into(),
             ));
         }
-        if self.closed.load(Ordering::Acquire) {
-            return Err(Error::ChannelClosed);
-        }
-        let mut last = self.last_sequence.lock().unwrap_or_else(|p| p.into_inner());
-        if last.is_some_and(|last| sequence <= last) {
+        let mut state = self
+            .shared
+            .admission
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.shared.require_open()?;
+        if state.last_sequence.is_some_and(|last| sequence <= last) {
             return Err(Error::Other(
                 "Diarization sequence must increase strictly".into(),
             ));
         }
-        let missing_frames = last.map_or(0, |last| sequence - last - 1);
+        let missing_frames = state.last_sequence.map_or(0, |last| sequence - last - 1);
         if missing_frames > 50 {
             return Err(Error::Other(
                 "Diarization input gap exceeds four seconds; open a new session".into(),
             ));
         }
-        self.input
-            .try_send(Command::Audio {
-                pcm,
-                missing_frames,
-            })
-            .map_err(|e| match e {
-                mpsc::error::TrySendError::Full(_) => {
-                    Error::Other("Diarization input queue is full".into())
+        let bytes = pcm
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect::<Vec<_>>();
+        let result = self.shared.command(
+            "diarization_input",
+            json!({"sequence":sequence,"pcm_f32_b64":STANDARD.encode(bytes)}),
+        );
+        let data = match result {
+            Ok(data) => data,
+            Err(failure) => {
+                if !failure.rejected {
+                    self.shared.finish(Some(format!(
+                        "PIE diarization admission: {}",
+                        failure.error
+                    )));
+                    self.shared.request_close();
                 }
-                mpsc::error::TrySendError::Closed(_) => Error::ChannelClosed,
-            })?;
-        *last = Some(sequence);
+                return Err(failure.error);
+            }
+        };
+        if data["accepted_sequence"].as_u64() != Some(sequence)
+            || data["missing_frames"].as_u64() != Some(missing_frames)
+        {
+            self.shared.finish(Some(
+                "PIE diarization ACK did not confirm the admitted sequence and gap".into(),
+            ));
+            self.shared.request_close();
+            return Err(Error::Other(
+                "PIE diarization admission ACK mismatch".into(),
+            ));
+        }
+        state.last_sequence = Some(sequence);
         Ok(DiarizationAdmission { missing_frames })
     }
-    /// Flush every accepted frame, including the last partial inference chunk.
+
+    /// Gate further input and flush every accepted frame, including the last
+    /// partial inference chunk. Continue consuming events through final Closed.
     pub async fn finish(&self) -> Result<()> {
-        self.input
-            .send(Command::Finish)
-            .await
-            .map_err(|_| Error::ChannelClosed)
+        let shared = Arc::clone(&self.shared);
+        tokio::task::spawn_blocking(move || {
+            let mut state = shared
+                .admission
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if state.finish_confirmed {
+                return Ok(());
+            }
+            if shared.closed.load(Ordering::Acquire) {
+                return Err(Error::ChannelClosed);
+            }
+            shared.finishing.store(true, Ordering::Release);
+            let data = match shared.command("diarization_finish", json!({})) {
+                Ok(data) => data,
+                Err(failure) => {
+                    shared.finish(Some(format!(
+                        "Finishing PIE diarization: {}",
+                        failure.error
+                    )));
+                    shared.request_close();
+                    return Err(failure.error);
+                }
+            };
+            if data["session_state"] == "open" {
+                return Err(Error::Other(
+                    "PIE did not gate diarization input on finish".into(),
+                ));
+            }
+            state.finish_confirmed = true;
+            Ok(())
+        })
+        .await
+        .map_err(|error| Error::Internal(format!("Diarization finish task: {error}")))?
     }
+
     pub fn close(&self) {
-        self.closed.store(true, Ordering::Release);
-        let _ = self.input.try_send(Command::Close);
+        self.shared.request_close();
     }
 }
 
 pub struct DiarizationSession {
-    control: DiarizationControl,
-    events: mpsc::Receiver<DiarizationEvent>,
+    shared: Arc<Shared>,
+    _route: StreamResponseRoute,
 }
 impl DiarizationSession {
     pub fn control(&self) -> DiarizationControl {
-        self.control.clone()
+        DiarizationControl {
+            shared: Arc::clone(&self.shared),
+        }
     }
     pub async fn next_event(&mut self) -> Option<DiarizationEvent> {
-        self.events.recv().await
+        loop {
+            let notified = self.shared.output_ready.notified();
+            {
+                let mut output = self
+                    .shared
+                    .output
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if let Some((event, bytes)) = output.events.pop_front() {
+                    output.bytes -= bytes;
+                    return Some(event);
+                }
+                if output.done {
+                    return None;
+                }
+            }
+            notified.await;
+        }
     }
-    pub(crate) fn start(model: Arc<NativeModel>, options: DiarizationOptions) -> Result<Self> {
+
+    /// Close the engine session and wait for its terminal lifecycle confirmation.
+    /// This SDK owns only IPC handles; all native state and weights belong to PIE.
+    pub async fn shutdown(&mut self) -> Result<()> {
+        self.shared.request_close();
+        tokio::time::timeout(SHUTDOWN_TIMEOUT, async {
+            loop {
+                let notified = self.shared.terminal.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if self.shared.remote_final.load(Ordering::Acquire) {
+                    return Ok(());
+                }
+                if let Some(message) = self
+                    .shared
+                    .failure
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .clone()
+                {
+                    return Err(Error::Other(message));
+                }
+                notified.await;
+            }
+        })
+        .await
+        .map_err(|_| Error::Other("PIE diarization shutdown deadline exceeded".into()))?
+    }
+
+    pub(crate) async fn open(
+        ipc: Arc<IPCClient>,
+        info: ModelInfo,
+        public_model_id: String,
+        options: DiarizationOptions,
+    ) -> Result<Self> {
         options.validate()?;
+        let request_id = ipc.next_request_id();
         let session_id = options
             .session_id
             .clone()
             .unwrap_or_else(|| format!("diar-{:016x}", rand::random::<u64>()));
-        let (input, receiver) = mpsc::channel(options.max_pending_frames);
-        let (output, events) = mpsc::channel(32);
-        let closed = Arc::new(AtomicBool::new(false));
-        let control = DiarizationControl {
-            input,
-            closed: Arc::clone(&closed),
-            last_sequence: Arc::new(Mutex::new(None)),
+        let shared = Arc::new(Shared {
+            ipc: Arc::clone(&ipc),
+            model_id: info.model_id.clone(),
+            public_model_id,
+            session_id: session_id.clone(),
+            request_id,
+            channel_id: AtomicU64::new(0),
+            sample_rate: options.sample_rate,
             frame_samples: options.frame_samples(),
-        };
-        std::thread::Builder::new()
-            .name("orchard-nemotron-diarization".into())
-            .spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run(
-                        Arc::clone(&model),
-                        &options,
-                        &session_id,
-                        receiver,
-                        &output,
-                        closed.as_ref(),
-                    )
-                }));
-                match result {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        let _ = output.blocking_send(DiarizationEvent::Error {
-                            message: e.to_string(),
-                        });
-                    }
-                    Err(_) => {
-                        let _ = output.blocking_send(DiarizationEvent::Error {
-                            message: "Native diarization task panicked".into(),
-                        });
-                    }
+            ready: AtomicBool::new(false),
+            closed: AtomicBool::new(false),
+            finishing: AtomicBool::new(false),
+            close_requested: AtomicBool::new(false),
+            remote_final: AtomicBool::new(false),
+            ended: AtomicBool::new(false),
+            admission: Mutex::new(AdmissionState::default()),
+            output: Mutex::new(OutputQueue::default()),
+            output_ready: Notify::new(),
+            terminal: Notify::new(),
+            failure: Mutex::new(None),
+        });
+        let weak = Arc::downgrade(&shared);
+        let route = ipc.bind_diarization_route(
+            request_id,
+            Arc::new(move |delta, from_engine| {
+                if let Some(shared) = weak.upgrade() {
+                    shared.receive(delta, from_engine);
                 }
-                closed.store(true, Ordering::Release);
-                let _ = output.blocking_send(DiarizationEvent::Closed);
-            })?;
-        Ok(Self { control, events })
+            }),
+        )?;
+        shared.channel_id.store(route.channel_id, Ordering::Release);
+        let prompt = PromptPayload {
+            num_candidates: 1,
+            max_generated_tokens: 1,
+            modal_options_json:
+                json!({"diarization_version":IPC_PROTOCOL_VERSION,"sample_rate":options.sample_rate,
+                "max_pending_frames":options.max_pending_frames,"session_id":session_id})
+                .to_string(),
+            ..Default::default()
+        };
+        ipc.send_diarization_request(
+            request_id,
+            &info.model_id,
+            &info.model_path,
+            route.channel_id,
+            prompt,
+        )?;
+        let session = Self {
+            shared,
+            _route: route,
+        };
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let notified = session.shared.output_ready.notified();
+                if session.shared.ended.load(Ordering::Acquire) {
+                    return Err(Error::Other(
+                        session
+                            .shared
+                            .failure
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .clone()
+                            .unwrap_or_else(|| "PIE closed diarization before ready".into()),
+                    ));
+                }
+                if session.shared.ready.load(Ordering::Acquire) {
+                    return Ok(());
+                }
+                notified.await;
+            }
+        })
+        .await
+        .map_err(|_| Error::Other("PIE diarization ready deadline exceeded".into()))??;
+        Ok(session)
     }
 }
 impl Drop for DiarizationSession {
     fn drop(&mut self) {
-        self.control.close();
+        self.shared.request_close();
     }
-}
-
-fn publish(
-    stream: &native::NativeStream,
-    session_id: &str,
-    last_frame: &mut u64,
-    output: &mpsc::Sender<DiarizationEvent>,
-    compute_ms: f64,
-    audio_seconds: f64,
-    finished: bool,
-) -> Result<()> {
-    if stream.frame_count()? == *last_frame && !finished {
-        return Ok(());
-    }
-    let snapshot = stream.snapshot()?;
-    let frame_start = (*last_frame).max(snapshot.first_frame);
-    let offset = (frame_start - snapshot.first_frame) as usize;
-    let probabilities = snapshot.probabilities[offset..].to_vec();
-    let labeled_seconds = snapshot.frame_count as f64 * 0.01;
-    // The native V3 stream commits chunk probabilities (no legacy V2 birth
-    // heuristic). Segmentation can still widen/merge a recent edge, so upsert
-    // the last two seconds instead of pretending those edges are immutable.
-    let replace_from = if finished {
-        0.0
-    } else {
-        (labeled_seconds - 2.0).max(0.0)
-    };
-    let mut segments = Vec::new();
-    for segment in snapshot.segments {
-        if segment.end_time < replace_from {
-            continue;
-        }
-        if !(1..=8).contains(&segment.speaker)
-            || !segment.start_time.is_finite()
-            || !segment.end_time.is_finite()
-            || segment.end_time < segment.start_time
-        {
-            return Err(Error::Other("Native diarization segment is invalid".into()));
-        }
-        let start = (segment.start_time / 0.01).floor().max(0.0) as u64;
-        let end = ((segment.end_time / 0.01).ceil() as u64).min(snapshot.frame_count);
-        let mean_probability = if start >= snapshot.first_frame && end > start {
-            let sum: f32 = snapshot.probabilities
-                [(start - snapshot.first_frame) as usize..(end - snapshot.first_frame) as usize]
-                .iter()
-                .map(|frame| frame[(segment.speaker - 1) as usize])
-                .sum();
-            Some(sum / (end - start) as f32)
-        } else {
-            None
-        };
-        segments.push(SpeakerSegment {
-            speaker_id: format!("{session_id}:speaker-{}", segment.speaker),
-            speaker_index: segment.speaker as u8,
-            start_seconds: segment.start_time,
-            end_seconds: segment.end_time,
-            mean_probability,
-            provisional: !finished && segment.end_time > labeled_seconds - 1.25,
-        });
-    }
-    *last_frame = snapshot.frame_count;
-    output
-        .blocking_send(DiarizationEvent::Update {
-            session_id: session_id.to_owned(),
-            frame_start,
-            frame_seconds: 0.01,
-            probabilities,
-            segments,
-            replace_segments_from_seconds: replace_from,
-            compute_ms,
-            audio_seconds,
-            finished,
-        })
-        .map_err(|_| Error::ChannelClosed)
-}
-
-fn run(
-    model: Arc<NativeModel>,
-    options: &DiarizationOptions,
-    session_id: &str,
-    mut input: mpsc::Receiver<Command>,
-    output: &mpsc::Sender<DiarizationEvent>,
-    closed: &AtomicBool,
-) -> Result<()> {
-    let started = Instant::now();
-    let mut stream = native::NativeStream::open(Arc::clone(&model))?;
-    output
-        .blocking_send(DiarizationEvent::Ready {
-            session_id: session_id.into(),
-            model_id: DEFAULT_MODEL.into(),
-            speakers: 8,
-            sample_rate: options.sample_rate,
-            frame_samples: options.frame_samples(),
-            output_frame_seconds: 0.01,
-        })
-        .map_err(|_| Error::ChannelClosed)?;
-    let (mut frames, mut missing, mut last_frame) = (0_u64, 0_u64, 0_u64);
-    let (mut total_ms, mut max_ms) = (0.0_f64, 0.0_f64);
-    while let Some(command) = input.blocking_recv() {
-        if closed.load(Ordering::Acquire) {
-            break;
-        }
-        match command {
-            Command::Close => break,
-            Command::Finish => {
-                let begin = Instant::now();
-                stream.finish()?;
-                let ms = begin.elapsed().as_secs_f64() * 1000.0;
-                total_ms += ms;
-                max_ms = max_ms.max(ms);
-                publish(
-                    &stream,
-                    session_id,
-                    &mut last_frame,
-                    output,
-                    ms,
-                    (frames + missing) as f64 * 0.08,
-                    true,
-                )?;
-                break;
-            }
-            Command::Audio {
-                pcm,
-                missing_frames,
-            } => {
-                if missing_frames != 0 {
-                    let start = (frames + missing) as f64 * 0.08;
-                    output
-                        .blocking_send(DiarizationEvent::Gap {
-                            session_id: session_id.into(),
-                            start_seconds: start,
-                            end_seconds: start + missing_frames as f64 * 0.08,
-                            missing_frames,
-                        })
-                        .map_err(|_| Error::ChannelClosed)?;
-                }
-                let begin = Instant::now();
-                for _ in 0..missing_frames {
-                    stream.push(&vec![0.0; options.frame_samples()], options.sample_rate)?;
-                }
-                stream.push(&pcm, options.sample_rate)?;
-                let ms = begin.elapsed().as_secs_f64() * 1000.0;
-                total_ms += ms;
-                max_ms = max_ms.max(ms);
-                frames += 1;
-                missing += missing_frames;
-                publish(
-                    &stream,
-                    session_id,
-                    &mut last_frame,
-                    output,
-                    ms,
-                    (frames + missing) as f64 * 0.08,
-                    false,
-                )?;
-            }
-        }
-    }
-    let _ = output.blocking_send(DiarizationEvent::Metrics {
-        session_id: session_id.into(),
-        input_frames: frames,
-        missing_input_frames: missing,
-        output_frames: last_frame,
-        compute_ms_total: total_ms,
-        compute_ms_max: max_ms,
-        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
-        model_weight_bytes: model.weight_bytes,
-    });
-    Ok(())
-}
-
-pub(crate) async fn resolve(model_id: &str) -> Result<(PathBuf, PathBuf, DiarizationArchitecture)> {
-    let profile = architecture()?;
-    let path = if Path::new(model_id).is_file() {
-        PathBuf::from(model_id)
-    } else {
-        if model_id != profile.model_id {
-            return Err(Error::ModelNotFound(model_id.into()));
-        }
-        let cache = Cache::from_env();
-        let direct = cache
-            .path()
-            .join(format!("models--{}", model_id.replace('/', "--")))
-            .join("snapshots")
-            .join(&profile.revision)
-            .join(&profile.model_file);
-        if direct.is_file() {
-            direct
-        } else {
-            let api = hf_hub::api::tokio::ApiBuilder::from_env()
-                .with_progress(false)
-                .build()
-                .map_err(|e| Error::HfApiInit(e.to_string()))?;
-            api.repo(Repo::with_revision(
-                model_id.into(),
-                RepoType::Model,
-                profile.revision.clone(),
-            ))
-            .get(&profile.model_file)
-            .await
-            .map_err(|e| Error::DownloadFailed(model_id.into(), e.to_string()))?
-        }
-    };
-    #[cfg(target_os = "macos")]
-    let library_name = "libnemo_speech_asr_c.dylib";
-    #[cfg(target_os = "windows")]
-    let library_name = "nemo_speech_asr_c.dll";
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let library_name = "libnemo_speech_asr_c.so";
-    let bundled = std::env::current_exe().ok().and_then(|exe| {
-        let directory = exe.parent()?;
-        [
-            directory.join(library_name),
-            directory.join("../Frameworks").join(library_name),
-        ]
-        .into_iter()
-        .find(|path| path.is_file())
-    });
-    let library = if let Some(path) = std::env::var_os("ORCHARD_NEMO_LIBRARY") {
-        PathBuf::from(path)
-    } else if let Some(path) = bundled {
-        path
-    } else {
-        let engine = crate::EngineFetcher::new().get_engine_path().await?;
-        let root = engine
-            .parent()
-            .and_then(Path::parent)
-            .ok_or_else(|| Error::Other("Invalid Orchard engine bundle".into()))?;
-        root.join("lib").join(library_name)
-    };
-    if !library.is_file() {
-        return Err(Error::ModelNotReady(format!("This Orchard engine lacks the native Nemotron3 architecture: {}. Update or build the engine bundle.",library.display())));
-    }
-    Ok((library, path, profile))
-}
-
-pub(crate) fn load_verified(
-    library: PathBuf,
-    path: PathBuf,
-    profile: DiarizationArchitecture,
-    options: DiarizationOptions,
-) -> Result<NativeModel> {
-    let mut file = std::fs::File::open(&path)?;
-    if file.metadata()?.len() != profile.size_bytes {
-        return Err(Error::Other(
-            "Nemotron3 model size differs from the pinned official checkpoint".into(),
-        ));
-    }
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0u8; 1024 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hash.update(&buffer[..count]);
-    }
-    let actual = format!("{:x}", hash.finalize());
-    if actual != profile.sha256 {
-        return Err(Error::Integrity {
-            expected: profile.sha256,
-            actual,
-        });
-    }
-    NativeModel::load(library, path, &options)
 }
 
 /// Match a word/utterance interval to anonymous tracks, retaining overlaps.
