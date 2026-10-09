@@ -3,9 +3,10 @@
 //! Mirrors orchard-py/tests/functional/test_unicode_payload.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
-use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test that unicode (emoji) payloads round-trip correctly without corruption.
 /// Mirrors: test_unicode_payload.py::test_unicode_payload_round_trip
@@ -34,7 +35,7 @@ async fn test_unicode_payload_round_trip() {
     let messages = &messages;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut params = params.clone();
-        params.max_tokens = completion_budget(model_id, params.max_tokens);
+        params.max_tokens = semantic_token_limit(model_id, params.max_tokens);
         let result = client.achat(model_id, messages.clone(), params, true).await;
         assert!(
             result.is_ok(),

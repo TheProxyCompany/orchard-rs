@@ -3,12 +3,13 @@
 //! Mirrors orchard-py/tests/functional/test_responses_basic.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::{
     OutputStatus, ResponseEvent, ResponseOutputItem, ResponsesInput, ResponsesRequest,
     ResponsesResult,
 };
 
-use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 const SYSTEM_PROMPT_COMPLIANCE_SENTINEL: &str = "7-4-7";
 const SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS: &str =
@@ -45,7 +46,7 @@ async fn test_responses_non_streaming_string_input() {
 
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = ResponsesRequest::from_text("Say hello in one sentence.");
-        request.max_output_tokens = Some(completion_budget(model_id, 32));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 32));
         request.temperature = Some(0.0);
         request.reasoning = Some(false.into());
 
@@ -108,7 +109,7 @@ async fn test_responses_non_streaming_message_items() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(completion_budget(model_id, 8)),
+            max_output_tokens: Some(semantic_token_limit(model_id, 8)),
             top_logprobs: None,
             core_tools: Vec::new(),
             active_tools: Vec::new(),
@@ -207,7 +208,7 @@ async fn test_responses_streaming_event_sequence() {
         let mut request = ResponsesRequest::from_text("Say hello in one sentence.");
         request.stream = true;
         request.temperature = Some(0.0);
-        request.max_output_tokens = Some(completion_budget(model_id, 32));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 32));
         request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
@@ -301,7 +302,7 @@ async fn test_responses_streaming_delta_accumulation() {
         let mut request = ResponsesRequest::from_text("Count from 1 to 5.");
         request.stream = true;
         request.temperature = Some(0.0);
-        request.max_output_tokens = Some(completion_budget(model_id, 64));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 64));
         request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
@@ -351,7 +352,7 @@ async fn test_responses_streaming_completed_snapshot() {
         let mut request = ResponsesRequest::from_text("Test. Respond with 'test received'");
         request.stream = true;
         request.temperature = Some(0.0);
-        request.max_output_tokens = Some(completion_budget(model_id, 64));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 64));
         request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;
@@ -501,7 +502,7 @@ async fn test_responses_instructions() {
         let mut request = ResponsesRequest::from_text("What is your name?");
         request.instructions = Some(SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS.to_string());
         request.temperature = Some(0.0);
-        request.max_output_tokens = Some(completion_budget(model_id, 64));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 64));
         request.reasoning = Some(false.into());
 
         let result = client.aresponses(model_id, request).await;

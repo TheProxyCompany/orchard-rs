@@ -3,9 +3,10 @@
 //! Mirrors orchard-py/tests/functional/test_determinism.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
-use crate::fixture::{completion_budget, fanout, get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, ALL_MODELS};
 
 async fn run_multi_candidate_determinism(batch_size: i32) {
     use std::collections::HashMap;
@@ -15,7 +16,7 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
 
     fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: completion_budget(model_id, 64),
+            max_tokens: semantic_token_limit(model_id, 64),
             temperature: 0.0,
             deterministic: true,
             n: batch_size,
@@ -131,7 +132,7 @@ async fn run_sequential_request_determinism() {
         let mut valid_responses = 0;
 
         let params = SamplingParams {
-            max_tokens: completion_budget(model_id, 64),
+            max_tokens: semantic_token_limit(model_id, 64),
             temperature: 0.0,
             deterministic: true,
             reasoning: Some(false),

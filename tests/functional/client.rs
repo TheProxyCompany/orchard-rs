@@ -6,7 +6,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{completion_budget, fanout, get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, semantic_token_limit, ALL_MODELS};
 
 async fn run_client_chat_non_streaming(prompt: &str) {
     let fixture = get_fixture().await;
@@ -14,7 +14,7 @@ async fn run_client_chat_non_streaming(prompt: &str) {
 
     fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: completion_budget(model_id, 5),
+            max_tokens: semantic_token_limit(model_id, 5),
             temperature: 0.0,
             reasoning: Some(false),
             ..Default::default()
@@ -45,7 +45,7 @@ async fn run_client_chat_non_streaming(prompt: &str) {
                     "Should have generated tokens for {}",
                     model_id
                 );
-                if completion_budget(model_id, 5) == 5 {
+                if semantic_token_limit(model_id, 5) == 5 {
                     assert_eq!(response.usage.completion_tokens, 5);
                 } else {
                     // Reasoning can use the whole literal cap before any text.
@@ -70,6 +70,15 @@ async fn run_client_chat_non_streaming(prompt: &str) {
                         capped.usage.completion_tokens, 5,
                         "literal cap for {model_id}"
                     );
+                    assert_eq!(
+                        capped
+                            .deltas
+                            .iter()
+                            .filter_map(|delta| delta.generation_len)
+                            .max(),
+                        Some(5),
+                        "literal engine cap for {model_id}"
+                    );
                     assert_eq!(capped.finish_reason.as_deref(), Some("length"));
                 }
             }
@@ -87,7 +96,7 @@ async fn run_client_chat_streaming(prompt: &str) {
 
     fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: completion_budget(model_id, 96),
+            max_tokens: semantic_token_limit(model_id, 96),
             temperature: 0.7,
             reasoning: Some(false),
             ..Default::default()

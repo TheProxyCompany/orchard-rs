@@ -5,7 +5,7 @@
 
 use orchard::{OutputStatus, ResponseOutputItem, ResponsesRequest, ResponsesResult};
 
-use crate::fixture::{completion_budget, fanout, get_fixture, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, semantic_token_limit, TEXT_MODELS};
 
 #[tokio::test]
 async fn test_responses_structured_json_schema() {
@@ -40,7 +40,7 @@ async fn test_responses_structured_json_schema() {
     let request = &request;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let mut request = request.clone();
-        request.max_output_tokens = Some(completion_budget(model_id, 64));
+        request.max_output_tokens = Some(semantic_token_limit(model_id, 64));
         let result = client.aresponses(model_id, request).await;
         assert!(
             result.is_ok(),

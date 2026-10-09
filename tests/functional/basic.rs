@@ -3,9 +3,10 @@
 //! Mirrors orchard-py/tests/functional/test_basic.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
-use crate::fixture::{completion_budget, fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
 
 /// Test basic non-streaming chat completion with a single token.
 /// Mirrors: test_basic.py::test_chat_completion_first_token
@@ -68,7 +69,7 @@ async fn test_chat_completion_multi_token() {
     let fixture = get_fixture().await;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: completion_budget(model_id, 64), // max_completion_tokens in Python
+            max_tokens: semantic_token_limit(model_id, 64), // max_completion_tokens in Python
             temperature: 0.0,
             reasoning: Some(false),
             ..Default::default()

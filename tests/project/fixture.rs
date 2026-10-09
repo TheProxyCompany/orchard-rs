@@ -136,19 +136,6 @@ pub(crate) const MODELS: &[Model] = &[
     },
 ];
 
-/// Semantic checks need room for mandatory reasoning before visible output.
-/// Literal token-cap tests intentionally bypass this helper.
-pub(crate) fn completion_budget(model_id: &str, visible_budget: i32) -> i32 {
-    if MODELS
-        .iter()
-        .any(|model| model.checkpoint == model_id && model.thinking == Thinking::Required)
-    {
-        visible_budget.max(512)
-    } else {
-        visible_budget
-    }
-}
-
 pub(crate) const TEXT_MODELS: &[&str] = &[
     LLAMA_MODEL_ID,
     GEMMA4_MODEL_ID,
@@ -338,4 +325,35 @@ pub(crate) fn make_message(role: &str, content: &str) -> HashMap<String, serde_j
     msg.insert("role".to_string(), serde_json::json!(role));
     msg.insert("content".to_string(), serde_json::json!(content));
     msg
+}
+
+/// A semantic answer/tool test needs the room mandatory reasoning used to receive
+/// outside the output cap. Truncation tests keep their explicit small total caps.
+pub(crate) fn requires_reasoning(model_id: &str) -> bool {
+    MODELS
+        .iter()
+        .any(|model| model.checkpoint == model_id && model.thinking == Thinking::Required)
+}
+
+pub(crate) fn semantic_token_limit(model_id: &str, answer_tokens: i32) -> i32 {
+    assert!(answer_tokens > 0);
+    answer_tokens
+        + if requires_reasoning(model_id) {
+            8192
+        } else {
+            0
+        }
+}
+
+#[test]
+fn semantic_budget_only_adds_room_for_mandatory_reasoning() {
+    for model in MODELS {
+        let expected = if model.thinking == Thinking::Required {
+            8256
+        } else {
+            64
+        };
+        assert_eq!(semantic_token_limit(model.checkpoint, 64), expected);
+    }
+    assert_eq!(semantic_token_limit("unlisted/checkpoint", 5), 5);
 }

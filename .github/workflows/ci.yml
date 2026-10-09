@@ -31,7 +31,6 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
@@ -39,6 +38,20 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Install pinned Rust tools
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          if ! command -v rustup >/dev/null; then
+            export PATH="$(brew --prefix rustup)/bin:$PATH"
+            echo "$(brew --prefix rustup)/bin" >> "$GITHUB_PATH"
+          fi
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy
+          echo "RUSTUP_TOOLCHAIN=1.97.1" >> "$GITHUB_ENV"
+          rustup run 1.97.1 cargo fmt --version
+          rustup run 1.97.1 cargo clippy --version
 
       - name: Check formatting
         run: cargo fmt --check
@@ -57,7 +70,7 @@ jobs:
         with:
           repository: TheProxyCompany/proxy-inference-engine
           # Root #38's reviewed engine; testing main would certify another package.
-          ref: 7c52109727936decb097f36f0490a93e6125fd2e
+          ref: a62e10ed529b713a311e60090fb0fcace00ff2de
           token: ${{ secrets.GH_PAT }}
           path: .ci/proxy-inference-engine
           submodules: recursive
@@ -65,7 +78,7 @@ jobs:
       - name: Verify reviewed PIE revision
         working-directory: .ci/proxy-inference-engine
         run: |
-          pie_expected=7c52109727936decb097f36f0490a93e6125fd2e
+          pie_expected=a62e10ed529b713a311e60090fb0fcace00ff2de
           pie_actual="$(git rev-parse HEAD)"
           echo "PIE revision: $pie_actual"
           test "$pie_actual" = "$pie_expected"
@@ -101,7 +114,18 @@ jobs:
               metadata["cpu"] = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
           (output / "revisions.json").write_text(json.dumps(metadata, indent=2) + "\n")
           PY
-          RUST_BACKTRACE=1 PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release" cargo test --release --test buckshot -- --nocapture
+          export RUST_BACKTRACE=1 PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release"
+          python3 - <<'PYTEST'
+          import fcntl, subprocess
+          # Share the same lease as orchard-py and explicit local acceptance runs.
+          with open("/tmp/proxy-gpu.lease", "a") as lease:
+              print("Waiting for the runner GPU lease", flush=True)
+              fcntl.flock(lease, fcntl.LOCK_EX)
+              print("Runner GPU lease acquired", flush=True)
+              subprocess.run([
+                  "cargo", "test", "--release", "--test", "buckshot", "--", "--nocapture",
+              ], check=True)
+          PYTEST
 
       - name: Upload golden-drift evidence
         if: failure()
