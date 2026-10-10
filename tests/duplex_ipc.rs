@@ -255,7 +255,7 @@ impl FakePie {
         let actual_root = endpoints::ipc_root();
         assert!(
             actual_root.starts_with(root),
-            "IPC escaped the private test root: {actual_root:?}"
+            "IPC escaped the private test root"
         );
         let cache = root.join("cache");
         std::fs::create_dir_all(&cache).unwrap();

@@ -733,7 +733,12 @@ impl ModelRegistry {
     ) -> Result<(ModelLoadState, String), String> {
         let options = match &request.options {
             ModelLoadOptions::Automatic => crate::model::operations::source_options(&request.model),
-            explicit => explicit.clone(),
+            #[cfg(feature = "duplex")]
+            ModelLoadOptions::Duplex(options) => ModelLoadOptions::Duplex(options.clone()),
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(options) => {
+                ModelLoadOptions::Diarization(options.clone())
+            }
         };
         match options {
             #[cfg(feature = "duplex")]
