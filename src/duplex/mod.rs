@@ -175,7 +175,15 @@ pub enum DuplexEvent {
     },
     RetrievalRequested {
         epoch: u64,
+        /// Output sequence is a presentation counter, not microphone identity.
         sequence: u64,
+        /// Exact host input frame used by this step. Native synthetic silence
+        /// and older engines may have no captured input to correlate.
+        #[serde(default)]
+        input_sequence: Option<u64>,
+        /// Native model clock, independent of input and output sequences.
+        #[serde(default)]
+        model_step: Option<u64>,
     },
     Closed,
 }
@@ -214,6 +222,8 @@ struct Shared {
     closed: AtomicBool,
     ended: AtomicBool,
     supports_reference: AtomicBool,
+    supports_grounded_response: AtomicBool,
+    supports_response_hold: AtomicBool,
     autonomous: bool,
     input: Mutex<InputQueue>,
     input_wake: Condvar,
@@ -389,6 +399,16 @@ impl Shared {
                         .unwrap_or(Value::Null);
                         self.supports_reference.store(
                             meta["supports_reference"].as_bool().unwrap_or(false),
+                            Ordering::Release,
+                        );
+                        self.supports_grounded_response.store(
+                            meta["supports_grounded_response"]
+                                .as_bool()
+                                .unwrap_or(false),
+                            Ordering::Release,
+                        );
+                        self.supports_response_hold.store(
+                            meta["supports_response_hold"].as_bool().unwrap_or(false),
                             Ordering::Release,
                         );
                         self.update_epoch(*epoch);
@@ -617,6 +637,18 @@ impl DuplexControl {
     pub fn supports_reference(&self) -> bool {
         self.shared.supports_reference.load(Ordering::Acquire)
     }
+    /// Whether this live session can begin a model-authored response to context.
+    /// Older native engines omit the Ready capability and report false.
+    pub fn supports_grounded_response(&self) -> bool {
+        self.shared
+            .supports_grounded_response
+            .load(Ordering::Acquire)
+    }
+    /// Whether this live session can wait for context before responding.
+    /// Older native engines omit the Ready capability and report false.
+    pub fn supports_response_hold(&self) -> bool {
+        self.shared.supports_response_hold.load(Ordering::Acquire)
+    }
     pub fn is_autonomous(&self) -> bool {
         self.shared.autonomous
     }
@@ -693,6 +725,70 @@ impl DuplexControl {
             .as_u64()
             .ok_or_else(|| Error::Other("PIE reference ACK has no version".into()))
     }
+    /// Ask the native session to wait for a grounded reply without changing epoch.
+    /// Returns its reference version; the audio clock and microphone remain active.
+    pub fn hold_response(&self, expected_epoch: u64) -> Result<u64> {
+        self.require_open()?;
+        if !self.supports_response_hold() {
+            return Err(Error::Other(
+                "This PIE duplex session does not support response holds".into(),
+            ));
+        }
+        if expected_epoch != self.epoch() {
+            return Err(Error::Other(
+                "Response hold belongs to an interrupted epoch".into(),
+            ));
+        }
+        let data = self
+            .shared
+            .command("duplex_hold_response", expected_epoch, json!({}))?;
+        if data["epoch"].as_u64() != Some(expected_epoch) || self.epoch() != expected_epoch {
+            return Err(Error::Other(
+                "Response hold epoch changed during admission".into(),
+            ));
+        }
+        data["reference_version"]
+            .as_u64()
+            .filter(|version| *version > 0)
+            .ok_or_else(|| {
+                Error::Other("PIE response hold ACK has no valid reference version".into())
+            })
+    }
+    /// Supply factual context and request a natural response in the model's own words.
+    /// Returns the queued reference version, not evidence of generated or played audio.
+    /// Background `reference` calls never request this response cue.
+    pub fn grounded_reply(&self, context: String, expected_epoch: u64) -> Result<u64> {
+        self.require_open()?;
+        if !self.supports_grounded_response() {
+            return Err(Error::Other(
+                "This PIE duplex session does not support grounded responses".into(),
+            ));
+        }
+        if expected_epoch != self.epoch() {
+            return Err(Error::Other(
+                "Grounded response belongs to an interrupted epoch".into(),
+            ));
+        }
+        if context.trim().is_empty() || context.len() > MAX_REFERENCE_BYTES {
+            return Err(Error::Other(
+                "Grounded response context must contain 1..8192 UTF-8 bytes".into(),
+            ));
+        }
+        let data = self
+            .shared
+            .command("duplex_reply", expected_epoch, json!({"text":context}))?;
+        if data["epoch"].as_u64() != Some(expected_epoch) || self.epoch() != expected_epoch {
+            return Err(Error::Other(
+                "Grounded response epoch changed during admission".into(),
+            ));
+        }
+        data["reference_version"]
+            .as_u64()
+            .filter(|version| *version > 0)
+            .ok_or_else(|| {
+                Error::Other("PIE grounded response ACK has no valid reference version".into())
+            })
+    }
     fn advance(&self, name: &str) -> Result<u64> {
         self.require_open()?;
         let previous = self.epoch();
@@ -712,29 +808,34 @@ impl DuplexControl {
     pub fn reset(&self) -> Result<u64> {
         self.advance("duplex_reset")
     }
+    /// Queue supplied speech without interrupting the autonomous session.
     pub fn speak(&self, text: String, replace: bool) -> Result<u64> {
+        self.speak_in_epoch(text, replace, self.epoch())
+    }
+    /// Reject a supplied reply if its original conversation epoch has changed.
+    pub fn speak_in_epoch(&self, text: String, replace: bool, expected_epoch: u64) -> Result<u64> {
         self.require_open()?;
-        if self.supports_reference() && self.is_autonomous() {
-            let epoch = if replace {
-                self.interrupt()?
-            } else {
-                self.epoch()
-            };
-            self.reference(text, epoch)?;
-            return Ok(epoch);
+        if expected_epoch != self.epoch() {
+            return Err(Error::Other(
+                "Supplied speech belongs to an interrupted epoch".into(),
+            ));
         }
         if text.trim().is_empty() || text.len() > MAX_REFERENCE_BYTES {
             return Err(Error::Other(
                 "Speech text exceeds 8192 UTF-8 bytes or is empty".into(),
             ));
         }
-        let epoch = self.epoch();
-        self.shared.command(
+        let data = self.shared.command(
             "duplex_speak",
-            epoch,
+            expected_epoch,
             json!({"text":text,"replace":replace}),
         )?;
-        Ok(epoch)
+        if data["epoch"].as_u64() != Some(expected_epoch) || self.epoch() != expected_epoch {
+            return Err(Error::Other(
+                "Supplied speech epoch changed during admission".into(),
+            ));
+        }
+        Ok(expected_epoch)
     }
     pub fn close(&self) -> Result<()> {
         self.shared.close();
@@ -785,6 +886,8 @@ impl DuplexSession {
             closed: AtomicBool::new(false),
             ended: AtomicBool::new(false),
             supports_reference: AtomicBool::new(false),
+            supports_grounded_response: AtomicBool::new(false),
+            supports_response_hold: AtomicBool::new(false),
             autonomous: options.autonomous,
             input: Mutex::new(InputQueue::default()),
             input_wake: Condvar::new(),
@@ -883,6 +986,8 @@ mod tests {
             closed: AtomicBool::new(false),
             ended: AtomicBool::new(false),
             supports_reference: AtomicBool::new(true),
+            supports_grounded_response: AtomicBool::new(false),
+            supports_response_hold: AtomicBool::new(false),
             autonomous: true,
             input: Mutex::new(InputQueue::default()),
             input_wake: Condvar::new(),
@@ -1073,6 +1178,65 @@ mod tests {
         delta.modal_metadata_json =
             Some(json!({"duplex_version":1,"epoch":3,"sequence":7}).to_string());
         assert!(decode_event(&delta).is_err());
+    }
+
+    #[test]
+    fn retrieval_correlation_preserves_distinct_native_counters_and_unknown_input() {
+        let decode = |metadata: Value| {
+            decode_event(&ResponseDelta {
+                modal_event: Some("duplex.retrieval_requested".into()),
+                modal_metadata_json: Some(metadata.to_string()),
+                ..Default::default()
+            })
+        };
+        for (input, step) in [(0, 1), (123, 987), (u64::MAX, u64::MAX)] {
+            let event = decode(json!({"duplex_version":1,"epoch":3,"sequence":7,
+                "input_sequence":input,"model_step":step}))
+            .unwrap()
+            .unwrap();
+            assert!(matches!(&event, DuplexEvent::RetrievalRequested {
+                epoch: 3, sequence: 7, input_sequence: Some(actual_input), model_step: Some(actual_step),
+            } if *actual_input == input && *actual_step == step));
+            // The CLI serializes this same event. Neither input identity nor
+            // the native clock may disappear on the next protocol boundary.
+            let forwarded = serde_json::to_value(&event).unwrap();
+            assert_eq!(forwarded["type"], "retrieval_requested");
+            assert_eq!(forwarded["input_sequence"], input);
+            assert_eq!(forwarded["model_step"], step);
+        }
+        for metadata in [
+            json!({"duplex_version":1,"epoch":3,"sequence":7}),
+            json!({"duplex_version":1,"epoch":3,"sequence":7,"input_sequence":null,"model_step":null}),
+        ] {
+            assert!(matches!(
+                decode(metadata).unwrap().unwrap(),
+                DuplexEvent::RetrievalRequested {
+                    epoch: 3,
+                    sequence: 7,
+                    input_sequence: None,
+                    model_step: None,
+                }
+            ));
+        }
+        assert!(matches!(
+            decode(json!({"duplex_version":1,"epoch":3,"sequence":7,
+            "input_sequence":null,"model_step":987}))
+            .unwrap()
+            .unwrap(),
+            DuplexEvent::RetrievalRequested {
+                input_sequence: None,
+                model_step: Some(987),
+                ..
+            }
+        ));
+        // Invalid identity must fail closed, not silently become unknown.
+        for field in ["input_sequence", "model_step"] {
+            for bad in [json!(-1), json!(1.5), json!("123")] {
+                let mut metadata = json!({"duplex_version":1,"epoch":3,"sequence":7});
+                metadata[field] = bad;
+                assert!(decode(metadata).is_err());
+            }
+        }
     }
 
     #[test]

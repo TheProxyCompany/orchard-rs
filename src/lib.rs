@@ -26,6 +26,8 @@ pub use engine::fetch::EngineFetcher;
 pub use engine::lifecycle::{EnginePaths, InferenceEngine};
 pub use engine::multiprocess;
 
+pub use model::catalog::{catalog_capabilities, catalog_models, catalog_operations, CatalogModel};
+pub use model::operations::{AudioGeometry, ModelLoadOptions, ModelLoadRequest, ModelOperations};
 pub use model::registry::{ModelEntry, ModelInfo, ModelLoadState, ModelRegistry};
 pub use model::resolver::{ModelResolver, ResolvedModel};
 

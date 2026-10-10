@@ -13,6 +13,7 @@ use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 use crate::error::Error;
 use crate::formatter::ChatFormatter;
 use crate::ipc::client::IPCClient;
+use crate::model::operations::{ModelLoadOptions, ModelLoadRequest, ModelOperations};
 use crate::model::resolver::{ModelResolver, ResolvedModel};
 
 /// Model load state machine.
@@ -165,7 +166,12 @@ impl ModelRegistry {
         options: crate::duplex::DuplexOptions,
     ) -> Result<crate::duplex::DuplexSession, Error> {
         options.validate()?;
-        let info = self.ensure_loaded(model_id).await?;
+        let info = self
+            .ensure_prepared(&ModelLoadRequest {
+                model: model_id.into(),
+                options: ModelLoadOptions::Duplex(options.clone()),
+            })
+            .await?;
         let ipc = self
             .ipc_client
             .read()
@@ -285,14 +291,11 @@ impl ModelRegistry {
         model_id: &str,
         options: crate::diarization::DiarizationOptions,
     ) -> Result<crate::diarization::DiarizationSession, Error> {
-        options.validate()?;
-        let (_, canonical_id) = self
-            .prepare_diarization_source(model_id, &options, false)
-            .await?;
-        // Variant IDs are internal, immutable engine bindings. Do not retarget
-        // another live default-device session through the base model alias.
         let info = self
-            .activate_scheduled_model(&canonical_id, &canonical_id)
+            .ensure_prepared(&ModelLoadRequest {
+                model: model_id.into(),
+                options: ModelLoadOptions::Diarization(options.clone()),
+            })
             .await?;
         let ipc = self
             .ipc_client
@@ -715,24 +718,81 @@ impl ModelRegistry {
         requested_model_id: &str,
         force_reload: bool,
     ) -> Result<(ModelLoadState, String), String> {
+        Box::pin(self.schedule_request(
+            &ModelLoadRequest::automatic(requested_model_id),
+            force_reload,
+        ))
+        .await
+    }
+
+    /// Schedule the exact session residency binding without opening a session.
+    pub async fn schedule_request(
+        &self,
+        request: &ModelLoadRequest,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), String> {
+        let options = match &request.options {
+            ModelLoadOptions::Automatic => crate::model::operations::source_options(&request.model),
+            explicit => explicit.clone(),
+        };
+        match options {
+            #[cfg(feature = "duplex")]
+            ModelLoadOptions::Duplex(options) => {
+                options.validate().map_err(|error| error.to_string())?;
+                self.prepare_duplex_source(&request.model, force_reload)
+                    .await
+                    .map_err(|error| error.to_string())
+            }
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(options) => self
+                .prepare_diarization_source(&request.model, &options, force_reload)
+                .await
+                .map_err(|error| error.to_string()),
+            ModelLoadOptions::Automatic => {
+                self.schedule_standard_model(&request.model, force_reload)
+                    .await
+            }
+        }
+    }
+
+    /// Wait for native activation of the same binding selected by schedule_request.
+    pub async fn ensure_prepared(&self, request: &ModelLoadRequest) -> Result<ModelInfo, Error> {
+        let (_, canonical_id) = Box::pin(self.schedule_request(request, false))
+            .await
+            .map_err(Error::ModelNotReady)?;
+        // Option-specific variants are immutable; do not retarget another live
+        // session by publishing a new base alias for the same model identifier.
+        let requested_id = match request.options {
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(_) => &canonical_id,
+            _ => &request.model,
+        };
+        self.activate_scheduled_model(requested_id, &canonical_id)
+            .await
+    }
+
+    pub async fn model_operations(
+        &self,
+        request: &ModelLoadRequest,
+    ) -> Result<ModelOperations, Error> {
+        let report = ModelOperations::for_loaded(&self.ensure_prepared(request).await?)?;
         #[cfg(feature = "diarization")]
-        if crate::diarization::is_diarization_model(requested_model_id) {
-            return self
-                .prepare_diarization_source(
-                    requested_model_id,
-                    &crate::diarization::DiarizationOptions::default(),
-                    force_reload,
-                )
-                .await
-                .map_err(|error| error.to_string());
+        if let ModelLoadOptions::Diarization(options) = &request.options {
+            let mut report = report;
+            if let Some(audio) = &mut report.audio {
+                audio.sample_rate = options.sample_rate;
+                audio.frame_samples = Some(options.frame_samples());
+            }
+            return Ok(report);
         }
-        #[cfg(feature = "duplex")]
-        if crate::duplex::is_moshi_model(requested_model_id) {
-            return self
-                .prepare_duplex_source(requested_model_id, force_reload)
-                .await
-                .map_err(|error| error.to_string());
-        }
+        Ok(report)
+    }
+
+    async fn schedule_standard_model(
+        &self,
+        requested_model_id: &str,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), String> {
         if !force_reload {
             if let Ok(canonical_id) = self.canonicalize(requested_model_id).await {
                 let entries = self.entries.read().await;

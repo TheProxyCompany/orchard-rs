@@ -9,6 +9,7 @@ mod recorded_replies;
 mod replay;
 mod response;
 mod responses;
+mod vision;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,6 +54,7 @@ pub use responses::{
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
     ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
+pub use vision::{VisionClient, DEFAULT_VISION_MODEL};
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 
@@ -413,6 +415,7 @@ impl Client {
                 serde_json::json!({
                     "type": "cancel_request",
                     "request_id": request_id,
+                    "response_channel_id": self.ipc.response_channel_id(),
                 }),
                 Duration::from_secs(2),
             )

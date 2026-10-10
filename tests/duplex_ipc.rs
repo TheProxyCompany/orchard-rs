@@ -6,7 +6,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use nng::{options::Options, Protocol, Socket};
 use orchard::duplex::{DuplexControl, DuplexEvent, DuplexOptions, DuplexSession, FRAME_SAMPLES};
-use orchard::{endpoints, Error, IPCClient, ModelRegistry};
+use orchard::ipc::serialization::PromptPayload;
+use orchard::{endpoints, Client, Error, IPCClient, ModelRegistry};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -35,6 +36,11 @@ fn native_duplex_ipc_contract() {
     // Never temporarily change the parent test process's endpoint environment.
     for case in [
         "wire_and_lifecycle",
+        "grounded_reply",
+        "grounded_reply_unsupported",
+        "grounded_reply_legacy",
+        "grounded_reply_epoch_race",
+        "grounded_reply_bad_ack",
         "bounded_audio",
         "bounded_input",
         "bounded_control_events",
@@ -47,6 +53,7 @@ fn native_duplex_ipc_contract() {
         "malformed_pull_json",
         "rollover_ack_race",
         "management_lock_isolation",
+        "request_cancellation_scope",
     ] {
         let temporary = tempfile::Builder::new()
             .prefix("odx-")
@@ -299,6 +306,12 @@ impl FakePie {
                     let length = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
                     assert!(length <= bytes.len() - 4);
                     let meta: Value = serde_json::from_slice(&bytes[4..4 + length]).unwrap();
+                    if state.case == "request_cancellation_scope" {
+                        assert_eq!(meta["request_type"], 0);
+                        assert_eq!(meta["prompts"].as_array().unwrap().len(), 1);
+                        state.opens.lock().unwrap().push(meta);
+                        continue;
+                    }
                     assert_eq!(meta["request_type"], 10);
                     assert_eq!(meta["response_transport"], "pull_v1");
                     let prompts = meta["prompts"].as_array().unwrap();
@@ -331,6 +344,7 @@ impl FakePie {
                         state.emit("duplex.ready", 0, json!({"model_id":route.model_id,
                             "sample_rate":if state.case == "bad_geometry" {16000} else {24000},
                             "channels":if state.case == "bad_channels" {2} else {1},"frame_samples":1920,"supports_reference":true,"supports_forced_text":true,
+                            "supports_grounded_response":if state.case == "grounded_reply_legacy" {Value::Null} else {json!(state.case != "grounded_reply_unsupported")},
                             "max_pending_frames":options["max_pending_frames"],"max_pending_output_frames":64
                         }), None, None, false);
                     }
@@ -352,6 +366,16 @@ impl FakePie {
                     let kind = command["type"].as_str().unwrap();
                     state.commands.lock().unwrap().push(command.clone());
                     state.wake.notify_all();
+                    if state.case == "request_cancellation_scope" {
+                        assert_eq!(kind, "cancel_request");
+                        assert!(command["response_channel_id"].as_u64().unwrap_or(0) > 0);
+                        assert!(state.opens.lock().unwrap().iter().any(|request| {
+                            request["request_id"] == command["request_id"]
+                                && request["response_channel_id"] == command["response_channel_id"]
+                        }));
+                        assert!(state.reply(&management, json!({"status":"accepted"})));
+                        continue;
+                    }
                     if kind == "load_model" {
                         assert!(Path::new(command["model_path"].as_str().unwrap())
                             .join("config.json")
@@ -391,6 +415,15 @@ impl FakePie {
                         }
                         continue;
                     }
+                    if state.case == "grounded_reply_epoch_race" && kind == "duplex_reply" {
+                        state.epoch.store(previous + 1, Ordering::Release);
+                        assert!(state.reply(
+                            &management,
+                            json!({"status":"error","message":"Duplex command epoch is stale",
+                            "data":{"duplex":{"error_code":"stale_epoch","epoch":previous+1}}})
+                        ));
+                        continue;
+                    }
                     if kind != "duplex_close" {
                         assert_eq!(command["epoch"], previous);
                     }
@@ -417,10 +450,13 @@ impl FakePie {
                             }
                             data["accepted_sequence"] = command["sequence"].clone();
                         }
-                        "duplex_reference" => {
+                        "duplex_reference" | "duplex_reply" => {
                             assert!(!command["text"].as_str().unwrap().is_empty());
                             data["reference_version"] =
                                 (state.reference_version.fetch_add(1, Ordering::AcqRel) + 1).into();
+                            if state.case == "grounded_reply_bad_ack" && kind == "duplex_reply" {
+                                data["reference_version"] = Value::Null;
+                            }
                         }
                         "duplex_interrupt" | "duplex_reset" => {
                             data["epoch"] = (state.epoch.fetch_add(1, Ordering::AcqRel) + 1).into();
@@ -548,6 +584,63 @@ async fn run_case(case: &str) {
     let mut ipc = IPCClient::new();
     ipc.connect().unwrap();
     let ipc = Arc::new(ipc);
+    if case == "request_cancellation_scope" {
+        let mut other = IPCClient::new();
+        other.connect().unwrap();
+        let other = Arc::new(other);
+        let first_id = ipc.next_request_id();
+        let other_id = other.next_request_id();
+        assert_eq!(first_id, other_id, "Request IDs are local to each client");
+        let prompt = PromptPayload {
+            prompt: "A private cancellation wire fixture".into(),
+            max_generated_tokens: 1,
+            ..Default::default()
+        };
+        let (_, _first_events) = ipc
+            .send_batch_request(first_id, "first", "/unused", std::slice::from_ref(&prompt))
+            .unwrap();
+        let (_, _other_events) = other
+            .send_batch_request(other_id, "other", "/unused", &[prompt])
+            .unwrap();
+        tokio::time::timeout(DEADLINE, async {
+            while backend.state.opens.lock().unwrap().len() != 2 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("Both clients must reach the actual request socket");
+        let channels: Vec<_> = ["first", "other"]
+            .iter()
+            .map(|model| {
+                backend
+                    .state
+                    .opens
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|request| request["model_id"] == *model)
+                    .unwrap()["response_channel_id"]
+                    .as_u64()
+                    .unwrap()
+            })
+            .collect();
+        assert_ne!(channels[0], channels[1]);
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        for (ipc, request_id, channel) in
+            [(ipc, first_id, channels[0]), (other, other_id, channels[1])]
+        {
+            Client::new(ipc, Arc::clone(&registry))
+                .cancel_request(request_id)
+                .await
+                .unwrap();
+            let commands = backend.state.commands.lock().unwrap();
+            let command = commands.last().unwrap();
+            assert_eq!(command["request_id"], request_id);
+            assert_eq!(command["response_channel_id"], channel);
+        }
+        assert_eq!(backend.state.command_count("cancel_request"), 2);
+        return;
+    }
     let registry = ModelRegistry::new().unwrap();
     registry.set_ipc_client(Arc::clone(&ipc)).await;
     let model_id = descriptor(&root);
@@ -555,6 +648,28 @@ async fn run_case(case: &str) {
         max_pending_frames: 3,
         ..Default::default()
     };
+    if case == "wire_and_lifecycle" {
+        let request = orchard::ModelLoadRequest {
+            model: model_id.clone(),
+            options: orchard::ModelLoadOptions::Duplex(options.clone()),
+        };
+        let (first, second) = tokio::join!(
+            registry.ensure_prepared(&request),
+            registry.ensure_prepared(&request)
+        );
+        assert_eq!(first.unwrap().model_id, second.unwrap().model_id);
+        assert_eq!(backend.state.command_count("load_model"), 1);
+        assert!(
+            backend.state.opens.lock().unwrap().is_empty(),
+            "Preparation must not open a speech session"
+        );
+        registry
+            .model_operations(&request)
+            .await
+            .unwrap()
+            .require(&["duplex", "speech_reference"])
+            .unwrap();
+    }
     let opened = tokio::time::timeout(DEADLINE, registry.duplex(&model_id, options))
         .await
         .expect("open deadline");
@@ -591,6 +706,56 @@ async fn run_case(case: &str) {
     assert_eq!(backend.state.opens.lock().unwrap().len(), 1);
 
     match case {
+        "grounded_reply"
+        | "grounded_reply_unsupported"
+        | "grounded_reply_legacy"
+        | "grounded_reply_epoch_race"
+        | "grounded_reply_bad_ack" => {
+            let supported = !matches!(case, "grounded_reply_unsupported" | "grounded_reply_legacy");
+            assert_eq!(control.supports_grounded_response(), supported);
+            assert!(control.grounded_reply(" ".into(), 0).is_err());
+            assert!(control.grounded_reply("é".repeat(4097), 0).is_err());
+            assert_eq!(backend.state.command_count("duplex_reply"), 0);
+            let result = control.grounded_reply(
+                "The package arrives Friday; it is delayed by one day.".into(),
+                0,
+            );
+            if case == "grounded_reply" {
+                assert_eq!(result.unwrap(), 1);
+                assert_eq!(backend.state.command_count("duplex_reply"), 1);
+                assert_eq!(backend.state.command_count("duplex_reference"), 0);
+                assert_eq!(backend.state.command_count("duplex_speak"), 0);
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(40), session.next_event())
+                        .await
+                        .is_err(),
+                    "Grounded response ACK must not fabricate audio or reference application"
+                );
+                assert_eq!(
+                    control
+                        .reference("Background context only".into(), 0)
+                        .unwrap(),
+                    2
+                );
+                assert_eq!(backend.state.command_count("duplex_reference"), 1);
+                assert_eq!(backend.state.command_count("duplex_reply"), 1);
+                assert_eq!(control.interrupt().unwrap(), 1);
+                assert!(control.grounded_reply("Old context".into(), 0).is_err());
+                assert_eq!(backend.state.command_count("duplex_reply"), 1);
+            } else {
+                assert!(result.is_err());
+                assert_eq!(
+                    backend.state.command_count("duplex_reply"),
+                    usize::from(supported)
+                );
+                assert_eq!(
+                    control.epoch(),
+                    u64::from(case == "grounded_reply_epoch_race")
+                );
+            }
+            control.close().unwrap();
+            terminal_events(&mut session).await;
+        }
         "management_lock_isolation" => {
             // A generic management exchange can hold this lock throughout a
             // slow model load. Duplex controls must use an independent route.
@@ -683,7 +848,7 @@ async fn run_case(case: &str) {
             backend.state.emit(
                 "duplex.retrieval_requested",
                 1,
-                json!({"sequence":4}),
+                json!({"sequence":4,"input_sequence":123,"model_step":987}),
                 None,
                 None,
                 false,
@@ -692,9 +857,29 @@ async fn run_case(case: &str) {
                 next(&mut session).await,
                 DuplexEvent::RetrievalRequested {
                     epoch: 1,
-                    sequence: 4
+                    sequence: 4,
+                    input_sequence: Some(123),
+                    model_step: Some(987),
                 }
             ));
+            // Native clock ticks may use synthetic silence; old engines send
+            // neither correlation field. Neither may inherit the last input.
+            for fields in [
+                json!({"sequence":4,"input_sequence":null,"model_step":988}),
+                json!({"sequence":4}),
+            ] {
+                let expected_step = fields["model_step"].as_u64();
+                backend
+                    .state
+                    .emit("duplex.retrieval_requested", 1, fields, None, None, false);
+                let event = next(&mut session).await;
+                assert!(matches!(&event, DuplexEvent::RetrievalRequested {
+                    epoch: 1, sequence: 4, input_sequence: None, model_step,
+                } if *model_step == expected_step));
+                let forwarded = serde_json::to_value(&event).unwrap();
+                assert!(forwarded["input_sequence"].is_null());
+                assert_eq!(forwarded["model_step"].as_u64(), expected_step);
+            }
             assert_eq!(control.reset().unwrap(), 2);
             backend.state.emit(
                 "duplex.reset",

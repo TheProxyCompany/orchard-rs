@@ -254,6 +254,11 @@ pub struct ChatFormatter {
 }
 
 impl ChatFormatter {
+    /// Installed profile used to negotiate operations with a host. This is
+    /// descriptive metadata, not a substitute for engine activation.
+    pub fn operation_profile(&self) -> &serde_json::Value {
+        &self.capabilities
+    }
     /// Create a new chat formatter for a model.
     pub fn new(model_path: &Path) -> Result<Self> {
         let config_path = model_path.join("config.json");

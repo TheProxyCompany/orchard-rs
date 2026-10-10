@@ -214,6 +214,10 @@ impl IPCClient {
         Arc::clone(&self.management_socket)
     }
 
+    pub(crate) fn response_channel_id(&self) -> u64 {
+        self.response_channel_id
+    }
+
     /// Connect to PIE IPC endpoints.
     pub fn connect(&mut self) -> Result<()> {
         let engine_pid_file = current_engine_pid_file()

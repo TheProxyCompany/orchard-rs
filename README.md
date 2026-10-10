@@ -307,6 +307,16 @@ answer and microphone ASR; it cannot execute tools or authorize actions.
 Interrupt and reset epochs fence already-buffered old audio. Model loading,
 readiness, cancellation, session cleanup and unload are owned by PIE.
 
+When Ready advertises `supports_response_hold`, call `hold_response(epoch)`
+explicitly while waiting for factual context. Its acknowledgment returns the
+native reference version without advancing the epoch or stopping microphone
+input and the audio clock. A matching `grounded_reply(context, epoch)` applies
+the context and releases the hold for a model-authored response. Background
+`reference` updates do not release it; interrupt and reset retire the old hold.
+The caller still owns which pending result is current. Retrieval events alone
+never trigger a hold in the SDK, and a control acknowledgment does not confirm
+speech generation or playback.
+
 With `realtime: false` (the default), microphone frames including silence drive
 the clock. `realtime: true` lets the engine synthesize clock ticks when no frame
 is available. Input and output queues are bounded; metrics report actual frame

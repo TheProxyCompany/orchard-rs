@@ -1,6 +1,6 @@
 //! Thin JSON-lines transport for PIE-owned Nemotron3 sessions.
 use orchard::diarization::{self, DiarizationDevice, DiarizationEvent, DiarizationOptions};
-use orchard::{Client, InferenceEngine, ModelRegistry};
+use orchard::{Client, InferenceEngine, ModelLoadOptions, ModelLoadRequest, ModelRegistry};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -36,9 +36,11 @@ fn error(message: impl std::fmt::Display) {
 async fn run() -> orchard::Result<()> {
     let mut model = diarization::DEFAULT_MODEL.to_owned();
     let mut options = DiarizationOptions::default();
+    let mut prepare_only = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--prepare-only" => prepare_only = true,
             "--model" => {
                 model = args
                     .next()
@@ -59,7 +61,7 @@ async fn run() -> orchard::Result<()> {
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("orchard-diarize [--model ID] [--metal|--cpu] [--options-json JSON]\n\nNative eight-speaker Nemotron3. Reads audio/finish/close JSON lines; emits timestamped probabilities and anonymous speaker segments.\nInput: mono float32, 80ms frames at sample_rate (24000Hz by default).\n--capabilities reads the shared Pantheon model descriptor without loading weights.");
+                println!("orchard-diarize [--model ID] [--metal|--cpu] [--options-json JSON] [--prepare-only]\n\nNative eight-speaker Nemotron3. Reads audio/finish/close JSON lines; emits timestamped probabilities and anonymous speaker segments.\nInput: mono float32, 80ms frames at sample_rate (24000Hz by default).\n--capabilities reads the shared Pantheon model descriptor without loading weights.");
                 return Ok(());
             }
             _ => return Err(orchard::Error::Other(format!("Unknown argument {arg}"))),
@@ -67,7 +69,19 @@ async fn run() -> orchard::Result<()> {
     }
     let _engine = InferenceEngine::new().await?;
     let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(registry).await?;
+    let client = Client::connect(Arc::clone(&registry)).await?;
+    if prepare_only {
+        let request = ModelLoadRequest {
+            model: model.clone(),
+            options: ModelLoadOptions::Diarization(options),
+        };
+        let info = registry.ensure_prepared(&request).await?;
+        let operations = registry.model_operations(&request).await?;
+        write_json(
+            &json!({"type":"prepared", "model_id":model, "runtime_model_id":info.model_id, "model_path":info.model_path, "operations":operations}),
+        )?;
+        return Ok(());
+    }
     let mut session = client.diarization(&model, options).await?;
     let control = session.control();
     let runtime = tokio::runtime::Handle::current();
