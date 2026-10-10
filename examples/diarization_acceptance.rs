@@ -4,8 +4,9 @@
 use orchard::diarization::{
     DiarizationDevice, DiarizationEvent, DiarizationOptions, DEFAULT_MODEL,
 };
-use orchard::ModelRegistry;
+use orchard::{Client, InferenceEngine, ModelRegistry};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[tokio::main]
@@ -38,8 +39,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let frame_samples = options.frame_samples();
-    let registry = ModelRegistry::new()?;
-    let mut session = registry.diarization(DEFAULT_MODEL, options).await?;
+    let _engine = InferenceEngine::new().await?;
+    let registry = Arc::new(ModelRegistry::new()?);
+    let client = Client::connect(registry).await?;
+    let mut session = client.diarization(DEFAULT_MODEL, options).await?;
     let control = session.control();
     let out = PathBuf::from(&args[2]);
     let receiver = tokio::spawn(async move {
