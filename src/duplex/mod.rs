@@ -754,6 +754,40 @@ impl DuplexControl {
                 Error::Other("PIE response hold ACK has no valid reference version".into())
             })
     }
+    /// Queue release of this hold without cueing speech or changing the epoch.
+    /// False means the hold was superseded. A later control can still supersede
+    /// an accepted release before it reaches the next complete frame boundary.
+    pub fn release_response_hold(&self, expected_epoch: u64, hold_version: u64) -> Result<bool> {
+        self.require_open()?;
+        if !self.supports_response_hold() {
+            return Err(Error::Other(
+                "This PIE duplex session does not support response holds".into(),
+            ));
+        }
+        if hold_version == 0 {
+            return Err(Error::Other(
+                "Response hold version must be positive".into(),
+            ));
+        }
+        if expected_epoch != self.epoch() {
+            return Ok(false);
+        }
+        let data = self.shared.command(
+            "duplex_release_response_hold",
+            expected_epoch,
+            json!({"hold_version":hold_version}),
+        )?;
+        let epoch = data["epoch"]
+            .as_u64()
+            .ok_or_else(|| Error::Other("PIE response release ACK has no epoch".into()))?;
+        let queued = data["hold_release_queued"]
+            .as_bool()
+            .ok_or_else(|| Error::Other("PIE response release ACK has no result".into()))?;
+        if epoch > self.epoch() {
+            self.shared.update_epoch(epoch);
+        }
+        Ok(queued && epoch == expected_epoch && self.epoch() == expected_epoch)
+    }
     /// Supply factual context and request a natural response in the model's own words.
     /// Returns the queued reference version, not evidence of generated or played audio.
     /// Background `reference` calls never request this response cue.
