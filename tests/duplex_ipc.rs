@@ -248,7 +248,13 @@ impl FakePie {
         let actual_root = endpoints::ipc_root();
         assert!(
             actual_root.starts_with(root),
-            "IPC escaped the private test root: {actual_root:?}"
+            // Do not interpolate `actual_root`, `root`, or `case` here: they are
+            // derived from $HOME, the per-user temp dir, or process environment,
+            // so printing them leaks user-identifying bytes into CI logs
+            // (CodeQL: cleartext logging of sensitive information).
+            "IPC escaped the private test root: expected prefix of {} components, got {} components instead",
+            root.components().count(),
+            actual_root.components().count(),
         );
         let cache = root.join("cache");
         std::fs::create_dir_all(&cache).unwrap();
