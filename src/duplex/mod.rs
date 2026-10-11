@@ -50,6 +50,8 @@ pub struct DuplexOptions {
     pub realtime: bool,
     /// True lets Moshi choose its own words; false speaks only queued text.
     pub autonomous: bool,
+    /// Hold output from the first frame and after each reset or interruption.
+    pub start_held: bool,
     pub max_pending_frames: usize,
     /// At this frame limit PIE resets the timeline without reloading weights.
     pub max_steps: usize,
@@ -70,6 +72,7 @@ impl Default for DuplexOptions {
             codec_threads: 4,
             realtime: false,
             autonomous: true,
+            start_held: false,
             max_pending_frames: 6,
             max_steps: 45_000,
             text_token_interval: 12,
@@ -755,6 +758,7 @@ impl DuplexControl {
             })
     }
     /// Queue release of this hold without cueing speech or changing the epoch.
+    /// Passive reference updates preserve the hold; explicit speech controls supersede it.
     /// False means the hold was superseded. A later control can still supersede
     /// an accepted release before it reaches the next complete frame boundary.
     pub fn release_response_hold(&self, expected_epoch: u64, hold_version: u64) -> Result<bool> {
@@ -935,7 +939,7 @@ impl DuplexSession {
         let prompt = PromptPayload { num_candidates: 1, max_generated_tokens: 1,
             modal_options_json: json!({"duplex_version":1,"sample_rate":SAMPLE_RATE,"frame_samples":FRAME_SAMPLES,
                 "channels":1,"max_pending_frames":options.max_pending_frames,"realtime":options.realtime,
-                "autonomous":options.autonomous,"seed":options.seed,"max_steps":options.max_steps,
+                "autonomous":options.autonomous,"start_held":options.start_held,"seed":options.seed,"max_steps":options.max_steps,
                 "audio_temperature":options.audio_temperature,"audio_top_k":options.audio_top_k,
                 "text_temperature":options.text_temperature,"text_top_k":options.text_top_k}).to_string(),
             ..Default::default() };
@@ -1047,7 +1051,9 @@ mod tests {
     #[test]
     fn native_options_are_explicit_and_reject_unsupported_legacy_execution() {
         let mut options = DuplexOptions::default();
-        assert!(options.autonomous && !options.realtime && !options.mimi_cpu);
+        assert!(
+            options.autonomous && !options.start_held && !options.realtime && !options.mimi_cpu
+        );
         assert!(options.validate().is_ok());
         options.max_steps = 45_001;
         assert!(options.validate().is_err());

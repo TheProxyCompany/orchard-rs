@@ -30,6 +30,10 @@ enum Command {
     HoldResponse {
         expected_epoch: u64,
     },
+    ReleaseResponseHold {
+        expected_epoch: u64,
+        hold_version: u64,
+    },
     Interrupt,
     Reset,
     Close,
@@ -129,6 +133,8 @@ async fn run() -> orchard::Result<()> {
                     .map(|version| Some(json!({"type":"control_ack","id":id,"action":"grounded_reply","epoch":expected_epoch,"version":version,"playback_confirmed":false}))),
                 Command::HoldResponse { expected_epoch } => control.hold_response(expected_epoch)
                     .map(|version| Some(json!({"type":"control_ack","id":id,"action":"hold_response","epoch":expected_epoch,"version":version}))),
+                Command::ReleaseResponseHold { expected_epoch, hold_version } => control.release_response_hold(expected_epoch, hold_version)
+                    .map(|queued| Some(json!({"type":"control_ack","id":id,"action":"release_response_hold","epoch":expected_epoch,"queued":queued}))),
                 Command::Interrupt => control.interrupt()
                     .map(|epoch| Some(json!({"type":"control_ack","id":id,"action":"interrupt","epoch":epoch}))),
                 Command::Reset => control.reset()
