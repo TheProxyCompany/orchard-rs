@@ -884,11 +884,12 @@ mod tests {
     use tempfile::tempdir;
 
     /// Every chat profile the template rules below are checked against.
-    const CHAT_PROFILES: [&str; 15] = [
+    const CHAT_PROFILES: [&str; 16] = [
         "llama",
         "gemma3",
         "gemma4",
         "gemma4u",
+        "qwen2",
         "qwen3_5",
         "lfm2",
         "lfm2_moe",
@@ -920,6 +921,55 @@ mod tests {
         .unwrap();
         let formatter = ChatFormatter::new(model_dir.path()).unwrap();
         (model_dir, formatter)
+    }
+
+    #[test]
+    fn test_qwen2_uses_native_chatml_and_hermes_tool_history() {
+        let (_directory, formatter) = formatter_for("qwen2");
+        assert!(!formatter.supports_native_thinking());
+        assert_eq!(
+            formatter.generation_default_f64("repetition_penalty"),
+            Some(1.05)
+        );
+        assert_eq!(
+            formatter
+                .apply_template(&[message("user", "Hello")], true, false, None, None)
+                .unwrap(),
+            concat!(
+                "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. ",
+                "You are a helpful assistant.<|im_end|>\n",
+                "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+            )
+        );
+        let mut call = message("agent", "");
+        call.insert(
+            "tool_calls".into(),
+            serde_json::json!([{
+                "type":"function",
+                "function":{"name":"lookup","arguments":"{\"q\":\"São Paulo\",\"limit\":2}"}
+            }]),
+        );
+        let history = [
+            message("system", "Be precise."),
+            message("user", "Find it."),
+            call,
+            message("tool", "first"),
+            message("tool", "second"),
+        ];
+        assert_eq!(
+            formatter
+                .apply_template(&history, true, false, None, None)
+                .unwrap(),
+            concat!(
+                "<|im_start|>system\nBe precise.<|im_end|>\n",
+                "<|im_start|>user\nFind it.<|im_end|>\n",
+                "<|im_start|>assistant\n<tool_call>\n{\"name\": \"lookup\", \"arguments\": ",
+                "{\"q\": \"São Paulo\", \"limit\": 2}}\n</tool_call><|im_end|>\n",
+                "<|im_start|>user\n<tool_response>\nfirst\n</tool_response>",
+                "\n<tool_response>\nsecond\n</tool_response><|im_end|>\n",
+                "<|im_start|>assistant\n"
+            )
+        );
     }
 
     #[test]
