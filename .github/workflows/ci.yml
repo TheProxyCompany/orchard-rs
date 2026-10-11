@@ -14,7 +14,7 @@ jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
     # 192 GB runner exhausted Metal memory; use the existing 512 GB runner.
-    runs-on: [self-hosted, terminal-1]
+    runs-on: [self-hosted, benchmarks]
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
