@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use hf_hub::api::tokio::{Api, ApiBuilder};
-use hf_hub::Cache;
+use hf_hub::{Cache, Repo, RepoType};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -353,6 +353,7 @@ impl ModelResolver {
 
         // Load and parse config
         let config = Self::normalize_config(self.load_config(&model_path)?);
+        self.ensure_external_tokenizer(&model_path, &config).await?;
         let metadata = Self::collect_metadata(&config);
 
         // Determine canonical ID
@@ -389,6 +390,56 @@ impl ModelResolver {
             hf_repo,
             formatter_config,
         })
+    }
+
+    // The official Moondream code obtains its tokenizer from starmie-v1.
+    // Pin the dependency explicitly; never execute downloaded Python or rewrite
+    // config.json to make a pristine snapshot usable by the native client.
+    async fn ensure_external_tokenizer(
+        &self,
+        model_dir: &Path,
+        config: &serde_json::Value,
+    ) -> Result<()> {
+        if config.get("model_type").and_then(|v| v.as_str()) != Some("moondream3")
+            || model_dir.join("tokenizer.json").is_file()
+            || model_dir.join("tokenizer.model").is_file()
+            || (model_dir.join("vocab.json").is_file() && model_dir.join("merges.txt").is_file())
+        {
+            return Ok(());
+        }
+        const REPO: &str = "moondream/starmie-v1";
+        const REVISION: &str = "35192e10a54e36eabe0a7cc57a2c1aab371cafc5";
+        let repo = Repo::with_revision(REPO.to_string(), RepoType::Model, REVISION.to_string());
+        let cached = self.hf_cache.repo(repo.clone());
+        // Publish tokenizer.json last, so its existence means companion files
+        // were fully installed. Each link is atomic and never replaces a file.
+        for filename in [
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+        ] {
+            let direct = cached.pointer_path(REVISION).join(filename);
+            let source = if direct.is_file() {
+                direct
+            } else {
+                self.hf_api
+                    .repo(repo.clone())
+                    .get(filename)
+                    .await
+                    .map_err(|e| Error::DownloadFailed(REPO.to_string(), e.to_string()))?
+            };
+            let target = model_dir.join(filename);
+            #[cfg(unix)]
+            let installed = std::os::unix::fs::symlink(&source, &target);
+            #[cfg(not(unix))]
+            let installed = std::fs::hard_link(&source, &target);
+            if let Err(error) = installed {
+                if error.kind() != std::io::ErrorKind::AlreadyExists || !target.is_file() {
+                    return Err(error.into());
+                }
+            }
+        }
+        Ok(())
     }
 
     fn build_local_source_model(model_path: PathBuf) -> ResolvedModel {
@@ -777,5 +828,66 @@ mod tests {
         assert_eq!(config["model_type"], "parakeet_tdt");
         assert!(config.get("template_type").is_none());
         assert_eq!(config["_name_or_path"], repo_id);
+    }
+    #[tokio::test]
+    async fn pristine_moondream_resolves_pinned_cached_tokenizer_without_network() {
+        let cache_dir = tempdir().unwrap();
+        let model_dir = tempdir().unwrap();
+        let snapshot = cache_dir.path().join(
+            "models--moondream--starmie-v1/snapshots/35192e10a54e36eabe0a7cc57a2c1aab371cafc5",
+        );
+        std::fs::create_dir_all(&snapshot).unwrap();
+        for filename in [
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+        ] {
+            std::fs::write(
+                snapshot.join(filename),
+                format!("{{\"source\":\"{filename}\"}}"),
+            )
+            .unwrap();
+        }
+        let config = serde_json::json!({"model_type":"moondream3","config":{"skills":["caption"]}});
+        let original = config.to_string();
+        std::fs::write(model_dir.path().join("config.json"), &original).unwrap();
+        let mut resolver =
+            ModelResolver::new_with_cache_for_tests(cache_dir.path().to_path_buf()).unwrap();
+        resolver
+            .resolve(model_dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(model_dir.path().join("config.json")).unwrap(),
+            original
+        );
+        assert_eq!(
+            std::fs::read_to_string(model_dir.path().join("tokenizer.json")).unwrap(),
+            "{\"source\":\"tokenizer.json\"}"
+        );
+        assert_eq!(
+            std::fs::canonicalize(model_dir.path().join("tokenizer.json")).unwrap(),
+            std::fs::canonicalize(snapshot.join("tokenizer.json")).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn existing_moondream_tokenizer_is_preserved_without_network() {
+        let cache_dir = tempdir().unwrap();
+        let model_dir = tempdir().unwrap();
+        std::fs::write(model_dir.path().join("tokenizer.json"), "existing").unwrap();
+        let resolver =
+            ModelResolver::new_with_cache_for_tests(cache_dir.path().to_path_buf()).unwrap();
+        resolver
+            .ensure_external_tokenizer(
+                model_dir.path(),
+                &serde_json::json!({"model_type":"moondream3"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(model_dir.path().join("tokenizer.json")).unwrap(),
+            "existing"
+        );
     }
 }

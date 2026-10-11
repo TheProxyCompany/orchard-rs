@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use orchard::{
     OutputFunctionCall, ResponseCompletedEvent, ResponseEvent, ResponseOutputItem, ResponseUsage,
@@ -164,13 +166,33 @@ pub(crate) fn assert_or_record(
         .get(turn)
         .unwrap_or_else(|| panic!("missing golden turn {template_type}/{scenario}/{turn}"));
 
-    if recorded == &Value::Array(live.clone()) {
-        return;
+    let diagnostics = std::env::var_os("ORCHARD_GOLDEN_DIFF_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-output/golden-diffs")
+        });
+    compare_strictly(
+        recorded,
+        &live,
+        &format!("{template_type}/{scenario}/{turn}"),
+        &diagnostics,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
+fn compare_strictly(
+    recorded: &Value,
+    live: &[Value],
+    label: &str,
+    diagnostics: &Path,
+) -> Result<(), String> {
+    if recorded.as_array().is_some_and(|expected| expected == live) {
+        return Ok(());
     }
 
     let recorded_events = recorded
         .as_array()
-        .unwrap_or_else(|| panic!("golden turn {template_type}/{scenario}/{turn} is not an array"));
+        .ok_or_else(|| format!("golden turn {label} is not an array"))?;
     let mut detail = if recorded_events.len() != live.len() {
         format!(
             "event count: golden={} live={}",
@@ -190,7 +212,53 @@ pub(crate) fn assert_or_record(
         }
     }
 
-    panic!("golden drift {template_type}/{scenario}/{turn}: {detail}");
+    match capture_drift(diagnostics, label, recorded, live) {
+        Ok(path) => detail.push_str(&format!(
+            "; full expected/actual streams: {}",
+            path.display()
+        )),
+        Err(error) => detail.push_str(&format!("; could not save full streams: {error}")),
+    }
+    Err(format!("golden drift {label}: {detail}"))
+}
+
+/// Capture evidence, never replace an expectation or convert a mismatch into
+/// success. Unique directories preserve concurrent mismatches for the same turn.
+fn capture_drift(
+    root: &Path,
+    label: &str,
+    recorded: &Value,
+    live: &[Value],
+) -> Result<PathBuf, String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let label: String = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let directory = root.join(format!(
+        "{label}-{at}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    for (name, value) in [
+        ("expected.json", recorded.clone()),
+        ("actual.json", Value::Array(live.to_vec())),
+    ] {
+        let contents = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+        fs::write(directory.join(name), contents).map_err(|error| error.to_string())?;
+    }
+    Ok(directory)
 }
 
 pub(crate) fn golden_path(template_type: &str, scenario: &str) -> PathBuf {
@@ -317,4 +385,48 @@ pub(crate) fn usage_from_completed(turn: &Turn) -> Option<&ResponseUsage> {
         ResponseEvent::ResponseCompleted(completed) => completed.response.usage.as_ref(),
         _ => None,
     })
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_mismatch_still_fails_and_saves_the_complete_pair() {
+        let root = tempfile::tempdir().unwrap();
+        let expected =
+            json!([{"type":"token","token_id":1}, {"type":"completed","text":"expected answer"}]);
+        let actual = vec![
+            json!({"type":"token","token_id":2}),
+            json!({"type":"completed","text":"actual final answer","usage":{"tokens":17},"generation":{"tokens":[2,3]}}),
+        ];
+        assert!(compare_strictly(&expected, &actual, "model/case/turn2", root.path()).is_err());
+        let directory = fs::read_dir(root.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let read = |name| {
+            serde_json::from_slice::<Value>(&fs::read(directory.join(name)).unwrap()).unwrap()
+        };
+        assert_eq!(read("expected.json"), expected);
+        assert_eq!(read("actual.json"), Value::Array(actual.clone()));
+        // A repeated mismatch must retain both observations, not overwrite one.
+        assert!(compare_strictly(&expected, &actual, "model/case/turn2", root.path()).is_err());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn equal_streams_create_no_artifact_and_capture_failure_still_fails_the_test() {
+        let root = tempfile::tempdir().unwrap();
+        let actual = vec![json!({"type":"completed","text":"same answer"})];
+        compare_strictly(&Value::Array(actual.clone()), &actual, "equal", root.path()).unwrap();
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        let file = root.path().join("not-a-directory");
+        fs::write(&file, "leave this intact").unwrap();
+        assert!(compare_strictly(&json!([]), &actual, "different", &file).is_err());
+        assert_eq!(fs::read_to_string(file).unwrap(), "leave this intact");
+    }
 }

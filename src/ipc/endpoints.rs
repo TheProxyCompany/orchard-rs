@@ -117,15 +117,20 @@ fn cache_root() -> PathBuf {
     if let Some(root) = non_empty_env("ORCHARD_CACHE_ROOT") {
         return PathBuf::from(root);
     }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    let base = if cfg!(target_os = "macos") {
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    platform_cache_dir(&home).join("com.theproxycompany")
+}
+
+/// The per-user cache directory: `~/Library/Caches` on macOS, else
+/// `XDG_CACHE_HOME` or `~/.cache`.
+pub(crate) fn platform_cache_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
         home.join("Library/Caches")
     } else {
         non_empty_env("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".cache"))
-    };
-    base.join("com.theproxycompany")
+    }
 }
 
 /// Get the IPC root directory for socket files.
@@ -171,6 +176,11 @@ pub fn request_url() -> String {
 /// Topics are used to route messages to the correct consumer.
 pub fn response_url() -> String {
     as_ipc_url(ipc_root().join("pie_responses.ipc"))
+}
+
+/// A flow-controlled, client-owned response route on the existing IPC root.
+pub fn pull_response_url(channel_id: u64) -> String {
+    as_ipc_url(ipc_root().join(format!("pie_response_{channel_id:x}.ipc")))
 }
 
 /// The endpoint for synchronous management commands (e.g., load_model).

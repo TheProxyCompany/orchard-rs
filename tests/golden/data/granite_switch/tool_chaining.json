@@ -230,7 +230,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "mlx-community/granite-4.1-30b-4bit","tokens": [100270,198,5018,609,794,330,3990,3173,498,330,16774,794,5324,3039,794,330,18556,96742,100271],"thinking": false}
       }
     },
     {
@@ -572,7 +573,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "mlx-community/granite-4.1-30b-4bit","tokens": [100270,198,5018,609,794,330,56121,62,27417,498,330,16774,794,5324,798,794,330,42,22,5364,1929,73421,12,24242,16,96742,100271],"thinking": false}
       }
     },
     {
@@ -1319,7 +1321,8 @@
           }
         },
         "stop_token_id": 100257,
-        "stop_token": "<|end_of_text|>"
+        "stop_token": "<|end_of_text|>",
+        "generation": {"model": "mlx-community/granite-4.1-30b-4bit","tokens": [791,1401,1766,304,279,6875,574,3146,42,22,5364,1929,73421,12,24242,16,334,13,12362,420,1401,11,279,32726,15489,574,36718,11,323,4871,433,574,3146,64,86115,26161,56755,483,334,13],"thinking": false}
       }
     },
     {

@@ -18,6 +18,7 @@ pub enum BatchChatResult {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageStats {
     pub prompt_tokens: u32,
+    /// All generated tokens, including reasoning.
     pub completion_tokens: u32,
     pub total_tokens: u32,
 }

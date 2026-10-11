@@ -664,8 +664,8 @@
         ],
         "usage": {
           "input_tokens": 26,
-          "output_tokens": 2,
-          "total_tokens": 28,
+          "output_tokens": 36,
+          "total_tokens": 62,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -674,7 +674,8 @@
           }
         },
         "stop_token_id": 0,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "moondream/moondream3-preview","tokens": [489,1222,316,8022,41203,1283,41251,1194,41289,1720,41182,30609,742,1137,46,225,1194,41293,1720,41229,4020,41182,489,1812,6416,7930,41203,628,41247,868,41649,4020,34,3,4020],"thinking": true}
       }
     },
     {
@@ -836,7 +837,8 @@
           }
         },
         "stop_token_id": 0,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "moondream/moondream3-preview","tokens": [4020],"thinking": false}
       }
     },
     {

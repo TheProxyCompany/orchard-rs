@@ -6,7 +6,7 @@
 
 use orchard::SamplingParams;
 
-use crate::fixture::{fanout, get_fixture, make_message, ALL_MODELS};
+use crate::fixture::{fanout, get_fixture, make_message, semantic_token_limit, ALL_MODELS};
 
 async fn run_client_chat_non_streaming(prompt: &str) {
     let fixture = get_fixture().await;
@@ -14,7 +14,7 @@ async fn run_client_chat_non_streaming(prompt: &str) {
 
     fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: 5,
+            max_tokens: semantic_token_limit(model_id, 5),
             temperature: 0.0,
             reasoning: Some(false),
             ..Default::default()
@@ -45,11 +45,42 @@ async fn run_client_chat_non_streaming(prompt: &str) {
                     "Should have generated tokens for {}",
                     model_id
                 );
-                assert_eq!(
-                    response.usage.completion_tokens, 5,
-                    "Expected exactly 5 completion tokens for {}, got {}",
-                    model_id, response.usage.completion_tokens
-                );
+                if semantic_token_limit(model_id, 5) == 5 {
+                    assert_eq!(response.usage.completion_tokens, 5);
+                } else {
+                    // Reasoning can use the whole literal cap before any text.
+                    let capped = client
+                        .achat(
+                            model_id,
+                            vec![make_message("user", prompt)],
+                            SamplingParams {
+                                max_tokens: 5,
+                                temperature: 0.0,
+                                reasoning: Some(false),
+                                ..Default::default()
+                            },
+                            false,
+                        )
+                        .await
+                        .expect("literal-cap request failed");
+                    let orchard::ChatResult::Complete(capped) = capped else {
+                        panic!("expected complete response")
+                    };
+                    assert_eq!(
+                        capped.usage.completion_tokens, 5,
+                        "literal cap for {model_id}"
+                    );
+                    assert_eq!(
+                        capped
+                            .deltas
+                            .iter()
+                            .filter_map(|delta| delta.generation_len)
+                            .max(),
+                        Some(5),
+                        "literal engine cap for {model_id}"
+                    );
+                    assert_eq!(capped.finish_reason.as_deref(), Some("length"));
+                }
             }
             orchard::ChatResult::Stream(_) => {
                 panic!("Expected complete response, got stream for {}", model_id);
@@ -65,7 +96,7 @@ async fn run_client_chat_streaming(prompt: &str) {
 
     fanout(ALL_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: 96,
+            max_tokens: semantic_token_limit(model_id, 96),
             temperature: 0.7,
             reasoning: Some(false),
             ..Default::default()

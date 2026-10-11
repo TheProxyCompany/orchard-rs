@@ -3,66 +3,38 @@
 //!
 //!   MODEL=google/gemma-4-26B-A4B-it cargo run --release --example two_turn
 
-use std::collections::HashMap;
-use std::sync::Arc;
+mod common;
+
 use std::time::Instant;
 
-use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
-
-fn msg(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
-    HashMap::from([
-        ("role".to_string(), serde_json::json!(role)),
-        ("content".to_string(), serde_json::json!(content)),
-    ])
-}
+use common::{msg, run_turn, Message};
+use orchard::{Client, SamplingParams};
 
 async fn turn(
     client: &Client,
     model: &str,
-    messages: Vec<HashMap<String, serde_json::Value>>,
-) -> Result<String, Box<dyn std::error::Error>> {
+    messages: Vec<Message>,
+) -> Result<String, common::Error> {
     let params = SamplingParams {
         max_tokens: 96,
         temperature: 0.0,
         reasoning: Some(false),
         ..Default::default()
     };
-    let t = Instant::now();
-    let ChatResult::Stream(mut stream) = client.achat(model, messages, params, true).await? else {
-        unreachable!()
-    };
-    let (mut ttft, mut prompt_tokens, mut cached, mut n, mut text) = (None, 0, 0, 0, String::new());
-    while let Some(d) = stream.recv().await {
-        if let Some(e) = d.error {
-            return Err(e.into());
-        }
-        if ttft.is_none() && !d.tokens.is_empty() {
-            ttft = Some(t.elapsed());
-        }
-        n += d.tokens.len();
-        prompt_tokens = prompt_tokens.max(d.prompt_token_count.unwrap_or(0));
-        cached = cached.max(d.cached_token_count.unwrap_or(0));
-        if let Some(c) = d.content {
-            text.push_str(&c);
-        }
-        if d.is_final_delta {
-            break;
-        }
-    }
+    let turn = run_turn(client, model, messages, params, |_| {}).await?;
+    let (n, prompt_tokens, cached) = (turn.ids.len(), turn.prompt_tokens, turn.cached);
     println!(
         "  ttft {:>5.0}ms | {n:>3} gen tokens | prompt {prompt_tokens:>3} tok, {cached:>3} cached ({:.0}%)",
-        ttft.map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0),
+        turn.ttft_ms,
         100.0 * cached as f64 / prompt_tokens.max(1) as f64
     );
-    Ok(text)
+    Ok(turn.text)
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), common::Error> {
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
-    let _engine = InferenceEngine::new().await?;
-    let registry = Arc::new(ModelRegistry::new()?);
-    let client = Client::connect(Arc::clone(&registry)).await?;
+    let (_engine, registry, client) = common::connect().await?;
     let t = Instant::now();
     registry.ensure_loaded(&model).await?;
     eprintln!("[model ready in {:.1}s]", t.elapsed().as_secs_f64());

@@ -143,6 +143,34 @@ let result = client
     .await?;
 ```
 
+## Multi-turn conversations
+
+Append `assistant_message` after each reply and send the conversation back as it is:
+
+```rust
+let ChatResult::Stream(mut stream) = client.achat(model, messages.clone(), params.clone(), true).await? else {
+    unreachable!()
+};
+let mut deltas = Vec::new();
+while let Some(delta) = stream.recv().await {
+    let done = delta.is_final_delta;
+    deltas.push(delta);
+    if done {
+        break;
+    }
+}
+messages.push(client.assistant_message(model, &params, deltas).await?);
+messages.push(user("and the next question"));
+```
+
+The message keeps the reply's reasoning and tool calls, and a `generation` record with
+the exact token ids the model produced. Sent back to the same model, the reply is
+replayed id for id, so the engine serves the whole conversation so far from its prefix
+cache and computes only the new question. Any other model reads the text fields. With the
+Responses API, `response_input_items(&response.output, response.generation.as_ref())`
+does the same. `examples/replay_turns.rs` and `examples/replay_responses.rs` print the
+cache reuse per turn.
+
 ## Multimodal
 
 Vision-capable models accept OpenAI-style content parts. Use data URLs for
@@ -239,3 +267,74 @@ client behavior:
 ## License
 
 Apache-2.0
+
+## Native voice and speaker streams
+
+Build with `--features duplex,diarization`. PIE owns Moshi/Mimi and Nemotron3
+model weights, streaming state, inference and native backend libraries. The Rust
+SDK resolves pinned assets, publishes immutable descriptors and transports
+audio/events over bounded IPC. `duplex-metal` remains a source
+compatibility alias for `duplex`.
+
+```rust
+use orchard::duplex::{DuplexOptions, DEFAULT_MODEL};
+use orchard::diarization::DiarizationOptions;
+
+let mut diarizer = client.diarization(
+    "nvidia/Nemotron-3-Diarization", DiarizationOptions::default()
+).await?;
+let mut voice = client.duplex(DEFAULT_MODEL, DuplexOptions::default()).await?;
+let control = voice.control();
+control.push_audio(0, vec![0.0; 1920])?; // 80 ms, mono float32 at 24 kHz
+let epoch = control.epoch();
+control.reference("The test flag is purple.".into(), epoch)?;
+// Drain voice.next_event() concurrently with input.
+let next_epoch = control.interrupt()?; // acknowledged by PIE before returning
+```
+
+This native implementation supports the pinned MoshiRAG `v0_1` safetensors
+checkpoint and ARC assets declared in Pantheon. The source repository name
+`kyutai/moshika-rag-candle-bf16` identifies the checkpoint's layout; inference is
+C++/Carbon in PIE. Source weights stay unchanged, and the SDK creates a small,
+versioned descriptor in its private cache. No implicit Q8 conversion is made.
+Unsupported base/GGUF formats and legacy CPU/cadence overrides fail explicitly.
+
+The default voice is autonomous, full-duplex generation: a pending backbone
+request does not mute its PCM. Concise factual references condition the trained
+RAG channel asynchronously. Generated voice text is distinct from the backbone's
+answer and microphone ASR; it cannot execute tools or authorize actions.
+`reference_applied` reports actual consumption, not merely receipt of a command.
+Interrupt and reset epochs fence already-buffered old audio. Model loading,
+readiness, cancellation, session cleanup and unload are owned by PIE.
+
+When Ready advertises `supports_response_hold`, call `hold_response(epoch)`
+explicitly while waiting for factual context. Its acknowledgment returns the
+native reference version without advancing the epoch or stopping microphone
+input and the audio clock. A matching `grounded_reply(context, epoch)` applies
+the context and releases the hold for a model-authored response. Background
+`reference` updates do not release it; interrupt and reset retire the old hold.
+The caller still owns which pending result is current. Retrieval events alone
+never trigger a hold in the SDK, and a control acknowledgment does not confirm
+speech generation or playback.
+
+With `realtime: false` (the default), microphone frames including silence drive
+the clock. `realtime: true` lets the engine synthesize clock ticks when no frame
+is available. Input and output queues are bounded; metrics report actual frame
+drops, queue delay and compute time. The client binds a `pull_v1` response route
+before opening the session, so audio does not depend on lossy PUB/SUB delivery.
+A connected PIE build with native Moshi and Nemotron3 support is required.
+
+Nemotron 3 returns eight anonymous, session-local speaker channels with 10 ms
+posterior frames and overlapping segments. A speaker channel is not a person's
+identity. Entity binding belongs to the application and needs confirmed evidence.
+Device and streaming geometry select an immutable engine model descriptor;
+the SDK's default CPU selection also executes inside PIE. Diarization input
+receives a bounded queue admission ACK. A full queue rejects the frame without
+advancing its sequence; retry it or let the next admission report the gap.
+`finish()` gates new input and drains accepted frames through the final update,
+metrics and `Closed`. `shutdown()` waits for PIE's terminal confirmation.
+
+The PIE artifact includes the pinned NVIDIA backend and its dylib dependencies.
+`orchard-duplex` and `orchard-diarize` are thin JSON-lines clients for the engine's
+voice and diarization sessions. Client applications need no NeMo/GGML inference
+library loaded into their own process.

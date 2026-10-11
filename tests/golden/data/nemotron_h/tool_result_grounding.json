@@ -758,8 +758,8 @@
         ],
         "usage": {
           "input_tokens": 168,
-          "output_tokens": 23,
-          "total_tokens": 191,
+          "output_tokens": 56,
+          "total_tokens": 224,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -768,7 +768,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16","tokens": [1784,3330,1395,16798,1394,1278,17253,1294,5151,12717,1046,1362,2534,1317,2210,1278,2012,1095,45629,9519,1454,7285,1429,24619,12717,3871,9246,1639,3690,1455,2254,1626,13,14,1010,1060,5165,94314,1095,45629,1561,1060,31960,1061,17611,1561,24619,12717,1010,1885,31960,1561,1885,5165,1561,15],"thinking": true}
       }
     },
     {
@@ -1176,8 +1177,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 8223,
-      "content": " says"
+      "token_id": 1395,
+      "content": " is"
     },
     {
       "type": "response.reasoning.delta",
@@ -1185,13 +1186,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " says"
+      "delta": " is"
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 6138,
-      "content": " temperature"
+      "token_id": 1058,
+      "content": ":"
     },
     {
       "type": "response.reasoning.delta",
@@ -1199,13 +1200,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " temperature"
+      "delta": ":"
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 1395,
-      "content": " is"
+      "token_id": 6138,
+      "content": " temperature"
     },
     {
       "type": "response.reasoning.delta",
@@ -1213,7 +1214,7 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is"
+      "delta": " temperature"
     },
     {
       "type": "response.output_token",
@@ -1288,8 +1289,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 69,
-      "token_id": 1395,
-      "content": " is"
+      "token_id": 23745,
+      "content": " snow"
     },
     {
       "type": "response.reasoning.delta",
@@ -1297,13 +1298,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " is"
+      "delta": " snow"
     },
     {
       "type": "response.output_token",
       "sequence_number": 71,
-      "token_id": 23745,
-      "content": " snow"
+      "token_id": 1302,
+      "content": "ing"
     },
     {
       "type": "response.reasoning.delta",
@@ -1311,13 +1312,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " snow"
+      "delta": "ing"
     },
     {
       "type": "response.output_token",
       "sequence_number": 73,
-      "token_id": 1302,
-      "content": "ing"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -1325,13 +1326,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "ing"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 75,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 1362,
+      "content": " I"
     },
     {
       "type": "response.reasoning.delta",
@@ -1339,13 +1340,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " I"
     },
     {
       "type": "response.output_token",
       "sequence_number": 77,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 2715,
+      "content": " should"
     },
     {
       "type": "response.reasoning.delta",
@@ -1353,13 +1354,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": " should"
     },
     {
       "type": "response.output_token",
       "sequence_number": 79,
-      "token_id": 2715,
-      "content": " should"
+      "token_id": 2988,
+      "content": " present"
     },
     {
       "type": "response.reasoning.delta",
@@ -1367,13 +1368,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " should"
+      "delta": " present"
     },
     {
       "type": "response.output_token",
       "sequence_number": 81,
-      "token_id": 5234,
-      "content": " provide"
+      "token_id": 1593,
+      "content": " this"
     },
     {
       "type": "response.reasoning.delta",
@@ -1381,13 +1382,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " provide"
+      "delta": " this"
     },
     {
       "type": "response.output_token",
       "sequence_number": 83,
-      "token_id": 1593,
-      "content": " this"
+      "token_id": 3686,
+      "content": " information"
     },
     {
       "type": "response.reasoning.delta",
@@ -1395,13 +1396,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " this"
+      "delta": " information"
     },
     {
       "type": "response.output_token",
       "sequence_number": 85,
-      "token_id": 3686,
-      "content": " information"
+      "token_id": 11904,
+      "content": " clearly"
     },
     {
       "type": "response.reasoning.delta",
@@ -1409,13 +1410,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " information"
+      "delta": " clearly"
     },
     {
       "type": "response.output_token",
       "sequence_number": 87,
-      "token_id": 1317,
-      "content": " to"
+      "token_id": 1046,
+      "content": "."
     },
     {
       "type": "response.reasoning.delta",
@@ -1423,13 +1424,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " to"
+      "delta": "."
     },
     {
       "type": "response.output_token",
       "sequence_number": 89,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 9246,
+      "content": " Let"
     },
     {
       "type": "response.reasoning.delta",
@@ -1437,13 +1438,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " Let"
     },
     {
       "type": "response.output_token",
       "sequence_number": 91,
-      "token_id": 3330,
-      "content": " user"
+      "token_id": 1681,
+      "content": "'s"
     },
     {
       "type": "response.reasoning.delta",
@@ -1451,13 +1452,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " user"
+      "delta": "'s"
     },
     {
       "type": "response.output_token",
       "sequence_number": 93,
-      "token_id": 1046,
-      "content": "."
+      "token_id": 9148,
+      "content": " respond"
     },
     {
       "type": "response.reasoning.delta",
@@ -1465,13 +1466,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "."
+      "delta": " respond"
     },
     {
       "type": "response.output_token",
       "sequence_number": 95,
-      "token_id": 1362,
-      "content": " I"
+      "token_id": 1454,
+      "content": " with"
     },
     {
       "type": "response.reasoning.delta",
@@ -1479,13 +1480,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " I"
+      "delta": " with"
     },
     {
       "type": "response.output_token",
       "sequence_number": 97,
-      "token_id": 7534,
-      "content": "'ll"
+      "token_id": 1278,
+      "content": " the"
     },
     {
       "type": "response.reasoning.delta",
@@ -1493,13 +1494,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "'ll"
+      "delta": " the"
     },
     {
       "type": "response.output_token",
       "sequence_number": 99,
-      "token_id": 3468,
-      "content": " state"
+      "token_id": 3519,
+      "content": " current"
     },
     {
       "type": "response.reasoning.delta",
@@ -1507,13 +1508,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " state"
+      "delta": " current"
     },
     {
       "type": "response.output_token",
       "sequence_number": 101,
-      "token_id": 1278,
-      "content": " the"
+      "token_id": 17253,
+      "content": " weather"
     },
     {
       "type": "response.reasoning.delta",
@@ -1521,13 +1522,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " the"
+      "delta": " weather"
     },
     {
       "type": "response.output_token",
       "sequence_number": 103,
-      "token_id": 3519,
-      "content": " current"
+      "token_id": 9576,
+      "content": " details"
     },
     {
       "type": "response.reasoning.delta",
@@ -1535,13 +1536,13 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " current"
+      "delta": " details"
     },
     {
       "type": "response.output_token",
       "sequence_number": 105,
-      "token_id": 17253,
-      "content": " weather"
+      "token_id": 1626,
+      "content": ".\n"
     },
     {
       "type": "response.reasoning.delta",
@@ -1549,305 +1550,25 @@
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " weather"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 107,
-      "token_id": 1058,
-      "content": ":"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 108,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": ":"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 109,
-      "token_id": 1494,
-      "content": " it"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 110,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " it"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 111,
-      "token_id": 1681,
-      "content": "'s"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 112,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'s"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 113,
-      "token_id": 23745,
-      "content": " snow"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 114,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " snow"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 115,
-      "token_id": 1302,
-      "content": "ing"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 116,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "ing"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 117,
-      "token_id": 1454,
-      "content": " with"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 118,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " with"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 119,
-      "token_id": 1261,
-      "content": " a"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 120,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " a"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 121,
-      "token_id": 6138,
-      "content": " temperature"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 122,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " temperature"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 123,
-      "token_id": 1307,
-      "content": " of"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 124,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " of"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 125,
-      "token_id": 1032,
-      "content": " "
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 126,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " "
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 127,
-      "token_id": 1057,
-      "content": "9"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 128,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "9"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 129,
-      "token_id": 17633,
-      "content": " degrees"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 130,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " degrees"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 131,
-      "token_id": 112399,
-      "content": " Celsius"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 132,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " Celsius"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 133,
-      "token_id": 1046,
-      "content": "."
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 134,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "."
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 135,
-      "token_id": 1362,
-      "content": " I"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 136,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " I"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 137,
-      "token_id": 7534,
-      "content": "'ll"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 138,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "'ll"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 139,
-      "token_id": 5807,
-      "content": " keep"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 140,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " keep"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 141,
-      "token_id": 1494,
-      "content": " it"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 142,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " it"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 143,
-      "token_id": 104335,
-      "content": " concise"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 144,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " concise"
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 145,
-      "token_id": 1626,
-      "content": ".\n"
-    },
-    {
-      "type": "response.reasoning.delta",
-      "sequence_number": 146,
-      "item_id": "reasoning_0",
-      "output_index": 0,
-      "content_index": 0,
       "delta": ".\n"
     },
     {
       "type": "response.output_token",
-      "sequence_number": 147,
+      "sequence_number": 107,
       "token_id": 13,
       "content": "</think>"
     },
     {
       "type": "response.reasoning.done",
-      "sequence_number": 148,
+      "sequence_number": 108,
       "item_id": "reasoning_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response says temperature is 9°C, condition is snowing. I should provide this information to the user. I'll state the current weather: it's snowing with a temperature of 9 degrees Celsius. I'll keep it concise."
+      "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response is: temperature 9°C, condition snowing. I should present this information clearly. Let's respond with the current weather details."
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 149,
+      "sequence_number": 109,
       "output_index": 0,
       "item": {
         "type": "reasoning",
@@ -1857,7 +1578,7 @@
         "content": [
           {
             "type": "reasoning_text",
-            "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response says temperature is 9°C, condition is snowing. I should provide this information to the user. I'll state the current weather: it's snowing with a temperature of 9 degrees Celsius. I'll keep it concise."
+            "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response is: temperature 9°C, condition snowing. I should present this information clearly. Let's respond with the current weather details."
           }
         ],
         "encrypted_content": null
@@ -1865,13 +1586,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 150,
+      "sequence_number": 110,
       "token_id": 1010,
       "content": "\n"
     },
     {
       "type": "response.output_item.added",
-      "sequence_number": 151,
+      "sequence_number": 111,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -1883,7 +1604,7 @@
     },
     {
       "type": "response.content_part.added",
-      "sequence_number": 152,
+      "sequence_number": 112,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1896,7 +1617,7 @@
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 153,
+      "sequence_number": 113,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1905,13 +1626,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 154,
+      "sequence_number": 114,
       "token_id": 1784,
       "content": "The"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 155,
+      "sequence_number": 115,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1920,13 +1641,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 156,
+      "sequence_number": 116,
       "token_id": 3519,
       "content": " current"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 157,
+      "sequence_number": 117,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1935,13 +1656,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 158,
+      "sequence_number": 118,
       "token_id": 17253,
       "content": " weather"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 159,
+      "sequence_number": 119,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1950,13 +1671,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 160,
+      "sequence_number": 120,
       "token_id": 1294,
       "content": " in"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 161,
+      "sequence_number": 121,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1965,13 +1686,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 162,
+      "sequence_number": 122,
       "token_id": 5151,
       "content": " San"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 163,
+      "sequence_number": 123,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1980,13 +1701,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 164,
+      "sequence_number": 124,
       "token_id": 12717,
       "content": " Francisco"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 165,
+      "sequence_number": 125,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -1995,13 +1716,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 166,
+      "sequence_number": 126,
       "token_id": 1395,
       "content": " is"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 167,
+      "sequence_number": 127,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2010,13 +1731,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 168,
+      "sequence_number": 128,
       "token_id": 1603,
       "content": " **"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 169,
+      "sequence_number": 129,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2025,148 +1746,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 170,
-      "token_id": 1115,
-      "content": "s"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 171,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "s",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 172,
-      "token_id": 7697,
-      "content": "now"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 173,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "now",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 174,
-      "token_id": 1302,
-      "content": "ing"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 175,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "ing",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 176,
-      "token_id": 1438,
-      "content": "**"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 177,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": "**",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 178,
-      "token_id": 1454,
-      "content": " with"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 179,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " with",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 180,
-      "token_id": 1261,
-      "content": " a"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 181,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " a",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 182,
-      "token_id": 6138,
-      "content": " temperature"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 183,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " temperature",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 184,
-      "token_id": 1307,
-      "content": " of"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 185,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " of",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 186,
-      "token_id": 1603,
-      "content": " **"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 187,
-      "item_id": "msg_0",
-      "output_index": 1,
-      "content_index": 0,
-      "delta": " **",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 188,
+      "sequence_number": 130,
       "token_id": 1057,
       "content": "9"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 189,
+      "sequence_number": 131,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2175,13 +1761,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 190,
+      "sequence_number": 132,
       "token_id": 12801,
       "content": "°C"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 191,
+      "sequence_number": 133,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
@@ -2190,44 +1776,164 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 192,
-      "token_id": 12617,
-      "content": "**."
+      "sequence_number": 134,
+      "token_id": 1438,
+      "content": "**"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 193,
+      "sequence_number": 135,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "delta": "**.",
+      "delta": "**",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 136,
+      "token_id": 1454,
+      "content": " with"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 137,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " with",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 138,
+      "token_id": 1603,
+      "content": " **"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 139,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " **",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 140,
+      "token_id": 1115,
+      "content": "s"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 141,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "s",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 142,
+      "token_id": 7697,
+      "content": "now"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 143,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "now",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 144,
+      "token_id": 1302,
+      "content": "ing"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 145,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "ing",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 146,
+      "token_id": 1438,
+      "content": "**"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 147,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "**",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 148,
+      "token_id": 5481,
+      "content": " conditions"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 149,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": " conditions",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 150,
+      "token_id": 1046,
+      "content": "."
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 151,
+      "item_id": "msg_0",
+      "output_index": 1,
+      "content_index": 0,
+      "delta": ".",
       "logprobs": []
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 194,
+      "sequence_number": 152,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
-      "text": "\nThe current weather in San Francisco is **snowing** with a temperature of **9°C**.",
+      "text": "\nThe current weather in San Francisco is **9°C** with **snowing** conditions.",
       "logprobs": []
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 195,
+      "sequence_number": 153,
       "item_id": "msg_0",
       "output_index": 1,
       "content_index": 0,
       "part": {
         "type": "output_text",
-        "text": "\nThe current weather in San Francisco is **snowing** with a temperature of **9°C**.",
+        "text": "\nThe current weather in San Francisco is **9°C** with **snowing** conditions.",
         "annotations": [],
         "logprobs": []
       }
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 196,
+      "sequence_number": 154,
       "output_index": 1,
       "item": {
         "type": "message",
@@ -2237,7 +1943,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "\nThe current weather in San Francisco is **snowing** with a temperature of **9°C**.",
+            "text": "\nThe current weather in San Francisco is **9°C** with **snowing** conditions.",
             "annotations": [],
             "logprobs": []
           }
@@ -2246,7 +1952,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 197,
+      "sequence_number": 155,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -2264,7 +1970,7 @@
             "content": [
               {
                 "type": "reasoning_text",
-                "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response says temperature is 9°C, condition is snowing. I should provide this information to the user. I'll state the current weather: it's snowing with a temperature of 9 degrees Celsius. I'll keep it concise."
+                "text": "The user asked for the weather in San Francisco. I called the get_weather function with location \"San Francisco\". The response is: temperature 9°C, condition snowing. I should present this information clearly. Let's respond with the current weather details."
               }
             ],
             "encrypted_content": null
@@ -2277,7 +1983,7 @@
             "content": [
               {
                 "type": "output_text",
-                "text": "\nThe current weather in San Francisco is **snowing** with a temperature of **9°C**.",
+                "text": "\nThe current weather in San Francisco is **9°C** with **snowing** conditions.",
                 "annotations": [],
                 "logprobs": []
               }
@@ -2285,18 +1991,97 @@
           }
         ],
         "usage": {
-          "input_tokens": 226,
-          "output_tokens": 22,
-          "total_tokens": 248,
+          "input_tokens": 229,
+          "output_tokens": 74,
+          "total_tokens": 303,
           "input_tokens_details": {
             "cached_tokens": 0
           },
           "output_tokens_details": {
-            "reasoning_tokens": 73
+            "reasoning_tokens": 53
           }
         },
         "stop_token_id": 11,
-        "stop_token": "<|im_end|>"
+        "stop_token": "<|im_end|>",
+        "generation": {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+          "tokens": [
+            1784,
+            3330,
+            6136,
+            1394,
+            1278,
+            17253,
+            1294,
+            5151,
+            12717,
+            1046,
+            1362,
+            4418,
+            1278,
+            2012,
+            1095,
+            45629,
+            2254,
+            1454,
+            7285,
+            1429,
+            24619,
+            12717,
+            3871,
+            1531,
+            4005,
+            1395,
+            1058,
+            6138,
+            1032,
+            1057,
+            12801,
+            1044,
+            6570,
+            23745,
+            1302,
+            1046,
+            1362,
+            2715,
+            2988,
+            1593,
+            3686,
+            11904,
+            1046,
+            9246,
+            1681,
+            9148,
+            1454,
+            1278,
+            3519,
+            17253,
+            9576,
+            1626,
+            13,
+            1010,
+            1784,
+            3519,
+            17253,
+            1294,
+            5151,
+            12717,
+            1395,
+            1603,
+            1057,
+            12801,
+            1438,
+            1454,
+            1603,
+            1115,
+            7697,
+            1302,
+            1438,
+            5481,
+            1046
+          ],
+          "thinking": true
+        }
       }
     },
     {

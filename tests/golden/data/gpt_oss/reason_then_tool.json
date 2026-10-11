@@ -436,8 +436,8 @@
         ],
         "usage": {
           "input_tokens": 151,
-          "output_tokens": 24,
-          "total_tokens": 175,
+          "output_tokens": 34,
+          "total_tokens": 185,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -446,7 +446,46 @@
           }
         },
         "stop_token_id": 200012,
-        "stop_token": "<|call|>"
+        "stop_token": "<|call|>",
+        "generation": {
+          "model": "openai/gpt-oss-20b",
+          "tokens": [
+            200005,
+            35644,
+            200008,
+            2167,
+            1309,
+            316,
+            1199,
+            290,
+            717,
+            170154,
+            1114,
+            13,
+            200007,
+            200006,
+            173781,
+            200005,
+            12606,
+            815,
+            316,
+            28,
+            44580,
+            775,
+            170154,
+            220,
+            200003,
+            4108,
+            200008,
+            10848,
+            7693,
+            7534,
+            28499,
+            18826,
+            18583
+          ],
+          "thinking": true
+        }
       }
     },
     {
@@ -509,8 +548,8 @@
     {
       "type": "response.output_token",
       "sequence_number": 5,
-      "token_id": 28499,
-      "content": "San"
+      "token_id": 637,
+      "content": "In"
     },
     {
       "type": "response.output_item.added",
@@ -543,18 +582,33 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "San",
+      "delta": "In",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 9,
+      "token_id": 6610,
+      "content": " San"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 10,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " San",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 11,
       "token_id": 35971,
       "content": " "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 10,
+      "sequence_number": 12,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -563,13 +617,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 11,
+      "sequence_number": 13,
       "token_id": 106672,
       "content": "Franc"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 12,
+      "sequence_number": 14,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -578,13 +632,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 13,
+      "sequence_number": 15,
       "token_id": 13009,
       "content": "isco"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 14,
+      "sequence_number": 16,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -593,24 +647,9 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 15,
-      "token_id": 382,
-      "content": " is"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 16,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " is",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
       "sequence_number": 17,
-      "token_id": 6821,
-      "content": " currently"
+      "token_id": 1849,
+      "content": " right"
     },
     {
       "type": "response.output_text.delta",
@@ -618,14 +657,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " currently",
+      "delta": " right",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 19,
-      "token_id": 6240,
-      "content": " **"
+      "token_id": 1954,
+      "content": " now"
     },
     {
       "type": "response.output_text.delta",
@@ -633,14 +672,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " **",
+      "delta": " now",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 21,
-      "token_id": 180062,
-      "content": "fog"
+      "token_id": 480,
+      "content": " it"
     },
     {
       "type": "response.output_text.delta",
@@ -648,14 +687,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "fog",
+      "delta": " it",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 23,
-      "token_id": 4544,
-      "content": "gy"
+      "token_id": 802,
+      "content": "’s"
     },
     {
       "type": "response.output_text.delta",
@@ -663,93 +702,18 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "gy",
+      "delta": "’s",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 25,
-      "token_id": 410,
-      "content": "**"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 26,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": "**",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 27,
-      "token_id": 483,
-      "content": " with"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 28,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " with",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 29,
-      "token_id": 261,
-      "content": " a"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 30,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " a",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 31,
-      "token_id": 12088,
-      "content": " temperature"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 32,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " temperature",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 33,
-      "token_id": 328,
-      "content": " of"
-    },
-    {
-      "type": "response.output_text.delta",
-      "sequence_number": 34,
-      "item_id": "msg_0",
-      "output_index": 0,
-      "content_index": 0,
-      "delta": " of",
-      "logprobs": []
-    },
-    {
-      "type": "response.output_token",
-      "sequence_number": 35,
       "token_id": 1078,
       "content": " about"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 36,
+      "sequence_number": 26,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -758,28 +722,28 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 37,
-      "token_id": 6240,
-      "content": " **"
+      "sequence_number": 27,
+      "token_id": 220,
+      "content": " "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 38,
+      "sequence_number": 28,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " **",
+      "delta": " ",
       "logprobs": []
     },
     {
       "type": "response.output_token",
-      "sequence_number": 39,
+      "sequence_number": 29,
       "token_id": 3898,
       "content": "65"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 40,
+      "sequence_number": 30,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -788,13 +752,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 41,
+      "sequence_number": 31,
       "token_id": 35971,
       "content": " "
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 42,
+      "sequence_number": 32,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -803,13 +767,13 @@
     },
     {
       "type": "response.output_token",
-      "sequence_number": 43,
+      "sequence_number": 33,
       "token_id": 68854,
       "content": "°F"
     },
     {
       "type": "response.output_text.delta",
-      "sequence_number": 44,
+      "sequence_number": 34,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
@@ -818,9 +782,84 @@
     },
     {
       "type": "response.output_token",
+      "sequence_number": 35,
+      "token_id": 326,
+      "content": " and"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 36,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " and",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 37,
+      "token_id": 27011,
+      "content": " fog"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 38,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " fog",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 39,
+      "token_id": 4544,
+      "content": "gy"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 40,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "gy",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 41,
+      "token_id": 13,
+      "content": "."
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 42,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": ".",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 43,
+      "token_id": 1843,
+      "content": " If"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 44,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " If",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
       "sequence_number": 45,
-      "token_id": 410,
-      "content": "**"
+      "token_id": 481,
+      "content": " you"
     },
     {
       "type": "response.output_text.delta",
@@ -828,14 +867,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "**",
+      "delta": " you",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 47,
-      "token_id": 350,
-      "content": " ("
+      "token_id": 1309,
+      "content": " need"
     },
     {
       "type": "response.output_text.delta",
@@ -843,14 +882,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " (",
+      "delta": " need",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 49,
-      "token_id": 171441,
-      "content": "≈"
+      "token_id": 6137,
+      "content": " anything"
     },
     {
       "type": "response.output_text.delta",
@@ -858,14 +897,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "≈",
+      "delta": " anything",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 51,
-      "token_id": 35971,
-      "content": " "
+      "token_id": 1203,
+      "content": " else"
     },
     {
       "type": "response.output_text.delta",
@@ -873,14 +912,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " ",
+      "delta": " else",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 53,
-      "token_id": 1157,
-      "content": "18"
+      "token_id": 11,
+      "content": ","
     },
     {
       "type": "response.output_text.delta",
@@ -888,14 +927,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "18",
+      "delta": ",",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 55,
-      "token_id": 35971,
-      "content": " "
+      "token_id": 1327,
+      "content": " just"
     },
     {
       "type": "response.output_text.delta",
@@ -903,14 +942,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": " ",
+      "delta": " just",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 57,
-      "token_id": 26557,
-      "content": "°C"
+      "token_id": 1632,
+      "content": " let"
     },
     {
       "type": "response.output_text.delta",
@@ -918,14 +957,14 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": "°C",
+      "delta": " let",
       "logprobs": []
     },
     {
       "type": "response.output_token",
       "sequence_number": 59,
-      "token_id": 741,
-      "content": ")."
+      "token_id": 668,
+      "content": " me"
     },
     {
       "type": "response.output_text.delta",
@@ -933,34 +972,64 @@
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "delta": ").",
+      "delta": " me",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 61,
+      "token_id": 1761,
+      "content": " know"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 62,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": " know",
+      "logprobs": []
+    },
+    {
+      "type": "response.output_token",
+      "sequence_number": 63,
+      "token_id": 0,
+      "content": "!"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 64,
+      "item_id": "msg_0",
+      "output_index": 0,
+      "content_index": 0,
+      "delta": "!",
       "logprobs": []
     },
     {
       "type": "response.output_text.done",
-      "sequence_number": 61,
+      "sequence_number": 65,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
-      "text": "San Francisco is currently **foggy** with a temperature of about **65 °F** (≈ 18 °C).",
+      "text": "In San Francisco right now it’s about 65 °F and foggy. If you need anything else, just let me know!",
       "logprobs": []
     },
     {
       "type": "response.content_part.done",
-      "sequence_number": 62,
+      "sequence_number": 66,
       "item_id": "msg_0",
       "output_index": 0,
       "content_index": 0,
       "part": {
         "type": "output_text",
-        "text": "San Francisco is currently **foggy** with a temperature of about **65 °F** (≈ 18 °C).",
+        "text": "In San Francisco right now it’s about 65 °F and foggy. If you need anything else, just let me know!",
         "annotations": [],
         "logprobs": []
       }
     },
     {
       "type": "response.output_item.done",
-      "sequence_number": 63,
+      "sequence_number": 67,
       "output_index": 0,
       "item": {
         "type": "message",
@@ -970,7 +1039,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "San Francisco is currently **foggy** with a temperature of about **65 °F** (≈ 18 °C).",
+            "text": "In San Francisco right now it’s about 65 °F and foggy. If you need anything else, just let me know!",
             "annotations": [],
             "logprobs": []
           }
@@ -979,7 +1048,7 @@
     },
     {
       "type": "response.completed",
-      "sequence_number": 64,
+      "sequence_number": 68,
       "response": {
         "id": "resp_0",
         "object": "response",
@@ -997,7 +1066,7 @@
             "content": [
               {
                 "type": "output_text",
-                "text": "San Francisco is currently **foggy** with a temperature of about **65 °F** (≈ 18 °C).",
+                "text": "In San Francisco right now it’s about 65 °F and foggy. If you need anything else, just let me know!",
                 "annotations": [],
                 "logprobs": []
               }
@@ -1006,8 +1075,8 @@
         ],
         "usage": {
           "input_tokens": 205,
-          "output_tokens": 31,
-          "total_tokens": 236,
+          "output_tokens": 33,
+          "total_tokens": 238,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -1016,7 +1085,45 @@
           }
         },
         "stop_token_id": 200002,
-        "stop_token": "<|return|>"
+        "stop_token": "<|return|>",
+        "generation": {
+          "model": "openai/gpt-oss-20b",
+          "tokens": [
+            200005,
+            17196,
+            200008,
+            637,
+            6610,
+            35971,
+            106672,
+            13009,
+            1849,
+            1954,
+            480,
+            802,
+            1078,
+            220,
+            3898,
+            35971,
+            68854,
+            326,
+            27011,
+            4544,
+            13,
+            1843,
+            481,
+            1309,
+            6137,
+            1203,
+            11,
+            1327,
+            1632,
+            668,
+            1761,
+            0
+          ],
+          "thinking": true
+        }
       }
     },
     {

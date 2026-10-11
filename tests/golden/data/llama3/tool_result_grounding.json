@@ -180,7 +180,8 @@
           }
         },
         "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>"
+        "stop_token": "<|eom_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [128010,456,70464,23509,429,24661,13175,909],"thinking": false}
       }
     },
     {
@@ -582,7 +583,8 @@
           }
         },
         "stop_token_id": 128009,
-        "stop_token": "<|eot_id|>"
+        "stop_token": "<|eot_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [791,1510,9282,304,5960,13175,374,220,24,12628,62447,323,433,596,12056,287,13],"thinking": false}
       }
     },
     {

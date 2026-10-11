@@ -5,12 +5,14 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
 use crate::client::response::ClientDelta;
-use crate::client::{Client, ClientError, Result, SamplingParams};
+use crate::client::{Client, SamplingParams};
+use crate::error::{Error, Result};
 use crate::model::registry::ModelRegistry;
 
 /// Model ID for Moondream.
@@ -78,6 +80,19 @@ pub struct CaptionResult {
     pub caption: String,
 }
 
+/// Caption and measured engine accounting for repeated camera frames.
+/// Cached tokens are PIE's reported prefix-cache reuse, not an inferred image hit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptionWithMetrics {
+    pub caption: String,
+    pub model_id: String,
+    pub prompt_tokens: u32,
+    pub cached_tokens: u32,
+    pub completion_tokens: u32,
+    pub elapsed_ms: f64,
+    pub first_token_ms: Option<f64>,
+}
+
 /// A point coordinate (x, y) normalized to 0-1 with named fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointCoord {
@@ -121,6 +136,7 @@ pub struct GazeResult {
 ///
 /// Wraps the base client with specialized methods for Moondream's capabilities.
 pub struct MoondreamClient {
+    model_id: String,
     /// Underlying client
     client: Client,
     /// Capability token IDs
@@ -132,7 +148,16 @@ impl MoondreamClient {
     ///
     /// This will ensure the configured Moondream model is loaded and ready.
     pub async fn new(client: Client, registry: Arc<ModelRegistry>) -> Result<Self> {
-        let model_info = registry.ensure_loaded(MOONDREAM_MODEL_ID).await?;
+        Self::with_model(client, registry, MOONDREAM_MODEL_ID).await
+    }
+
+    /// Select a Moondream checkpoint (including a compatible local/quantized one).
+    pub async fn with_model(
+        client: Client,
+        registry: Arc<ModelRegistry>,
+        model_id: &str,
+    ) -> Result<Self> {
+        let model_info = registry.ensure_loaded(model_id).await?;
 
         // Build capability token ID map with fallbacks
         let mut capability_token_ids: HashMap<String, i32> = HashMap::from([
@@ -153,6 +178,7 @@ impl MoondreamClient {
         }
 
         Ok(Self {
+            model_id: model_info.model_id,
             client,
             capability_token_ids,
         })
@@ -164,10 +190,10 @@ impl MoondreamClient {
     fn decode_coordinate(payload_b64: &str) -> Result<f64> {
         let raw_bytes = BASE64
             .decode(payload_b64)
-            .map_err(|e| ClientError::Multimodal(format!("Failed to decode base64: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to decode base64: {}", e)))?;
 
         if raw_bytes.len() != 4 {
-            return Err(ClientError::Multimodal(format!(
+            return Err(Error::Other(format!(
                 "Coordinate payload must be 4 bytes; received {} bytes",
                 raw_bytes.len()
             )));
@@ -183,10 +209,10 @@ impl MoondreamClient {
     fn decode_size(payload_b64: &str) -> Result<(f64, f64)> {
         let raw_bytes = BASE64
             .decode(payload_b64)
-            .map_err(|e| ClientError::Multimodal(format!("Failed to decode base64: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to decode base64: {}", e)))?;
 
         if raw_bytes.len() != 8 {
-            return Err(ClientError::Multimodal(format!(
+            return Err(Error::Other(format!(
                 "Size payload must be 8 bytes; received {} bytes",
                 raw_bytes.len()
             )));
@@ -278,12 +304,12 @@ impl MoondreamClient {
         // Get streaming response
         let result = self
             .client
-            .achat(MOONDREAM_MODEL_ID, messages, params, true)
+            .achat(&self.model_id, messages, params, true)
             .await?;
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         // Process stream
@@ -452,48 +478,86 @@ impl MoondreamClient {
         &self,
         image_data_url: &str,
         length: &str,
-        mut params: SamplingParams,
+        params: SamplingParams,
     ) -> Result<CaptionResult> {
-        let content = vec![serde_json::json!({
-            "type": "input_image",
-            "image_url": image_data_url
-        })];
+        let result = self
+            .caption_with_metrics(image_data_url, length, params)
+            .await?;
+        Ok(CaptionResult {
+            caption: result.caption,
+        })
+    }
 
+    /// Caption a frame and expose actual cache/timing accounting. Reusing the
+    /// identical image bytes and task/prompt lets PIE reuse its existing prefix.
+    pub async fn caption_with_metrics(
+        &self,
+        image_data_url: &str,
+        length: &str,
+        mut params: SamplingParams,
+    ) -> Result<CaptionWithMetrics> {
+        if !["normal", "short", "long"].contains(&length) {
+            return Err(Error::Other(
+                "Caption length must be normal, short, or long".into(),
+            ));
+        }
+        let began = Instant::now();
         let messages = vec![HashMap::from([
             ("role".to_string(), serde_json::json!("user")),
-            ("content".to_string(), serde_json::json!(content)),
+            (
+                "content".to_string(),
+                serde_json::json!([{
+                    "type": "input_image", "image_url": image_data_url
+                }]),
+            ),
         ])];
-
-        // Set task_name based on length
         params.task_name = Some(format!("caption_{}", length));
-
         let result = self
             .client
-            .achat(MOONDREAM_MODEL_ID, messages, params, true)
+            .achat(&self.model_id, messages, params, true)
             .await?;
-
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
-
-        let mut caption_parts: Vec<String> = Vec::new();
-
+        let mut observation = CaptionWithMetrics {
+            caption: String::new(),
+            model_id: self.model_id.clone(),
+            prompt_tokens: 0,
+            cached_tokens: 0,
+            completion_tokens: 0,
+            elapsed_ms: 0.0,
+            first_token_ms: None,
+        };
         while let Some(delta) = rx.recv().await {
-            let client_delta = ClientDelta::from(delta);
-
-            if let Some(content) = client_delta.content {
-                caption_parts.push(content);
+            if let Some(error) = &delta.error {
+                return Err(Error::Other(error.clone()));
             }
-
+            observation.prompt_tokens = observation
+                .prompt_tokens
+                .max(delta.prompt_token_count.unwrap_or(0));
+            observation.cached_tokens = observation
+                .cached_tokens
+                .max(delta.cached_token_count.unwrap_or(0));
+            observation.completion_tokens = observation
+                .completion_tokens
+                .max(delta.generation_len.unwrap_or(0));
+            let client_delta = ClientDelta::from(delta);
+            if let Some(content) = client_delta.content {
+                if !content.is_empty() && observation.first_token_ms.is_none() {
+                    observation.first_token_ms = Some(began.elapsed().as_secs_f64() * 1000.0);
+                }
+                observation.caption.push_str(&content);
+            }
             if client_delta.is_final {
-                break;
+                observation.caption = observation.caption.trim().to_owned();
+                observation.elapsed_ms = began.elapsed().as_secs_f64() * 1000.0;
+                return Ok(observation);
             }
         }
-
-        Ok(CaptionResult {
-            caption: caption_parts.join("").trim().to_string(),
-        })
+        Err(Error::Other(
+            "Moondream caption stream ended before its final delta".into(),
+        ))
     }
 
     /// Find points where an object appears in an image.
@@ -528,12 +592,12 @@ impl MoondreamClient {
 
         let result = self
             .client
-            .achat(MOONDREAM_MODEL_ID, messages, params, true)
+            .achat(&self.model_id, messages, params, true)
             .await?;
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();
@@ -603,12 +667,12 @@ impl MoondreamClient {
 
         let result = self
             .client
-            .achat(MOONDREAM_MODEL_ID, messages, params, true)
+            .achat(&self.model_id, messages, params, true)
             .await?;
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();
@@ -690,12 +754,12 @@ impl MoondreamClient {
 
         let result = self
             .client
-            .achat(MOONDREAM_MODEL_ID, messages, params, true)
+            .achat(&self.model_id, messages, params, true)
             .await?;
 
         let mut rx = match result {
             crate::client::ChatResult::Stream(rx) => rx,
-            _ => return Err(ClientError::RequestFailed("Expected stream".into())),
+            _ => return Err(Error::Other("Expected stream".into())),
         };
 
         let mut coords: Vec<f64> = Vec::new();

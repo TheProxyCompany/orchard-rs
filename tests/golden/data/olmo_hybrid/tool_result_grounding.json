@@ -262,7 +262,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [100268,90,220,330,609,794,330,456,70464,498,220,330,16774,794,5324,2588,794,330,24661,13175,9388,335,100269],"thinking": false}
       }
     },
     {
@@ -664,7 +665,8 @@
           }
         },
         "stop_token_id": 100257,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [791,1510,9282,304,5960,13175,374,12056,287,449,264,9499,315,220,24,32037,13],"thinking": false}
       }
     },
     {

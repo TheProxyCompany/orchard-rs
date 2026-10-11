@@ -1,0 +1,102 @@
+[
+  {
+    "id": "gemma-4-12b",
+    "family": "gemma",
+    "name": "Gemma 4 12B",
+    "model": "google/gemma-4-12B-it",
+    "capabilities": {
+      "language": true,
+      "text_generation": true
+    },
+    "profile": "gemma4"
+  },
+  {
+    "id": "moshika-rag",
+    "family": "moshi",
+    "name": "Moshi RAG",
+    "model": "kyutai/moshika-rag-candle-bf16",
+    "capabilities": {
+      "voice": true,
+      "full_duplex": true,
+      "speech_to_speech": true,
+      "audio_input": true,
+      "audio_output": true,
+      "media_only": true,
+      "orchard_duplex": true,
+      "speech_reference": true
+    },
+    "profile": "moshi"
+  },
+  {
+    "id": "moshiko-q8",
+    "family": "moshi",
+    "name": "Moshi \u00b7 Moshiko",
+    "model": "kyutai/moshiko-candle-q8",
+    "capabilities": {
+      "voice": true,
+      "full_duplex": true,
+      "speech_to_speech": true,
+      "audio_input": true,
+      "audio_output": true,
+      "media_only": true,
+      "orchard_duplex": true
+    },
+    "profile": "moshi"
+  },
+  {
+    "id": "moshika-q8",
+    "family": "moshi",
+    "name": "Moshi \u00b7 Moshika",
+    "model": "kyutai/moshika-candle-q8",
+    "capabilities": {
+      "voice": true,
+      "full_duplex": true,
+      "speech_to_speech": true,
+      "audio_input": true,
+      "audio_output": true,
+      "media_only": true,
+      "orchard_duplex": true
+    },
+    "profile": "moshi"
+  },
+  {
+    "id": "nemotron-3-diarization",
+    "family": "nemotron-diarization",
+    "name": "Nemotron 3 Diarization",
+    "model": "nvidia/Nemotron-3-Diarization",
+    "capabilities": {
+      "diarization": true,
+      "streaming": true,
+      "audio_input": true,
+      "media_only": true,
+      "orchard_diarization": true
+    },
+    "profile": "nemotron3_diarization"
+  },
+  {
+    "id": "moondream-3",
+    "family": "moondream",
+    "name": "Moondream 3",
+    "model": "moondream/moondream3-preview",
+    "capabilities": {
+      "vision": true,
+      "object_detection": true,
+      "media_only": true,
+      "orchard_vision": true
+    },
+    "profile": "moondream3"
+  },
+  {
+    "id": "parakeet-tdt-0.6b-v3",
+    "family": "parakeet",
+    "name": "Parakeet 0.6B v3",
+    "model": "mlx-community/parakeet-tdt-0.6b-v3",
+    "capabilities": {
+      "speech_to_text": true,
+      "transcription": true,
+      "media_only": true,
+      "orchard_transcription": true
+    },
+    "profile": "parakeet_tdt"
+  }
+]

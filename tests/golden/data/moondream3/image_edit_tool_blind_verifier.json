@@ -404,8 +404,8 @@
         ],
         "usage": {
           "input_tokens": 745,
-          "output_tokens": 8,
-          "total_tokens": 753,
+          "output_tokens": 17,
+          "total_tokens": 762,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -414,7 +414,8 @@
           }
         },
         "stop_token_id": 0,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "moondream/moondream3-preview","tokens": [61,45478,2669,5210,41261,1821,3461,34,3,53,2669,5210,41261,1821,3461,34],"thinking": true}
       }
     },
     {

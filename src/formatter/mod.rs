@@ -1,7 +1,7 @@
 //! Chat formatting for LLM prompts.
 
 pub mod control_tokens;
-mod embedded_profiles {
+pub(crate) mod embedded_profiles {
     include!(concat!(env!("OUT_DIR"), "/embedded_profiles.rs"));
 }
 pub mod multimodal;
@@ -254,6 +254,11 @@ pub struct ChatFormatter {
 }
 
 impl ChatFormatter {
+    /// Installed profile used to negotiate operations with a host. This is
+    /// descriptive metadata, not a substitute for engine activation.
+    pub fn operation_profile(&self) -> &serde_json::Value {
+        &self.capabilities
+    }
     /// Create a new chat formatter for a model.
     pub fn new(model_path: &Path) -> Result<Self> {
         let config_path = model_path.join("config.json");
@@ -878,6 +883,95 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Every chat profile the template rules below are checked against.
+    const CHAT_PROFILES: [&str; 16] = [
+        "llama",
+        "gemma3",
+        "gemma4",
+        "gemma4u",
+        "qwen2",
+        "qwen3_5",
+        "lfm2",
+        "lfm2_moe",
+        "olmo_hybrid",
+        "nemotron_h",
+        "granite_switch",
+        "gpt_oss",
+        "proxy_i",
+        "afmoe",
+        "glm4_moe",
+        "laguna",
+    ];
+
+    fn message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
+        HashMap::from([
+            ("role".to_string(), serde_json::json!(role)),
+            ("content".to_string(), serde_json::json!(content)),
+        ])
+    }
+
+    /// The formatter for a model directory holding only this `model_type`. The directory
+    /// is returned so it outlives the formatter.
+    fn formatter_for(model_type: &str) -> (tempfile::TempDir, ChatFormatter) {
+        let model_dir = tempdir().unwrap();
+        std::fs::write(
+            model_dir.path().join("config.json"),
+            serde_json::json!({"model_type": model_type}).to_string(),
+        )
+        .unwrap();
+        let formatter = ChatFormatter::new(model_dir.path()).unwrap();
+        (model_dir, formatter)
+    }
+
+    #[test]
+    fn test_qwen2_uses_native_chatml_and_hermes_tool_history() {
+        let (_directory, formatter) = formatter_for("qwen2");
+        assert!(!formatter.supports_native_thinking());
+        assert_eq!(
+            formatter.generation_default_f64("repetition_penalty"),
+            Some(1.05)
+        );
+        assert_eq!(
+            formatter
+                .apply_template(&[message("user", "Hello")], true, false, None, None)
+                .unwrap(),
+            concat!(
+                "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. ",
+                "You are a helpful assistant.<|im_end|>\n",
+                "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+            )
+        );
+        let mut call = message("agent", "");
+        call.insert(
+            "tool_calls".into(),
+            serde_json::json!([{
+                "type":"function",
+                "function":{"name":"lookup","arguments":"{\"q\":\"São Paulo\",\"limit\":2}"}
+            }]),
+        );
+        let history = [
+            message("system", "Be precise."),
+            message("user", "Find it."),
+            call,
+            message("tool", "first"),
+            message("tool", "second"),
+        ];
+        assert_eq!(
+            formatter
+                .apply_template(&history, true, false, None, None)
+                .unwrap(),
+            concat!(
+                "<|im_start|>system\nBe precise.<|im_end|>\n",
+                "<|im_start|>user\nFind it.<|im_end|>\n",
+                "<|im_start|>assistant\n<tool_call>\n{\"name\": \"lookup\", \"arguments\": ",
+                "{\"q\": \"São Paulo\", \"limit\": 2}}\n</tool_call><|im_end|>\n",
+                "<|im_start|>user\n<tool_response>\nfirst\n</tool_response>",
+                "\n<tool_response>\nsecond\n</tool_response><|im_end|>\n",
+                "<|im_start|>assistant\n"
+            )
+        );
+    }
+
     #[test]
     fn test_determine_model_type() {
         let config = serde_json::json!({"model_type": "llama"});
@@ -966,6 +1060,127 @@ mod tests {
                 "{source_type}: {rendered}"
             );
         }
+    }
+
+    /// A reply the model generated comes back as a `generated` marker. Every chat profile
+    /// must render the conversation so far exactly as it was when that reply was
+    /// generated, then the marker, then the rest: only then is the next prompt the last
+    /// prompt plus the reply, which is what lets the engine reuse all of its cache.
+    #[test]
+    fn test_a_replayed_reply_extends_the_prompt_it_answered() {
+        let mut broken = Vec::new();
+        for model_type in CHAT_PROFILES {
+            let (_model_dir, formatter) = formatter_for(model_type);
+            // The client renames `assistant` to `agent` before rendering; both must work.
+            let cases = [
+                (false, "assistant"),
+                (true, "assistant"),
+                (false, "agent"),
+                (true, "agent"),
+            ];
+            for (thinking, role) in cases {
+                let asked = [
+                    message("system", "Be brief."),
+                    message("user", "first question"),
+                ];
+                let first = formatter
+                    .apply_template(&asked, true, thinking, None, None)
+                    .unwrap();
+
+                let mut reply = message(role, "ignored: the marker stands for the reply");
+                reply.insert("generated".into(), serde_json::json!("\u{e000}0\u{e001}"));
+                reply.insert("generated_thinking".into(), serde_json::json!(thinking));
+                let mut next = asked.to_vec();
+                next.extend([reply, message("user", "second question")]);
+                // Some models switch thinking at the head of the prompt (Gemma 4 writes
+                // `<|think|>` into the system turn), so the conversation re-renders in the
+                // next request's mode. The generation prompt the reply answered stays as asked.
+                let conversation = |mode| {
+                    formatter
+                        .apply_template(&asked, false, mode, None, None)
+                        .unwrap()
+                };
+                let asked_prompt = first
+                    .strip_prefix(&conversation(thinking))
+                    .expect("the generation prompt is a suffix of the conversation")
+                    .to_string();
+                for next_thinking in [false, true] {
+                    let second = formatter
+                        .apply_template(&next, true, next_thinking, None, None)
+                        .unwrap();
+                    let expected = format!(
+                        "{}{asked_prompt}\u{e000}0\u{e001}",
+                        conversation(next_thinking)
+                    );
+                    if !second.starts_with(&expected) {
+                        broken.push(format!("{model_type} as {role} (generated with thinking={thinking}, next asked with thinking={next_thinking})"));
+                    }
+                }
+            }
+        }
+        assert!(
+            broken.is_empty(),
+            "profiles that do not replay a generated reply in place:\n{}",
+            broken.join("\n")
+        );
+    }
+
+    /// A reply that arrives as text (another model wrote it, or an HTTP client sent it)
+    /// keeps its reasoning on every turn, and adding later messages never changes how an
+    /// earlier turn renders: the conversation so far stays a prefix of the conversation.
+    #[test]
+    fn test_reasoning_stays_in_the_conversation_and_earlier_turns_do_not_move() {
+        let reply_as = |role: &str, content: &str, reasoning: &str| {
+            let mut reply = message(role, content);
+            reply.insert("reasoning_content".into(), serde_json::json!(reasoning));
+            reply
+        };
+        let mut broken = Vec::new();
+        for model_type in CHAT_PROFILES {
+            let (_model_dir, formatter) = formatter_for(model_type);
+            let keeps_reasoning = formatter.supports_native_thinking();
+            // The client renames `assistant` to `agent` before rendering; both must work.
+            for (role, thinking) in [
+                ("assistant", false),
+                ("assistant", true),
+                ("agent", false),
+                ("agent", true),
+            ] {
+                let reply = |content: &str, reasoning: &str| reply_as(role, content, reasoning);
+                let two_turns = [
+                    message("system", "Be brief."),
+                    message("user", "first question"),
+                    reply("first answer", "FIRST-REASONING"),
+                    message("user", "second question"),
+                ];
+                let mut three_turns = two_turns.to_vec();
+                three_turns.extend([
+                    reply("second answer", "SECOND-REASONING"),
+                    message("user", "third question"),
+                ]);
+
+                // Rendered without a generation prompt, the shorter conversation is where the longer one starts.
+                let shorter = formatter
+                    .apply_template(&two_turns, false, thinking, None, None)
+                    .unwrap();
+                let longer = formatter
+                    .apply_template(&three_turns, false, thinking, None, None)
+                    .unwrap();
+                if !longer.starts_with(&shorter) {
+                    broken.push(format!(
+                    "{model_type} as {role}, thinking {thinking}: an earlier turn renders differently once later messages exist"
+                ));
+                }
+                if keeps_reasoning
+                    && !(longer.contains("FIRST-REASONING") && longer.contains("SECOND-REASONING"))
+                {
+                    broken.push(format!(
+                        "{model_type} as {role}, thinking {thinking}: reasoning dropped from an earlier turn"
+                    ));
+                }
+            }
+        }
+        assert!(broken.is_empty(), "{}", broken.join("\n"));
     }
 
     #[test]
@@ -1084,6 +1299,219 @@ mod tests {
         assert!(!formatter
             .strip_template_placeholders(&rendered)
             .contains("<|image|>"));
+    }
+
+    /// What the engine receives for a chat, cut along the layout: every text segment as the
+    /// bytes the engine tokenizes on their own, every image or audio segment as `[image]` or
+    /// `[audio]`.
+    fn segments(
+        formatter: &ChatFormatter,
+        items: &[HashMap<String, serde_json::Value>],
+    ) -> Vec<String> {
+        let (messages, image_buffers, audio_buffers, capabilities, content_order) =
+            build_multimodal_messages(formatter, items, None).unwrap();
+        let rendered = formatter
+            .apply_template(&messages, true, false, None, None)
+            .unwrap();
+        let layout = build_multimodal_layout(
+            formatter,
+            &rendered,
+            &image_buffers,
+            &audio_buffers,
+            &capabilities,
+            &content_order,
+        )
+        .unwrap();
+
+        let prompt = formatter.strip_template_placeholders(&rendered);
+        let mut rest = prompt.as_str();
+        let mut segments = Vec::new();
+        for segment in &layout {
+            if segment.segment_type == "text" {
+                let (text, tail) = rest.split_at(segment.length);
+                segments.push(text.to_string());
+                rest = tail;
+            } else {
+                segments.push(format!("[{}]", segment.segment_type));
+            }
+        }
+        assert_eq!(rest, "", "the text segments must cover the prompt exactly");
+        segments
+    }
+
+    /// Gemma 4 E2B.
+    fn gemma4() -> ChatFormatter {
+        ChatFormatter::from_config(
+            Path::new("gemma-4-E2B-it"),
+            serde_json::json!({"model_type": "gemma4", "text_config": {"hidden_size": 1536}}),
+        )
+        .unwrap()
+    }
+
+    fn chat_message(role: &str, content: serde_json::Value) -> HashMap<String, serde_json::Value> {
+        HashMap::from([
+            ("role".to_string(), serde_json::json!(role)),
+            ("content".to_string(), content),
+        ])
+    }
+
+    /// The Hugging Face processor turns each image into `<|image>`, the image's soft tokens,
+    /// `<image|>` (token ids 255999, 258880 x N, 258882), with no newline on either side. The
+    /// engine supplies the soft tokens for the image segment, so the two delimiters have to
+    /// arrive as text: the last token before the image and the first one after it.
+    #[test]
+    fn test_gemma4_wraps_every_image_in_its_begin_and_end_tokens() {
+        let image = || serde_json::json!({"type": "input_image", "image_url": "data:image/png;base64,AA=="});
+        let text = |value: &str| serde_json::json!({"type": "input_text", "text": value});
+
+        let one_image = [chat_message(
+            "user",
+            serde_json::json!([
+                text("Here is a picture."),
+                image(),
+                text("In one sentence, what does it show?"),
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &one_image),
+            [
+                "<bos><|turn>user\nHere is a picture.<|image>",
+                "[image]",
+                "<image|>In one sentence, what does it show?<turn|>\n<|turn>model\n",
+            ]
+        );
+
+        let two_images = [chat_message(
+            "user",
+            serde_json::json!([
+                text("Here is the first picture."),
+                image(),
+                text("Here is the second picture."),
+                image(),
+                text("What do the two pictures have in common?"),
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &two_images),
+            [
+                "<bos><|turn>user\nHere is the first picture.<|image>",
+                "[image]",
+                "<image|>Here is the second picture.<|image>",
+                "[image]",
+                "<image|>What do the two pictures have in common?<turn|>\n<|turn>model\n",
+            ]
+        );
+
+        // Two images with nothing between them still get a closing and an opening token.
+        let adjacent = [chat_message(
+            "user",
+            serde_json::json!([image(), image(), text("Compare them.")]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &adjacent),
+            [
+                "<bos><|turn>user\n<|image>",
+                "[image]",
+                "<image|><|image>",
+                "[image]",
+                "<image|>Compare them.<turn|>\n<|turn>model\n",
+            ]
+        );
+    }
+
+    /// Audio follows the same rule with `<|audio>` and `<audio|>` (256000 and 258883), and the
+    /// `<|audio|>` placeholder itself must not reach the engine as text: the engine rejects a
+    /// prompt whose text is longer than its layout says.
+    #[test]
+    fn test_gemma4_wraps_audio_in_its_begin_and_end_tokens() {
+        let listen = [chat_message(
+            "user",
+            serde_json::json!([
+                {"type": "input_text", "text": "Listen."},
+                {"type": "input_audio", "data": [0.0, 0.5, -0.5]},
+                {"type": "input_text", "text": "What do you hear?"},
+            ]),
+        )];
+        assert_eq!(
+            segments(&gemma4(), &listen),
+            [
+                "<bos><|turn>user\nListen.<|audio>",
+                "[audio]",
+                "<audio|>What do you hear?<turn|>\n<|turn>model\n",
+            ]
+        );
+    }
+
+    /// An image a tool returns goes after the response block, in its delimiters, which is
+    /// where the Hugging Face template and processor put it; the block keeps the text.
+    #[test]
+    fn test_gemma4_puts_a_tool_result_image_after_the_response_block() {
+        let mut call = chat_message("assistant", serde_json::json!(""));
+        call.insert(
+            "tool_calls".to_string(),
+            serde_json::json!([{
+                "id": "call_image",
+                "type": "function",
+                "function": {"name": "generate_image", "arguments": {"prompt": "a red apple"}},
+            }]),
+        );
+        let mut result = chat_message(
+            "tool",
+            serde_json::json!([
+                {"type": "text", "text": "done"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            ]),
+        );
+        result.insert("tool_call_id".to_string(), serde_json::json!("call_image"));
+        let conversation = [
+            chat_message("user", serde_json::json!("Create an image of an apple.")),
+            call,
+            result,
+        ];
+        assert_eq!(
+            segments(&gemma4(), &conversation),
+            [
+                "<bos><|turn>user\nCreate an image of an apple.<turn|>\n<|turn>model\n\
+                 <|tool_call>call:generate_image{prompt:<|\"|>a red apple<|\"|>}<tool_call|>\
+                 <|tool_response>response:generate_image{value:<|\"|>done<|\"|>}<tool_response|><|image>",
+                "[image]",
+                "<image|>",
+            ]
+        );
+    }
+
+    /// Gemma 3's delimiters are in its template already. What the Hugging Face processor adds
+    /// besides the soft tokens is a blank line on each side of the image:
+    /// "\n\n<start_of_image>", the soft tokens, "<end_of_image>\n\n".
+    #[test]
+    fn test_gemma3_sets_an_image_apart_with_blank_lines() {
+        let formatter = ChatFormatter::from_config(
+            Path::new("gemma-3-4b-it"),
+            serde_json::json!({"model_type": "gemma3"}),
+        )
+        .unwrap();
+        let items = [chat_message(
+            "user",
+            serde_json::json!([
+                {"type": "input_text", "text": "Here is a picture."},
+                {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+                {"type": "input_text", "text": "What does it show?"},
+            ]),
+        )];
+        // The start token is this profile's placeholder and stays in the text, so the image
+        // sits between the two delimiters.
+        let [before, image, after] = &segments(&formatter, &items)[..] else {
+            panic!("expected text, image, text");
+        };
+        assert_eq!(image, "[image]");
+        assert!(
+            before.ends_with("user\nHere is a picture.\n\n<start_of_image>"),
+            "{before:?}"
+        );
+        assert_eq!(
+            after,
+            "<end_of_image>\n\nWhat does it show?<end_of_turn>\n<start_of_turn>model\n"
+        );
     }
 
     #[test]
@@ -1427,7 +1855,7 @@ mod tests {
         assert!(rendered.starts_with("<|im_start|>system\n# Tools"));
         assert!(rendered.contains("Follow the test instruction."));
         assert!(rendered.contains("<|im_start|>user\nUse lookup.<|im_end|>\n"));
-        assert!(rendered.contains("<|im_start|>assistant\nCalling lookup.\n<tool_call>\n"));
+        assert!(rendered.contains("<|im_start|>assistant\n<think>\nNeed lookup.\n</think>\n\nCalling lookup.\n<tool_call>\n"));
         assert!(rendered.contains("\"name\":\"lookup\""));
         assert!(rendered.contains("\"arguments\":{\"query\": \"orchard\"}"));
         assert!(!rendered.contains("<function="));
