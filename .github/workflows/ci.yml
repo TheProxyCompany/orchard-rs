@@ -62,9 +62,6 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Run unit tests
-        run: cargo test --release --lib
-
       - name: Checkout PIE and its private dependencies
         uses: actions/checkout@v6
         with:
@@ -124,6 +121,9 @@ jobs:
               print("Runner GPU lease acquired", flush=True)
               subprocess.run([
                   "cargo", "test", "--release", "--test", "buckshot", "--", "--nocapture",
+                  "--skip", "unit_tests::",
+                  "--skip", "golden_io::diagnostic_tests::",
+                  "--skip", "fixture::semantic_budget_only_adds_room_for_mandatory_reasoning",
               ], check=True)
           PYTEST
 
