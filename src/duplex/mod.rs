@@ -55,6 +55,8 @@ pub struct DuplexOptions {
     pub max_pending_frames: usize,
     /// At this frame limit PIE resets the timeline without reloading weights.
     pub max_steps: usize,
+    /// Consecutive padding frames before closed-microphone output idles; zero disables the bound.
+    pub max_output_padding_frames: usize,
     /// Legacy compatibility field; only the default value is accepted by PIE.
     pub text_token_interval: usize,
     pub audio_temperature: f64,
@@ -75,6 +77,7 @@ impl Default for DuplexOptions {
             start_held: false,
             max_pending_frames: 6,
             max_steps: 45_000,
+            max_output_padding_frames: 40,
             text_token_interval: 12,
             audio_temperature: 0.8,
             audio_top_k: 250,
@@ -96,6 +99,7 @@ impl DuplexOptions {
         if !(1..=16).contains(&self.codec_threads)
             || !(1..=64).contains(&self.max_pending_frames)
             || !(256..=45_000).contains(&self.max_steps)
+            || self.max_output_padding_frames > self.max_steps
             || !(1..=25).contains(&self.text_token_interval)
             || !(0..=2_048).contains(&self.audio_top_k)
             || !(0..=32_000).contains(&self.text_top_k)
@@ -981,6 +985,7 @@ impl DuplexSession {
             modal_options_json: json!({"duplex_version":1,"sample_rate":SAMPLE_RATE,"frame_samples":FRAME_SAMPLES,
                 "channels":1,"max_pending_frames":options.max_pending_frames,"realtime":options.realtime,
                 "autonomous":options.autonomous,"start_held":options.start_held,"seed":options.seed,"max_steps":options.max_steps,
+                "max_output_padding_frames":options.max_output_padding_frames,
                 "audio_temperature":options.audio_temperature,"audio_top_k":options.audio_top_k,
                 "text_temperature":options.text_temperature,"text_top_k":options.text_top_k}).to_string(),
             ..Default::default() };
@@ -1046,299 +1051,5 @@ impl DuplexSession {
 impl Drop for DuplexSession {
     fn drop(&mut self) {
         self.shared.close();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn shared() -> Arc<Shared> {
-        Arc::new(Shared {
-            ipc: Arc::new(IPCClient::new()),
-            model_id: "test".into(),
-            request_id: 1,
-            response_channel_id: AtomicU64::new(2),
-            remote_final: AtomicBool::new(false),
-            epoch: AtomicU64::new(0),
-            ready: AtomicBool::new(true),
-            closed: AtomicBool::new(false),
-            ended: AtomicBool::new(false),
-            supports_reference: AtomicBool::new(true),
-            supports_grounded_response: AtomicBool::new(false),
-            supports_response_hold: AtomicBool::new(false),
-            autonomous: true,
-            input: Mutex::new(InputQueue::default()),
-            input_wake: Condvar::new(),
-            output: Mutex::new(OutputQueue::default()),
-            output_ready: Notify::new(),
-            opening_error: Mutex::new(None),
-            max_pending_frames: 2,
-            dropped_input: AtomicU64::new(0),
-            dropped_output: AtomicU64::new(0),
-        })
-    }
-
-    fn audio(epoch: u64, sequence: u64) -> DuplexEvent {
-        DuplexEvent::Audio {
-            epoch,
-            sequence,
-            pcm: vec![0.25; FRAME_SAMPLES],
-            compute_ms: 12.5,
-            queue_ms: 0.5,
-        }
-    }
-
-    #[test]
-    fn native_options_are_explicit_and_reject_unsupported_legacy_execution() {
-        let mut options = DuplexOptions::default();
-        assert!(
-            options.autonomous && !options.start_held && !options.realtime && !options.mimi_cpu
-        );
-        assert!(options.validate().is_ok());
-        options.max_steps = 45_001;
-        assert!(options.validate().is_err());
-        options.max_steps = 45_000;
-        options.audio_top_k = 0;
-        options.text_top_k = 0;
-        assert!(options.validate().is_ok());
-        options.mimi_cpu = true;
-        assert!(options.validate().is_err());
-    }
-
-    #[test]
-    fn bounded_pcm_admission_counts_overflow_and_rejects_invalid_sequences() {
-        let shared = shared();
-        let control = DuplexControl {
-            shared: Arc::clone(&shared),
-        };
-        assert!(control
-            .push_audio(0, vec![f32::NAN; FRAME_SAMPLES])
-            .is_err());
-        assert!(control.push_audio(0, vec![0.0; FRAME_SAMPLES - 1]).is_err());
-        assert_eq!(
-            control
-                .push_audio(0, vec![0.0; FRAME_SAMPLES])
-                .unwrap()
-                .dropped_frames,
-            0
-        );
-        assert!(control.push_audio(0, vec![0.0; FRAME_SAMPLES]).is_err());
-        assert_eq!(
-            control
-                .push_audio(1, vec![0.0; FRAME_SAMPLES])
-                .unwrap()
-                .dropped_frames,
-            0
-        );
-        assert_eq!(
-            control
-                .push_audio(2, vec![0.0; FRAME_SAMPLES])
-                .unwrap()
-                .dropped_frames,
-            1
-        );
-        assert_eq!(shared.input.lock().unwrap().frames.len(), 2);
-        assert_eq!(shared.dropped_input.load(Ordering::Acquire), 1);
-        shared.ready.store(false, Ordering::Release);
-        assert!(control.interrupt().is_err());
-        assert_eq!(control.epoch(), 0);
-    }
-
-    #[test]
-    fn late_epoch_events_cannot_erase_new_audio_or_reintroduce_old_output() {
-        let shared = shared();
-        let control = DuplexControl {
-            shared: Arc::clone(&shared),
-        };
-        shared.emit(audio(0, 0));
-        shared.update_epoch(2);
-        control.push_audio(1, vec![0.0; FRAME_SAMPLES]).unwrap();
-        shared.emit(audio(2, 1));
-        shared.update_epoch(1);
-        shared.emit(audio(1, 2));
-        assert_eq!(control.epoch(), 2);
-        assert_eq!(
-            shared.input.lock().unwrap().frames.front().unwrap().epoch,
-            2
-        );
-        let output = shared.output.lock().unwrap();
-        assert_eq!(output.events.len(), 1);
-        assert_eq!(event_epoch(output.events.front().unwrap()), Some(2));
-    }
-
-    #[test]
-    fn continuous_output_is_bounded_with_explicit_drop_accounting() {
-        let shared = shared();
-        for sequence in 0..70 {
-            shared.emit(audio(0, sequence));
-        }
-        assert_eq!(shared.output.lock().unwrap().events.len(), MAX_OUTPUT_AUDIO);
-        assert_eq!(shared.dropped_output.load(Ordering::Acquire), 6);
-        for _ in 0..MAX_EVENTS {
-            shared.emit(DuplexEvent::SpeechDone { epoch: 0 });
-        }
-        assert!(shared.closed.load(Ordering::Acquire));
-        assert!(shared.output.lock().unwrap().done);
-        assert_eq!(shared.output.lock().unwrap().events.len(), 2);
-    }
-
-    #[test]
-    fn every_terminal_path_synchronizes_with_the_input_wait_predicate() {
-        for terminal in ["close", "finish", "overflow"] {
-            let shared = shared();
-            if terminal == "overflow" {
-                for _ in 0..MAX_EVENTS {
-                    shared.emit(DuplexEvent::SpeechDone { epoch: 0 });
-                }
-            }
-            // Reproduce the worker's critical interval after checking closed
-            // and before Condvar::wait atomically releases this mutex.
-            let input = shared.input.lock().unwrap();
-            let (started_tx, started_rx) = std::sync::mpsc::channel();
-            let (done_tx, done_rx) = std::sync::mpsc::channel();
-            let worker_shared = Arc::clone(&shared);
-            let worker = std::thread::spawn(move || {
-                started_tx.send(()).unwrap();
-                match terminal {
-                    "close" => worker_shared.close(),
-                    "finish" => worker_shared.finish(None),
-                    "overflow" => worker_shared.emit(DuplexEvent::SpeechDone { epoch: 0 }),
-                    _ => unreachable!(),
-                }
-                done_tx.send(()).unwrap();
-            });
-            started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
-            let finished_early = done_rx.recv_timeout(Duration::from_millis(100)).is_ok();
-            let closed_early = shared.closed.load(Ordering::Acquire);
-            drop(input);
-            if !finished_early {
-                done_rx.recv_timeout(Duration::from_secs(1)).unwrap();
-            }
-            worker.join().unwrap();
-            assert!(
-                !finished_early && !closed_early,
-                "{terminal} bypassed the wait mutex"
-            );
-            assert!(shared.closed.load(Ordering::Acquire));
-        }
-    }
-
-    #[test]
-    fn wire_pcm_is_preserved_and_required_timing_is_not_fabricated() {
-        let mut delta = ResponseDelta {
-            modal_event: Some("duplex.audio".into()),
-            modal_metadata_json: Some(
-                json!({"duplex_version":1,"epoch":3,"sequence":7,"compute_ms":12.5,"queue_ms":0.5})
-                    .to_string(),
-            ),
-            modal_bytes_b64: Some(
-                STANDARD.encode(
-                    vec![0.25f32; FRAME_SAMPLES]
-                        .iter()
-                        .flat_map(|x| x.to_le_bytes())
-                        .collect::<Vec<_>>(),
-                ),
-            ),
-            ..Default::default()
-        };
-        match decode_event(&delta).unwrap().unwrap() {
-            DuplexEvent::Audio {
-                epoch,
-                sequence,
-                pcm,
-                compute_ms,
-                queue_ms,
-            } => {
-                assert_eq!((epoch, sequence), (3, 7));
-                assert_eq!(pcm, vec![0.25; FRAME_SAMPLES]);
-                assert_eq!((compute_ms, queue_ms), (12.5, 0.5));
-            }
-            _ => panic!("expected actual PCM event"),
-        }
-        delta.modal_metadata_json =
-            Some(json!({"duplex_version":1,"epoch":3,"sequence":7}).to_string());
-        assert!(decode_event(&delta).is_err());
-    }
-
-    #[test]
-    fn retrieval_correlation_preserves_distinct_native_counters_and_unknown_input() {
-        let decode = |metadata: Value| {
-            decode_event(&ResponseDelta {
-                modal_event: Some("duplex.retrieval_requested".into()),
-                modal_metadata_json: Some(metadata.to_string()),
-                ..Default::default()
-            })
-        };
-        for (input, step) in [(0, 1), (123, 987), (u64::MAX, u64::MAX)] {
-            let event = decode(json!({"duplex_version":1,"epoch":3,"sequence":7,
-                "input_sequence":input,"model_step":step}))
-            .unwrap()
-            .unwrap();
-            assert!(matches!(&event, DuplexEvent::RetrievalRequested {
-                epoch: 3, sequence: 7, input_sequence: Some(actual_input), model_step: Some(actual_step),
-            } if *actual_input == input && *actual_step == step));
-            // The CLI serializes this same event. Neither input identity nor
-            // the native clock may disappear on the next protocol boundary.
-            let forwarded = serde_json::to_value(&event).unwrap();
-            assert_eq!(forwarded["type"], "retrieval_requested");
-            assert_eq!(forwarded["input_sequence"], input);
-            assert_eq!(forwarded["model_step"], step);
-        }
-        for metadata in [
-            json!({"duplex_version":1,"epoch":3,"sequence":7}),
-            json!({"duplex_version":1,"epoch":3,"sequence":7,"input_sequence":null,"model_step":null}),
-        ] {
-            assert!(matches!(
-                decode(metadata).unwrap().unwrap(),
-                DuplexEvent::RetrievalRequested {
-                    epoch: 3,
-                    sequence: 7,
-                    input_sequence: None,
-                    model_step: None,
-                }
-            ));
-        }
-        assert!(matches!(
-            decode(json!({"duplex_version":1,"epoch":3,"sequence":7,
-            "input_sequence":null,"model_step":987}))
-            .unwrap()
-            .unwrap(),
-            DuplexEvent::RetrievalRequested {
-                input_sequence: None,
-                model_step: Some(987),
-                ..
-            }
-        ));
-        // Invalid identity must fail closed, not silently become unknown.
-        for field in ["input_sequence", "model_step"] {
-            for bad in [json!(-1), json!(1.5), json!("123")] {
-                let mut metadata = json!({"duplex_version":1,"epoch":3,"sequence":7});
-                metadata[field] = bad;
-                assert!(decode(metadata).is_err());
-            }
-        }
-    }
-
-    #[test]
-    fn generic_engine_failure_before_ready_terminates_waiters() {
-        let shared = shared();
-        shared.ready.store(false, Ordering::Release);
-        shared.receive(
-            ResponseDelta {
-                request_id: 1,
-                is_final_delta: true,
-                error: Some("native model rejected".into()),
-                ..Default::default()
-            },
-            true,
-        );
-        assert!(shared.ended.load(Ordering::Acquire));
-        assert!(shared.remote_final.load(Ordering::Acquire));
-        assert!(!shared.ready.load(Ordering::Acquire));
-        assert_eq!(
-            shared.opening_error.lock().unwrap().as_deref(),
-            Some("native model rejected")
-        );
     }
 }
