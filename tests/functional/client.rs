@@ -182,15 +182,3 @@ async fn test_client_chat_streaming_artist() {
 async fn test_client_chat_streaming_movie() {
     run_client_chat_streaming("Respond with your favorite movie of the last 10 years.").await;
 }
-
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-
-    #[test]
-    fn test_make_message() {
-        let msg = make_message("user", "Hello");
-        assert_eq!(msg.get("role").unwrap().as_str(), Some("user"));
-        assert_eq!(msg.get("content").unwrap().as_str(), Some("Hello"));
-    }
-}

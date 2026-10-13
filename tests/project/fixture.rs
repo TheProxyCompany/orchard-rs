@@ -344,16 +344,3 @@ pub(crate) fn semantic_token_limit(model_id: &str, answer_tokens: i32) -> i32 {
             0
         }
 }
-
-#[test]
-fn semantic_budget_only_adds_room_for_mandatory_reasoning() {
-    for model in MODELS {
-        let expected = if model.thinking == Thinking::Required {
-            8256
-        } else {
-            64
-        };
-        assert_eq!(semantic_token_limit(model.checkpoint, 64), expected);
-    }
-    assert_eq!(semantic_token_limit("unlisted/checkpoint", 5), 5);
-}

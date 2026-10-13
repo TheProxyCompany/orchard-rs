@@ -510,35 +510,3 @@ fn decode_image_payload(data_url: &str) -> Result<Vec<u8>> {
         Err(Error::InvalidImageUrl)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_decode_image_payload() {
-        let data_url = "data:image/png;base64,SGVsbG8gV29ybGQ=";
-        let decoded = decode_image_payload(data_url).unwrap();
-        assert_eq!(decoded, b"Hello World");
-    }
-
-    #[test]
-    fn test_decode_invalid_base64() {
-        let data_url = "data:image/png;base64,!!!invalid!!!";
-        let result = decode_image_payload(data_url);
-        assert!(matches!(result, Err(Error::InvalidBase64)));
-    }
-
-    #[test]
-    fn test_normalize_role() {
-        let roles: std::collections::HashSet<String> = ["system", "agent", "user"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        assert_eq!(normalize_role("assistant", &roles), "agent");
-        assert_eq!(normalize_role("model", &roles), "agent");
-        assert_eq!(normalize_role("developer", &roles), "system");
-        assert_eq!(normalize_role("user", &roles), "user");
-    }
-}

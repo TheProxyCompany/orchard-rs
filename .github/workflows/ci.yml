@@ -67,7 +67,7 @@ jobs:
         with:
           repository: TheProxyCompany/proxy-inference-engine
           # Root #38's reviewed engine; testing main would certify another package.
-          ref: 23323ac58cfd4c488dd97dfadeda14830a4484fa
+          ref: de200704151621101dca5ae2a49c2833ded91365
           token: ${{ secrets.GH_PAT }}
           path: .ci/proxy-inference-engine
           submodules: recursive
@@ -75,7 +75,7 @@ jobs:
       - name: Verify reviewed PIE revision
         working-directory: .ci/proxy-inference-engine
         run: |
-          pie_expected=23323ac58cfd4c488dd97dfadeda14830a4484fa
+          pie_expected=de200704151621101dca5ae2a49c2833ded91365
           pie_actual="$(git rev-parse HEAD)"
           echo "PIE revision: $pie_actual"
           test "$pie_actual" = "$pie_expected"
@@ -121,9 +121,6 @@ jobs:
               print("Runner GPU lease acquired", flush=True)
               subprocess.run([
                   "cargo", "test", "--release", "--test", "buckshot", "--", "--nocapture",
-                  "--skip", "unit_tests::",
-                  "--skip", "golden_io::diagnostic_tests::",
-                  "--skip", "fixture::semantic_budget_only_adds_room_for_mandatory_reasoning",
               ], check=True)
           PYTEST
 

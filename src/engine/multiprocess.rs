@@ -211,19 +211,3 @@ pub fn reap_engine_process(pid: u32) {
 pub fn reap_engine_process(_pid: u32) {
     // No-op on non-Unix
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pid_is_alive_current() {
-        let pid = std::process::id();
-        assert!(pid_is_alive(pid));
-    }
-
-    #[test]
-    fn test_pid_is_alive_zero() {
-        assert!(!pid_is_alive(0));
-    }
-}

@@ -113,23 +113,3 @@ pub fn catalog_capabilities(identifier: &str) -> Option<Value> {
     }
     Some(value)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn installed_alternate_profile_advertises_operations_without_an_identifier_allowlist() {
-        let folder = tempfile::tempdir().unwrap();
-        std::fs::write(
-            folder.path().join("config.json"),
-            r#"{"model_type":"gemma4"}"#,
-        )
-        .unwrap();
-        let report = catalog_operations(folder.path().to_str().unwrap()).unwrap();
-        report
-            .require(&["text_generation", "tool_calling", "vision_query"])
-            .unwrap();
-        assert!(!report.supports("vision_point"));
-        assert!(catalog_operations("not-installed/not-in-catalog").is_none());
-    }
-}

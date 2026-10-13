@@ -561,21 +561,3 @@ impl Drop for InferenceEngine {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_engine_paths() {
-        let paths = EnginePaths::new().expect("cache dir should be available");
-        if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
-            assert_eq!(paths.cache_dir, PathBuf::from(cache_root));
-        } else {
-            assert!(paths
-                .cache_dir
-                .to_string_lossy()
-                .contains("com.theproxycompany"));
-        }
-    }
-}

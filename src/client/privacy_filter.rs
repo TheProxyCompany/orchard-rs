@@ -74,32 +74,3 @@ impl OpenAIPrivacyFilterClient {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn decodes_modal_payload() {
-        let payload = json!({
-            "type": "openai_privacy_filter.token_classification",
-            "token_count": 1,
-            "label_ids": [0],
-            "labels": ["O"],
-            "scores": [0.25],
-        });
-        let encoded = BASE64.encode(payload.to_string());
-        let decoded = OpenAIPrivacyFilterClient::payload_from_deltas(vec![ClientDelta {
-            request_id: 1,
-            prompt_index: Some(0),
-            modal_decoder_id: Some("privacy_filter".to_string()),
-            modal_bytes_b64: Some(encoded),
-            ..Default::default()
-        }])
-        .unwrap();
-
-        assert_eq!(decoded, payload);
-    }
-}

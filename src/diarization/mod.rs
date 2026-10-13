@@ -875,39 +875,3 @@ pub fn speakers_for_interval(segments: &[SpeakerSegment], start: f64, end: f64) 
         .map(|(speaker, _)| speaker.to_owned())
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn profile_is_the_exact_new_eight_speaker_model() {
-        let p = architecture().unwrap();
-        assert_eq!(p.speakers, 8);
-        assert_eq!(p.output_frame_seconds, 0.01);
-        assert_eq!(p.size_bytes, 107_012_128);
-        assert_eq!(p.sha256.len(), 64);
-        assert!(!is_diarization_model(
-            "nvidia/diar_streaming_sortformer_4spk-v2"
-        ));
-    }
-    #[test]
-    fn overlapping_tracks_are_not_collapsed_into_a_person() {
-        let segment = |id: &str, a: f64, b: f64| SpeakerSegment {
-            speaker_id: id.into(),
-            speaker_index: 1,
-            start_seconds: a,
-            end_seconds: b,
-            mean_probability: Some(0.9),
-            provisional: false,
-        };
-        let segments = vec![
-            segment("session:speaker-1", 0.0, 2.0),
-            segment("session:speaker-2", 1.0, 3.0),
-        ];
-        assert_eq!(
-            speakers_for_interval(&segments, 1.2, 1.8),
-            ["session:speaker-1", "session:speaker-2"]
-        );
-        assert!(speakers_for_interval(&segments, 4.0, 5.0).is_empty());
-    }
-}

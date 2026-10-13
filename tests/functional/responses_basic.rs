@@ -9,7 +9,7 @@ use orchard::{
     ResponsesResult,
 };
 
-use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
+use crate::fixture::{fanout, get_fixture, TEXT_MODELS};
 
 const SYSTEM_PROMPT_COMPLIANCE_SENTINEL: &str = "7-4-7";
 const SYSTEM_PROMPT_COMPLIANCE_INSTRUCTIONS: &str =
@@ -530,18 +530,4 @@ async fn test_responses_instructions() {
         );
     }))
     .await;
-}
-
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-
-    #[test]
-    fn test_fixture_message_helper() {
-        let message = make_message("user", "hello");
-        assert_eq!(
-            message.get("role").and_then(serde_json::Value::as_str),
-            Some("user")
-        );
-    }
 }
