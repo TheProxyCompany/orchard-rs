@@ -201,12 +201,14 @@ pub struct AudioAdmission {
 struct InputFrame {
     sequence: u64,
     epoch: u64,
+    microphone_generation: Option<u64>,
     pcm: Vec<f32>,
 }
 #[derive(Default)]
 struct InputQueue {
     frames: VecDeque<InputFrame>,
     last_sequence: Option<u64>,
+    microphone_generation: Option<u64>,
 }
 #[derive(Default)]
 struct OutputQueue {
@@ -600,11 +602,11 @@ fn input_worker(shared: Arc<Shared>) {
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect::<Vec<_>>();
-        let result = shared.command(
-            "duplex_input",
-            frame.epoch,
-            json!({"sequence":frame.sequence,"pcm_f32_b64":STANDARD.encode(bytes)}),
-        );
+        let mut fields = json!({"sequence":frame.sequence,"pcm_f32_b64":STANDARD.encode(bytes)});
+        if let Some(generation) = frame.microphone_generation {
+            fields["microphone_generation"] = generation.into();
+        }
+        let result = shared.command("duplex_input", frame.epoch, fields);
         if let Err(error) = result {
             if frame.epoch != shared.epoch.load(Ordering::Acquire) {
                 shared.dropped_input.fetch_add(1, Ordering::AcqRel);
@@ -666,6 +668,43 @@ impl DuplexControl {
         }
         Ok(())
     }
+    /// Set capture state without ending pending speech or resetting the session.
+    /// False means a newer microphone generation already owns the state.
+    pub fn set_microphone_open(&self, generation: u64, open: bool) -> Result<bool> {
+        self.require_open()?;
+        let data = self.shared.command(
+            "duplex_set_microphone_open",
+            self.epoch(),
+            json!({"generation":generation,"open":open}),
+        )?;
+        let acknowledged_generation = data["microphone_generation"]
+            .as_u64()
+            .ok_or_else(|| Error::Other("PIE microphone ACK has no generation".into()))?;
+        let acknowledged_open = data["microphone_open"]
+            .as_bool()
+            .ok_or_else(|| Error::Other("PIE microphone ACK has no open state".into()))?;
+        let epoch = data["epoch"]
+            .as_u64()
+            .ok_or_else(|| Error::Other("PIE microphone ACK has no epoch".into()))?;
+        if epoch > self.epoch() {
+            self.shared.update_epoch(epoch);
+        }
+        let mut input = self.shared.input.lock().unwrap_or_else(|e| e.into_inner());
+        if input
+            .microphone_generation
+            .is_none_or(|current| acknowledged_generation > current)
+        {
+            input.microphone_generation = Some(acknowledged_generation);
+            let before = input.frames.len();
+            input.frames.retain(|frame| {
+                acknowledged_open && frame.microphone_generation == Some(acknowledged_generation)
+            });
+            self.shared
+                .dropped_input
+                .fetch_add((before - input.frames.len()) as u64, Ordering::AcqRel);
+        }
+        Ok(acknowledged_generation == generation && acknowledged_open == open)
+    }
     pub fn push_audio(&self, sequence: u64, pcm: Vec<f32>) -> Result<AudioAdmission> {
         self.require_open()?;
         if pcm.len() != FRAME_SAMPLES
@@ -692,9 +731,11 @@ impl DuplexControl {
             .dropped_input
             .fetch_add(dropped, Ordering::AcqRel);
         input.last_sequence = Some(sequence);
+        let microphone_generation = input.microphone_generation;
         input.frames.push_back(InputFrame {
             sequence,
             epoch,
+            microphone_generation,
             pcm,
         });
         drop(input);

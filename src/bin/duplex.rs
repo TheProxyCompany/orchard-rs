@@ -14,6 +14,10 @@ enum Command {
         sequence: u64,
         pcm: Vec<f32>,
     },
+    SetMicrophoneOpen {
+        generation: u64,
+        open: bool,
+    },
     Speak {
         text: String,
         #[serde(default)]
@@ -90,7 +94,7 @@ async fn run() -> orchard::Result<()> {
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON] [--prepare-only]\n\nReads audio/speak/reference/hold_response/grounded_reply/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is native autonomous duplex; references provide context only; hold_response waits for context; grounded_reply asks for a model-authored response, not a scripted reading.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
+                println!("orchard-duplex [--model ID|DIRECTORY] [--cpu] [--mimi-metal] [--autonomous] [--offline] [--options-json JSON] [--prepare-only]\n\nReads audio/set_microphone_open/speak/reference/hold_response/grounded_reply/interrupt/reset/close JSON lines from stdin and emits duplex JSON events.\nAudio is 1920 mono float32 samples per frame at 24000 Hz.\nDefault speech is native autonomous duplex; references provide context only; hold_response waits for context; grounded_reply asks for a model-authored response, not a scripted reading.\nModel assets are the exact revision declared by the bundled Pantheon profile.\n--capabilities lists architecture and available checkpoints without loading weights.");
                 return Ok(());
             }
             _ => return Err(orchard::Error::Other(format!("Unknown argument {arg}"))),
@@ -125,6 +129,8 @@ async fn run() -> orchard::Result<()> {
             let result: orchard::Result<Option<Value>> = match request.command {
                 Command::Audio { sequence, pcm } => control.push_audio(sequence, pcm)
                     .map(|admission| Some(json!({"type":"audio_ack","id":id,"sequence":sequence,"epoch":admission.epoch,"dropped_frames":admission.dropped_frames}))),
+                Command::SetMicrophoneOpen { generation, open } => control.set_microphone_open(generation, open)
+                    .map(|accepted| Some(json!({"type":"control_ack","id":id,"action":"set_microphone_open","epoch":control.epoch(),"generation":generation,"open":open,"accepted":accepted}))),
                 Command::Speak { text, replace } => control.speak(text, replace)
                     .map(|epoch| Some(json!({"type":"control_ack","id":id,"action":"speak","epoch":epoch}))),
                 Command::Reference { text, expected_epoch } => control.reference(text, expected_epoch)
