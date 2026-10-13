@@ -299,7 +299,7 @@ C++/Carbon in PIE. Source weights stay unchanged, and the SDK creates a small,
 versioned descriptor in its private cache. No implicit Q8 conversion is made.
 Unsupported base/GGUF formats and legacy CPU/cadence overrides fail explicitly.
 
-The default voice is autonomous, full-duplex generation: a pending backbone
+The voice is autonomous, full-duplex generation: a pending backbone
 request does not mute its PCM. Concise factual references condition the trained
 RAG channel asynchronously. Generated voice text is distinct from the backbone's
 answer and microphone ASR; it cannot execute tools or authorize actions.
@@ -316,6 +316,11 @@ the context and releases the hold for a model-authored response. Background
 The caller still owns which pending result is current. Retrieval events alone
 never trigger a hold in the SDK, and a control acknowledgment does not confirm
 speech generation or playback.
+
+Use `reference(context, epoch)` for background facts and
+`grounded_reply(context, epoch)` for a spoken response in the model's own words.
+MoshiRAG paraphrases context; it does not provide verbatim text-to-speech.
+Use `start_held`, `hold_response` and `release_response_hold` to control when it speaks.
 
 With `realtime: false` (the default), microphone frames including silence drive
 the clock. `realtime: true` lets the engine synthesize clock ticks when no frame

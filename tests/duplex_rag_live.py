@@ -41,7 +41,7 @@ def write_wav(path, values):
 async def run(args):
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    options = {"mimi_cpu": not args.mimi_metal, "max_pending_frames": 6}
+    options = {"max_pending_frames": 6}
     started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
         args.binary,
@@ -55,6 +55,8 @@ async def run(args):
         limit=1048576,
     )
     ready = asyncio.Event()
+    interrupt_applied = asyncio.Event()
+    epoch = 0
     epochs = {}
     events = []
     measurements = []
@@ -62,11 +64,15 @@ async def run(args):
     ready_time = None
 
     async def read():
-        nonlocal ready_time
+        nonlocal ready_time, epoch
         async for line in process.stdout:
             event = json.loads(line)
             event["observed_seconds"] = time.monotonic() - started
             kind = event.get("type")
+            if "epoch" in event:
+                epoch = max(epoch, event["epoch"])
+            if kind == "control_ack" and event.get("action") == "interrupt":
+                interrupt_applied.set()
             if kind == "audio":
                 epochs.setdefault(event["epoch"], []).extend(event.pop("pcm"))
                 measurements.append(event)
@@ -111,22 +117,24 @@ async def run(args):
             frame = values[offset : offset + 1920]
             frame += [0.0] * (1920 - len(frame))
             if i == round(args.seconds / 0.16):
+                interrupt_applied.clear()
                 await send({"type": "interrupt"})
+                await asyncio.wait_for(interrupt_applied.wait(), 30)
             await send({"type": "audio", "sequence": i, "pcm": frame})
             if i == round(len(first) / 1920):
                 await send(
                     {
-                        "type": "speak",
+                        "type": "grounded_reply",
                         "text": "The one-word answer to this test is telescope. There is no other information about the test.",
-                        "replace": True,
+                        "expected_epoch": epoch,
                     }
                 )
             if i == round(args.seconds / 0.16) + round(len(second) / 1920):
                 await send(
                     {
-                        "type": "speak",
+                        "type": "grounded_reply",
                         "text": "The flag in this test is plain purple. It is not a national flag, and no country is associated with it.",
-                        "replace": True,
+                        "expected_epoch": epoch,
                     }
                 )
             await asyncio.sleep(max(0, begin + (i + 1) * 0.08 - time.monotonic()))
@@ -178,7 +186,6 @@ if __name__ == "__main__":
     parser.add_argument("--second", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", default="kyutai/moshika-rag-candle-bf16")
-    parser.add_argument("--mimi-metal", action="store_true")
     parser.add_argument("--seconds", type=float, default=28)
     args = parser.parse_args()
     with open("/tmp/proxy-gpu.lease", "a+") as lease:

@@ -48,8 +48,6 @@ pub struct DuplexOptions {
     pub codec_threads: usize,
     /// False means only queued PCM advances the model, useful for file clients.
     pub realtime: bool,
-    /// True lets Moshi choose its own words; false speaks only queued text.
-    pub autonomous: bool,
     /// Hold output from the first frame and after each reset or interruption.
     pub start_held: bool,
     pub max_pending_frames: usize,
@@ -73,7 +71,6 @@ impl Default for DuplexOptions {
             mimi_cpu: false,
             codec_threads: 4,
             realtime: false,
-            autonomous: true,
             start_held: false,
             max_pending_frames: 6,
             max_steps: 45_000,
@@ -148,13 +145,6 @@ pub enum DuplexEvent {
         epoch: u64,
         sequence: u64,
         text: String,
-    },
-    SpeechQueued {
-        epoch: u64,
-        tokens: usize,
-    },
-    SpeechDone {
-        epoch: u64,
     },
     Interrupted {
         epoch: u64,
@@ -233,7 +223,6 @@ struct Shared {
     supports_reference: AtomicBool,
     supports_grounded_response: AtomicBool,
     supports_response_hold: AtomicBool,
-    autonomous: bool,
     input: Mutex<InputQueue>,
     input_wake: Condvar,
     output: Mutex<OutputQueue>,
@@ -469,8 +458,6 @@ fn event_epoch(event: &DuplexEvent) -> Option<u64> {
         DuplexEvent::Ready { epoch, .. }
         | DuplexEvent::Audio { epoch, .. }
         | DuplexEvent::TextDelta { epoch, .. }
-        | DuplexEvent::SpeechQueued { epoch, .. }
-        | DuplexEvent::SpeechDone { epoch }
         | DuplexEvent::Interrupted { epoch }
         | DuplexEvent::Reset { epoch, .. }
         | DuplexEvent::ReferenceQueued { epoch, .. }
@@ -657,9 +644,6 @@ impl DuplexControl {
     /// Older native engines omit the Ready capability and report false.
     pub fn supports_response_hold(&self) -> bool {
         self.shared.supports_response_hold.load(Ordering::Acquire)
-    }
-    pub fn is_autonomous(&self) -> bool {
-        self.shared.autonomous
     }
     fn require_open(&self) -> Result<()> {
         if self.shared.closed.load(Ordering::Acquire) {
@@ -891,35 +875,6 @@ impl DuplexControl {
     pub fn reset(&self) -> Result<u64> {
         self.advance("duplex_reset")
     }
-    /// Queue supplied speech without interrupting the autonomous session.
-    pub fn speak(&self, text: String, replace: bool) -> Result<u64> {
-        self.speak_in_epoch(text, replace, self.epoch())
-    }
-    /// Reject a supplied reply if its original conversation epoch has changed.
-    pub fn speak_in_epoch(&self, text: String, replace: bool, expected_epoch: u64) -> Result<u64> {
-        self.require_open()?;
-        if expected_epoch != self.epoch() {
-            return Err(Error::Other(
-                "Supplied speech belongs to an interrupted epoch".into(),
-            ));
-        }
-        if text.trim().is_empty() || text.len() > MAX_REFERENCE_BYTES {
-            return Err(Error::Other(
-                "Speech text exceeds 8192 UTF-8 bytes or is empty".into(),
-            ));
-        }
-        let data = self.shared.command(
-            "duplex_speak",
-            expected_epoch,
-            json!({"text":text,"replace":replace}),
-        )?;
-        if data["epoch"].as_u64() != Some(expected_epoch) || self.epoch() != expected_epoch {
-            return Err(Error::Other(
-                "Supplied speech epoch changed during admission".into(),
-            ));
-        }
-        Ok(expected_epoch)
-    }
     pub fn close(&self) -> Result<()> {
         self.shared.close();
         Ok(())
@@ -971,7 +926,6 @@ impl DuplexSession {
             supports_reference: AtomicBool::new(false),
             supports_grounded_response: AtomicBool::new(false),
             supports_response_hold: AtomicBool::new(false),
-            autonomous: options.autonomous,
             input: Mutex::new(InputQueue::default()),
             input_wake: Condvar::new(),
             output: Mutex::new(OutputQueue::default()),
@@ -984,7 +938,7 @@ impl DuplexSession {
         let prompt = PromptPayload { num_candidates: 1, max_generated_tokens: 1,
             modal_options_json: json!({"duplex_version":1,"sample_rate":SAMPLE_RATE,"frame_samples":FRAME_SAMPLES,
                 "channels":1,"max_pending_frames":options.max_pending_frames,"realtime":options.realtime,
-                "autonomous":options.autonomous,"start_held":options.start_held,"seed":options.seed,"max_steps":options.max_steps,
+                "start_held":options.start_held,"seed":options.seed,"max_steps":options.max_steps,
                 "max_output_padding_frames":options.max_output_padding_frames,
                 "audio_temperature":options.audio_temperature,"audio_top_k":options.audio_top_k,
                 "text_temperature":options.text_temperature,"text_top_k":options.text_top_k}).to_string(),

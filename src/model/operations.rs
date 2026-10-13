@@ -85,7 +85,6 @@ impl ModelOperations {
         }
         if let Some(duplex) = profile.get("duplex") {
             add("duplex");
-            add("forced_text");
             if descriptor["rag"] == true {
                 add("speech_reference");
             }
