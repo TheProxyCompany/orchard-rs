@@ -6,6 +6,7 @@
 //! Note: Validation tests (best_of < n returns 422, streaming+best_of returns 422)
 //! are HTTP-specific and not ported.
 
+use crate::fixture::semantic_token_limit;
 use orchard::SamplingParams;
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
@@ -19,7 +20,7 @@ async fn test_chat_completion_best_of_selects_top_n() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let best_of = 3;
         let params = SamplingParams {
-            max_tokens: 8, // max_completion_tokens in Python
+            max_tokens: semantic_token_limit(model_id, 8), // max_completion_tokens in Python
             temperature: 0.2,
             n: 1,
             best_of: Some(best_of),

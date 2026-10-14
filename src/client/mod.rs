@@ -4,35 +4,23 @@
 
 mod moondream;
 mod privacy_filter;
+mod replay;
 mod response;
 mod responses;
+mod vision;
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use thiserror::Error;
+use serde_json::{json, Map, Value};
 use tokio::sync::mpsc;
 
 use crate::defaults;
-
-/// Global runtime for synchronous operations.
-/// Uses current_thread for efficiency - sync callers don't need multi-thread.
-static SYNC_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
-    SYNC_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create sync runtime")
-    })
-}
-
+use crate::error::{Error, Result};
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
@@ -43,8 +31,8 @@ use crate::ipc::serialization::{
 use crate::model::registry::ModelRegistry;
 
 pub use moondream::{
-    BoundingBox, CaptionResult, DetectResult, DetectedObject, GazeResult, GroundingSpan,
-    MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
+    BoundingBox, CaptionResult, CaptionWithMetrics, DetectResult, DetectedObject, GazeResult,
+    GroundingSpan, MoondreamClient, Point, PointResult, QueryResult, ReasoningOutput, SpatialRef,
     MOONDREAM_MODEL_ID,
 };
 pub use privacy_filter::{OpenAIPrivacyFilterClient, OPENAI_PRIVACY_FILTER_MODEL_ID};
@@ -52,66 +40,19 @@ pub use response::{
     BatchChatResult, ClientDelta, ClientResponse, ClientToolCall, ModalArtifact, UsageStats,
 };
 pub use responses::{
-    ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
-    FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
-    InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent, OutputItemDoneEvent,
-    OutputMessage, OutputReasoning, OutputStatus, OutputTextContent, OutputTextDeltaEvent,
-    OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig, ReasoningContent,
-    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
+    response_input_items, ContentPartAddedEvent, ContentPartDoneEvent,
+    FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent, FunctionCallOutputContent,
+    IncompleteDetails, InputTokensDetails, OutputFunctionCall, OutputItemAddedEvent,
+    OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus, OutputTextContent,
+    OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig,
+    ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
     ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
     ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
     ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
     ResponsesResult, StreamErrorDetail, StreamErrorEvent,
 };
-
-/// Errors that can occur during client operations.
-#[derive(Error, Debug)]
-pub enum ClientError {
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    #[error("{0}")]
-    ModelNotReady(String),
-
-    #[error("{0}")]
-    Ipc(String),
-
-    #[error("{0}")]
-    Formatter(String),
-
-    #[error("{0}")]
-    Multimodal(String),
-
-    #[error("{0}")]
-    RequestFailed(String),
-}
-
-impl From<crate::error::Error> for ClientError {
-    fn from(err: crate::error::Error) -> Self {
-        use crate::error::Error;
-        match err {
-            Error::ModelNotFound(s) => ClientError::ModelNotFound(s),
-            Error::ModelNotReady(s) => ClientError::ModelNotReady(s),
-            Error::NotConnected
-            | Error::EngineDead
-            | Error::InvalidResponse
-            | Error::Nng(_)
-            | Error::Timeout
-            | Error::ChannelClosed => ClientError::Ipc(err.to_string()),
-            Error::Template(s) => ClientError::Formatter(s),
-            Error::InvalidImageUrl
-            | Error::InvalidBase64
-            | Error::MissingContentType(_, _)
-            | Error::InvalidContent
-            | Error::PlaceholderMismatch(_, _)
-            | Error::EmptyRequest => ClientError::Multimodal(err.to_string()),
-            _ => ClientError::RequestFailed(err.to_string()),
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, ClientError>;
+pub use vision::{VisionClient, DEFAULT_VISION_MODEL};
 
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 
@@ -293,6 +234,19 @@ impl Default for SamplingParams {
     }
 }
 
+/// An explicit (non-zero) seed wins. Otherwise deterministic requests omit the
+/// seed so the engine pins its own deterministic default, and everything else
+/// gets a fresh random one.
+fn pick_seed(seed: u64, deterministic: bool) -> Option<u64> {
+    if seed != 0 {
+        Some(seed)
+    } else if deterministic {
+        None
+    } else {
+        Some(rand::thread_rng().gen::<u64>())
+    }
+}
+
 fn tool_choice_to_string(tool_choice: Option<&Value>) -> String {
     match tool_choice {
         None | Some(Value::Null) => "auto".to_string(),
@@ -340,9 +294,52 @@ fn core_and_active_tool_schemas(params: &SamplingParams) -> (Vec<Value>, Vec<Val
     )
 }
 
+fn model_event_callback(registry: &Arc<ModelRegistry>) -> EventCallback {
+    // Registry owns IPC; its callback must not own the registry back. Upgrade
+    // only in the runtime task, so the last owner cannot drop on the IPC listener
+    // thread and try to join that same listener during destruction.
+    let registry_for_events = Arc::downgrade(registry);
+    let runtime_handle = tokio::runtime::Handle::current();
+    let event_callback: EventCallback =
+        Arc::new(move |event_name: &str, payload: &Value| match event_name {
+            "model_loaded" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_model_loaded(&payload).await;
+                    }
+                });
+            }
+            "model_load_failed" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_model_load_failed(&payload).await;
+                    }
+                });
+            }
+            "engine_died" => {
+                let registry = registry_for_events.clone();
+                let payload = payload.clone();
+                let handle = runtime_handle.clone();
+                handle.spawn(async move {
+                    if let Some(registry) = registry.upgrade() {
+                        registry.handle_engine_died(&payload).await;
+                    }
+                });
+            }
+            _ => {}
+        });
+    event_callback
+}
+
 /// A high-level client for the Proxy Inference Engine.
 ///
-/// Provides both synchronous and asynchronous interfaces for LLM inference.
+/// Provides an asynchronous interface for LLM inference.
 #[derive(Clone)]
 pub struct Client {
     ipc: Arc<IPCClient>,
@@ -355,44 +352,33 @@ impl Client {
         Self { ipc, registry }
     }
 
+    /// Start full-duplex Moshi audio while this client keeps serving PIE models.
+    #[cfg(feature = "duplex")]
+    pub async fn duplex(
+        &self,
+        model_id: &str,
+        options: crate::duplex::DuplexOptions,
+    ) -> Result<crate::duplex::DuplexSession> {
+        self.registry.duplex(model_id, options).await
+    }
+
+    /// Stream PIE-owned anonymous speaker tracks independently of transcription/voice.
+    #[cfg(feature = "diarization")]
+    pub async fn diarization(
+        &self,
+        model_id: &str,
+        options: crate::diarization::DiarizationOptions,
+    ) -> Result<crate::diarization::DiarizationSession> {
+        self.registry.diarization(model_id, options).await
+    }
+
     /// Create a client and connect to the engine (async).
     ///
     /// This sets up:
     /// - Event callback for handling model lifecycle events
     /// - IPC client shared with registry for management commands
     pub async fn connect(registry: Arc<ModelRegistry>) -> Result<Self> {
-        // Create event callback that routes model lifecycle events to registry
-        let registry_for_events = Arc::clone(&registry);
-        let runtime_handle = tokio::runtime::Handle::current();
-        let event_callback: EventCallback =
-            Arc::new(move |event_name: &str, payload: &Value| match event_name {
-                "model_loaded" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_model_loaded(&payload).await;
-                    });
-                }
-                "model_load_failed" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_model_load_failed(&payload).await;
-                    });
-                }
-                "engine_died" => {
-                    let registry = Arc::clone(&registry_for_events);
-                    let payload = payload.clone();
-                    let handle = runtime_handle.clone();
-                    handle.spawn(async move {
-                        registry.handle_engine_died(&payload).await;
-                    });
-                }
-                _ => {}
-            });
-
+        let event_callback = model_event_callback(&registry);
         let mut ipc = IPCClient::with_event_callback(event_callback);
         ipc.connect()?;
         let ipc = Arc::new(ipc);
@@ -427,6 +413,7 @@ impl Client {
                 serde_json::json!({
                     "type": "cancel_request",
                     "request_id": request_id,
+                    "response_channel_id": self.ipc.response_channel_id(),
                 }),
                 Duration::from_secs(2),
             )
@@ -439,7 +426,7 @@ impl Client {
         if matches!(status, "ok" | "accepted") {
             Ok(())
         } else {
-            Err(ClientError::Ipc(format!(
+            Err(Error::Other(format!(
                 "Cancel request {} failed: {}",
                 request_id, response
             )))
@@ -451,7 +438,63 @@ impl Client {
         self.registry
             .cancel_activation(model_id)
             .await
-            .map_err(ClientError::Ipc)
+            .map_err(Error::Other)
+    }
+
+    /// The assistant message to append to the conversation for a finished reply.
+    ///
+    /// Besides the visible text it keeps the reply's reasoning and tool calls, and a
+    /// `generation` record with the exact token ids the model produced. Sent back on
+    /// the next turn to the same model, the reply is replayed id for id, so the engine
+    /// reuses its cached keys and values for all of it. Any other model reads the text.
+    ///
+    /// `deltas` are the reply's deltas: the ones a stream yielded, or a complete
+    /// response's `deltas`. `params` are the ones the request was made with.
+    pub async fn assistant_message<D: Into<ClientDelta>>(
+        &self,
+        model_id: &str,
+        params: &SamplingParams,
+        deltas: impl IntoIterator<Item = D>,
+    ) -> Result<HashMap<String, Value>> {
+        let deltas: Vec<ClientDelta> = deltas.into_iter().map(Into::into).collect();
+        let deltas = deltas.as_slice();
+        let info = self.registry.ensure_loaded(model_id).await?;
+        let formatter = info.require_formatter()?;
+        let (thinking, _, _) = native_reasoning_settings(
+            formatter,
+            chat_reasoning_requested(formatter, params),
+            &params.reasoning_effort,
+        );
+        let (reasoning, tool_calls) = aggregate_structured_items(deltas);
+        let tokens: Vec<i32> = deltas
+            .iter()
+            .flat_map(|delta| delta.tokens.iter().copied())
+            .collect();
+
+        let mut message = HashMap::from([
+            ("role".to_string(), json!("assistant")),
+            (
+                "content".to_string(),
+                json!(aggregate_message_text(deltas, info.releases_held_text())),
+            ),
+        ]);
+        if !reasoning.is_empty() {
+            message.insert("reasoning_content".into(), json!(reasoning.join("\n")));
+        }
+        if !tool_calls.is_empty() {
+            let calls: Vec<Value> = tool_calls
+                .iter()
+                .map(|call| json!({"type": "function", "function": {"name": call.name, "arguments": call.arguments}}))
+                .collect();
+            message.insert("tool_calls".into(), json!(calls));
+        }
+        if !tokens.is_empty() {
+            message.insert(
+                "generation".into(),
+                json!({"model": info.model_id, "tokens": tokens, "thinking": thinking}),
+            );
+        }
+        Ok(message)
     }
 
     /// Perform asynchronous chat completion.
@@ -471,7 +514,6 @@ impl Client {
         let info = self.registry.ensure_loaded(model_id).await?;
         let formatter = info.require_formatter()?;
         let request_model_id = info.model_id.as_str();
-        let params = sampling_with_profile_defaults(formatter, &params);
 
         let request_id = self.ipc.next_request_id();
         tracing::debug!(
@@ -488,132 +530,25 @@ impl Client {
             "Chat messages before template application"
         );
 
-        let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-            formatter,
-            chat_reasoning_requested(formatter, &params),
-            &params.reasoning_effort,
-        );
-
-        // Build multimodal content (pass instructions if provided)
-        let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-            build_multimodal_messages(formatter, &messages, params.instructions.as_deref())
-                .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        if messages_for_template.is_empty() {
-            return Err(ClientError::RequestFailed(
-                "Chat request must include at least one message".into(),
-            ));
-        }
-        tracing::trace!(
-            request_id,
-            model_id = %model_id,
-            messages_for_template = ?messages_for_template,
-            "Chat messages after multimodal expansion"
-        );
-        let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-        let template_tools =
-            (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-        // Apply template with reasoning flag
-        let prompt_text = formatter
-            .apply_template_with_tools(
-                &messages_for_template,
-                true,
-                reasoning_flag,
-                params.task_name.as_deref(),
-                reasoning_effort.as_deref(),
-                template_tools,
-            )
-            .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-        // Build layout for multimodal content
-        let layout_segments = build_multimodal_layout(
-            formatter,
-            &prompt_text,
-            &image_buffers,
-            &audio_buffers,
-            &capabilities,
-            &content_order,
-        )
-        .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-        let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+        let replay_model = info.takes_token_segments().then_some(request_model_id);
+        // The span gives build_chat_payload's trace event the request it belongs to.
+        let prompt_payload = tracing::trace_span!("chat_payload", request_id, model_id = %model_id)
+            .in_scope(|| build_chat_payload(formatter, &messages, &params, replay_model))?;
         tracing::debug!(
             request_id,
             model_id = %model_id,
-            prompt_chars = final_prompt.chars().count(),
-            image_count = image_buffers.len(),
-            capability_count = capabilities.len(),
-            layout_segment_count = layout_segments.len(),
+            prompt_chars = prompt_payload.prompt.chars().count(),
+            image_count = prompt_payload.image_buffers.len(),
+            capability_count = prompt_payload.capabilities.len(),
+            layout_segment_count = prompt_payload.layout.len(),
             "Prepared chat prompt payload"
         );
         tracing::trace!(
             request_id,
             model_id = %model_id,
-            prompt = %final_prompt,
+            prompt = %prompt_payload.prompt,
             "Chat prompt sent to PIE"
         );
-
-        // Core tools are rendered in the prompt; active tools drive PSE grammar.
-        let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-        let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-        let response_format_json = params
-            .response_format
-            .as_ref()
-            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-            .unwrap_or_default();
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-        let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-        let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-        // Build PromptPayload with full multimodal data
-        // Generate unique RNG seed if not explicitly provided
-        let rng_seed = if params.rng_seed != 0 {
-            Some(params.rng_seed)
-        } else if params.deterministic {
-            // Omit the seed: the engine pins its deterministic default.
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        };
-
-        let prompt_payload = PromptPayload {
-            prompt: final_prompt,
-            image_buffers,
-            audio_buffers,
-            capabilities: convert_capabilities(&capabilities),
-            layout: convert_layout(&layout_segments),
-            max_generated_tokens: params.max_tokens,
-            temperature: params.temperature,
-            top_p: params.top_p,
-            top_k: params.top_k,
-            min_p: params.min_p,
-            rng_seed,
-            deterministic: params.deterministic,
-            stop_sequences: params.stop.clone(),
-            num_candidates: params.n,
-            best_of: params.best_of,
-            final_candidates: params.final_candidates,
-            frequency_penalty: params.frequency_penalty,
-            presence_penalty: params.presence_penalty,
-            repetition_penalty: params.repetition_penalty,
-            repetition_context_size: params.repetition_context_size,
-            top_logprobs: params.top_logprobs,
-            logit_bias: params.logit_bias.clone(),
-            tool_schemas_json,
-            active_tool_schemas_json,
-            tool_calling_tokens,
-            output_frame_tokens,
-            thinking_tokens,
-            tool_choice,
-            min_tool_calls: 1,
-            max_tool_calls,
-            response_format_json,
-            modal_options_json: String::new(),
-            task_name: params.task_name.clone(),
-            reasoning_effort,
-            prefix_cache: params.prefix_cache,
-        };
 
         // Use unified batch request path (even for single prompts)
         tracing::debug!(
@@ -646,7 +581,7 @@ impl Client {
                 match rx.recv().await {
                     Some(delta) => {
                         if let Some(message) = delta_error_message(&delta) {
-                            return Err(ClientError::RequestFailed(message));
+                            return Err(Error::Other(message));
                         }
 
                         let candidate_index = delta.candidate_index.unwrap_or(0) as usize;
@@ -663,9 +598,6 @@ impl Client {
                         if let Some(count) = delta.prompt_token_count {
                             state.prompt_tokens = state.prompt_tokens.max(count);
                         }
-                        if let Some(reasoning_tokens) = delta.reasoning_tokens {
-                            state.reasoning_tokens = state.reasoning_tokens.max(reasoning_tokens);
-                        }
 
                         let client_delta = ClientDelta::from(delta.clone());
                         state.deltas.push(client_delta);
@@ -676,14 +608,14 @@ impl Client {
                             state.cumulative_logprob = delta.cumulative_logprob;
                             state.generation_len = delta.generation_len;
                             if let Some(generation_len) = delta.generation_len {
-                                state.completion_tokens =
-                                    generation_len.saturating_sub(state.reasoning_tokens);
+                                // Completion usage includes reasoning and visible output.
+                                state.completion_tokens = generation_len;
                             }
                             remaining_sequences -= 1;
                         }
                     }
                     None => {
-                        return Err(ClientError::RequestFailed(
+                        return Err(Error::Other(
                             "Chat response channel closed before completion".to_string(),
                         ));
                     }
@@ -699,37 +631,8 @@ impl Client {
             Ok(ChatResult::Complete(build_response_from_candidates(
                 selected,
                 total_completion_tokens,
+                info.releases_held_text(),
             )))
-        }
-    }
-
-    /// Perform synchronous chat completion (blocking).
-    ///
-    /// Handles nested async contexts properly - safe to call from any context.
-    pub fn chat(
-        &self,
-        model_id: &str,
-        messages: Vec<HashMap<String, serde_json::Value>>,
-        params: SamplingParams,
-    ) -> Result<ClientResponse> {
-        let future = async {
-            match self.achat(model_id, messages, params, false).await? {
-                ChatResult::Complete(response) => Ok(response),
-                ChatResult::Stream(_) => Err(ClientError::RequestFailed(
-                    "Unexpected stream result".into(),
-                )),
-            }
-        };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                // Already in async context - use block_in_place to avoid panic
-                tokio::task::block_in_place(|| handle.block_on(future))
-            }
-            Err(_) => {
-                // Not in async context - use the global sync runtime
-                get_sync_runtime().block_on(future)
-            }
         }
     }
 
@@ -768,7 +671,7 @@ impl Client {
             return Ok(BatchChatResult::Complete(Vec::new()));
         }
         if params_by_prompt.len() != conversations.len() {
-            return Err(ClientError::RequestFailed(format!(
+            return Err(Error::Other(format!(
                 "params_by_prompt length ({}) does not match batch size ({})",
                 params_by_prompt.len(),
                 conversations.len()
@@ -789,139 +692,50 @@ impl Client {
             "Building batched chat request"
         );
 
-        let tool_calling_tokens = formatter.get_tool_calling_tokens().clone();
-        let output_frame_tokens = formatter.get_output_frame_tokens().clone();
-
         // Build all prompt payloads
         let mut prompt_payloads = Vec::with_capacity(num_prompts);
 
         for (prompt_index, messages) in conversations.iter().enumerate() {
-            let params = sampling_with_profile_defaults(formatter, &params_by_prompt[prompt_index]);
-            let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
-                formatter,
-                chat_reasoning_requested(formatter, &params),
-                &params.reasoning_effort,
-            );
-            let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
-            let tool_schemas_json = serialize_tool_schemas(&core_tool_schemas);
-            let active_tool_schemas_json = serialize_tool_schemas(&active_tool_schemas);
-            let response_format_json = params
-                .response_format
-                .as_ref()
-                .map(|rf| serde_json::to_string(rf).unwrap_or_default())
-                .unwrap_or_default();
-            let tool_choice = tool_choice_to_string(params.tool_choice.as_ref());
-            let max_tool_calls = params.max_tool_calls.unwrap_or(0).max(0);
-
-            // Build multimodal content (pass instructions if provided)
-            let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
-                build_multimodal_messages(formatter, messages, params.instructions.as_deref())
-                    .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            if messages_for_template.is_empty() {
-                return Err(ClientError::RequestFailed(
-                    "Chat request must include at least one message".into(),
-                ));
-            }
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
                 messages = ?messages,
-                messages_for_template = ?messages_for_template,
                 "Prepared batch messages for prompt"
             );
-            let template_tools =
-                (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
-
-            // Apply template with reasoning flag
-            let prompt_text = formatter
-                .apply_template_with_tools(
-                    &messages_for_template,
-                    true,
-                    reasoning_flag,
-                    params.task_name.as_deref(),
-                    reasoning_effort.as_deref(),
-                    template_tools,
-                )
-                .map_err(|e| ClientError::Formatter(e.to_string()))?;
-
-            // Build layout for multimodal content
-            let layout_segments = build_multimodal_layout(
-                formatter,
-                &prompt_text,
-                &image_buffers,
-                &audio_buffers,
-                &capabilities,
-                &content_order,
+            let payload = tracing::trace_span!(
+                "chat_payload",
+                request_id,
+                model_id = %model_id,
+                prompt_index
             )
-            .map_err(|e| ClientError::Multimodal(e.to_string()))?;
-
-            let final_prompt = formatter.strip_template_placeholders(&prompt_text);
+            .in_scope(|| {
+                build_chat_payload(
+                    formatter,
+                    messages,
+                    &params_by_prompt[prompt_index],
+                    info.takes_token_segments()
+                        .then_some(info.model_id.as_str()),
+                )
+            })?;
             tracing::debug!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt_chars = final_prompt.chars().count(),
-                image_count = image_buffers.len(),
-                capability_count = capabilities.len(),
-                layout_segment_count = layout_segments.len(),
+                prompt_chars = payload.prompt.chars().count(),
+                image_count = payload.image_buffers.len(),
+                capability_count = payload.capabilities.len(),
+                layout_segment_count = payload.layout.len(),
                 "Prepared batched prompt payload"
             );
             tracing::trace!(
                 request_id,
                 model_id = %model_id,
                 prompt_index,
-                prompt = %final_prompt,
+                prompt = %payload.prompt,
                 "Batch prompt sent to PIE"
             );
-
-            // Generate unique RNG seed for EACH prompt in batch
-            let rng_seed = if params.rng_seed != 0 {
-                Some(params.rng_seed)
-            } else if params.deterministic {
-                // Omit the seed: the engine pins its deterministic default.
-                None
-            } else {
-                Some(rand::thread_rng().gen::<u64>())
-            };
-            prompt_payloads.push(PromptPayload {
-                prompt: final_prompt,
-                image_buffers,
-                audio_buffers,
-                capabilities: convert_capabilities(&capabilities),
-                layout: convert_layout(&layout_segments),
-                max_generated_tokens: params.max_tokens,
-                temperature: params.temperature,
-                top_p: params.top_p,
-                top_k: params.top_k,
-                min_p: params.min_p,
-                rng_seed,
-                deterministic: params.deterministic,
-                stop_sequences: params.stop.clone(),
-                num_candidates: params.n,
-                best_of: params.best_of,
-                final_candidates: params.final_candidates,
-                frequency_penalty: params.frequency_penalty,
-                presence_penalty: params.presence_penalty,
-                repetition_penalty: params.repetition_penalty,
-                repetition_context_size: params.repetition_context_size,
-                top_logprobs: params.top_logprobs,
-                logit_bias: params.logit_bias.clone(),
-                tool_schemas_json: tool_schemas_json.clone(),
-                active_tool_schemas_json: active_tool_schemas_json.clone(),
-                tool_calling_tokens: tool_calling_tokens.clone(),
-                output_frame_tokens: output_frame_tokens.clone(),
-                thinking_tokens,
-                tool_choice: tool_choice.clone(),
-                min_tool_calls: 1,
-                max_tool_calls,
-                response_format_json: response_format_json.clone(),
-                modal_options_json: String::new(),
-                task_name: params.task_name.clone(),
-                reasoning_effort,
-                prefix_cache: params.prefix_cache,
-            });
+            prompt_payloads.push(payload);
         }
 
         // Send ONE batch request with all prompts
@@ -962,7 +776,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(message) = delta_error_message(&delta) {
-                        return Err(ClientError::RequestFailed(message));
+                        return Err(Error::Other(message));
                     }
 
                     let prompt_index = delta.prompt_index.unwrap_or(0);
@@ -978,7 +792,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Chat response channel closed before completion".to_string(),
                     ));
                 }
@@ -989,7 +803,7 @@ impl Client {
         let mut responses = Vec::with_capacity(num_prompts);
         for idx in 0..num_prompts {
             let deltas = deltas_by_prompt.remove(&(idx as u32)).unwrap_or_default();
-            responses.push(aggregate_response(deltas));
+            responses.push(aggregate_response(deltas, info.releases_held_text()));
         }
 
         Ok(BatchChatResult::Complete(responses))
@@ -998,9 +812,9 @@ impl Client {
     /// Generate an embedding for a single text input.
     pub async fn aembed(&self, model_id: &str, text: &str) -> Result<Vec<f32>> {
         let mut embeddings = self.aembed_batch(model_id, vec![text.to_string()]).await?;
-        embeddings.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Embedding response missing result".to_string())
-        })
+        embeddings
+            .pop()
+            .ok_or_else(|| Error::Other("Embedding response missing result".to_string()))
     }
 
     /// Generate embeddings for multiple text inputs in a single IPC request.
@@ -1071,14 +885,12 @@ impl Client {
         let max_output_tokens = match options.as_mut() {
             Some(Value::Object(object)) => match object.remove("max_output_tokens") {
                 Some(value) => value.as_i64().filter(|value| *value >= 0).ok_or_else(|| {
-                    ClientError::RequestFailed(
-                        "max_output_tokens must be a non-negative integer".to_string(),
-                    )
+                    Error::Other("max_output_tokens must be a non-negative integer".to_string())
                 })? as i32,
                 None => 8192,
             },
             Some(_) => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Modal options must be a JSON object".to_string(),
                 ))
             }
@@ -1110,23 +922,6 @@ impl Client {
             &[prompt_payload],
         )?;
         collect_modal_artifacts(rx).await
-    }
-
-    /// Synchronous wrapper for native PIE audio generation.
-    pub fn generate_audio(
-        &self,
-        model_id: &str,
-        text: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let text = text.to_string();
-        let future = async move { self.agenerate_audio(&model_id, &text, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
     }
 
     /// Generate image artifacts with a native PIE image-generation model.
@@ -1168,23 +963,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE image generation.
-    pub fn generate_image(
-        &self,
-        model_id: &str,
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let prompt = prompt.to_string();
-        let future = async move { self.agenerate_image(&model_id, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Edit an input image with a native PIE image-to-image model.
     pub async fn aedit_image(
         &self,
@@ -1224,25 +1002,6 @@ impl Client {
         collect_modal_artifacts(rx).await
     }
 
-    /// Synchronous wrapper for native PIE image editing.
-    pub fn edit_image(
-        &self,
-        model_id: &str,
-        image: &[u8],
-        prompt: &str,
-        options: Option<Value>,
-    ) -> Result<Vec<ModalArtifact>> {
-        let model_id = model_id.to_string();
-        let image = image.to_vec();
-        let prompt = prompt.to_string();
-        let future = async move { self.aedit_image(&model_id, &image, &prompt, options).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
-        }
-    }
-
     /// Transcribe float32 PCM audio with a local speech-to-text model.
     pub async fn atranscribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
         if pcm.is_empty() {
@@ -1279,16 +1038,74 @@ impl Client {
         collect_transcription(rx).await
     }
 
-    /// Synchronous speech-to-text wrapper.
-    pub fn transcribe_audio(&self, model_id: &str, pcm: &[f32]) -> Result<String> {
-        let model_id = model_id.to_string();
-        let pcm = pcm.to_vec();
-        let future = async move { self.atranscribe_audio(&model_id, &pcm).await };
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => get_sync_runtime().block_on(future),
+    /// Warm each model's prefix cache with `messages`, concurrently.
+    ///
+    /// Each model prefills the rendered transcript and publishes it to its prefix
+    /// cache, so a later request that extends the transcript on any of them starts
+    /// from a warm cache: the handoff costs only the new tokens. The KV it leaves
+    /// behind is prefill-produced, so even `deterministic` requests may reuse it.
+    /// Call it after a turn completes (spawn it; it does not need to be awaited
+    /// before the conversation continues on another model).
+    ///
+    /// Pass the `params` the real turn will use. Tools, instructions and the
+    /// reasoning settings are part of the rendered prompt, and a warm-up that
+    /// renders a different prompt leaves nothing the turn can reuse. Only the
+    /// output budget is overridden: one token, one candidate.
+    ///
+    /// The models must already be loaded: one that is not gets an error result, it is
+    /// not downloaded or loaded here. One token is sampled and discarded.
+    pub async fn awarm_prefix(
+        &self,
+        model_ids: &[&str],
+        messages: Vec<HashMap<String, serde_json::Value>>,
+        params: SamplingParams,
+    ) -> Vec<WarmResult> {
+        let params = warm_params(params);
+        let mut handles = Vec::with_capacity(model_ids.len());
+        for model_id in model_ids {
+            let client = self.clone();
+            let model_id = (*model_id).to_string();
+            let messages = messages.clone();
+            let params = params.clone();
+            let task_model_id = model_id.clone();
+            let handle = tokio::spawn(async move {
+                let started = std::time::Instant::now();
+                let mut result = WarmResult {
+                    model_id: model_id.clone(),
+                    ..Default::default()
+                };
+                // achat would download and load a missing model; a warm-up must not.
+                if client.registry.get_if_ready(&model_id).await.is_none() {
+                    result.error = Some(format!("Model '{model_id}' is not loaded"));
+                    return result;
+                }
+                match client.achat(&model_id, messages, params, true).await {
+                    Ok(ChatResult::Stream(mut stream)) => {
+                        while let Some(delta) = stream.recv().await {
+                            if let Some(error) = delta.error {
+                                result.error = Some(error);
+                                break;
+                            }
+                            result.prompt_tokens = result
+                                .prompt_tokens
+                                .max(delta.prompt_token_count.unwrap_or(0));
+                            result.cached_tokens = result
+                                .cached_tokens
+                                .max(delta.cached_token_count.unwrap_or(0));
+                            if delta.is_final_delta {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(ChatResult::Complete(_)) => {}
+                    Err(error) => result.error = Some(error.to_string()),
+                }
+                result.elapsed = started.elapsed();
+                result
+            });
+            handles.push((task_model_id, handle));
         }
+        join_warm_tasks(handles).await
     }
 
     /// Run a prefill-only task and return the raw response deltas.
@@ -1301,9 +1118,9 @@ impl Client {
         let mut results = self
             .aprefill_task_batch(model_id, vec![text.to_string()], task_name)
             .await?;
-        results.pop().ok_or_else(|| {
-            ClientError::RequestFailed("Prefill task response missing result".to_string())
-        })
+        results
+            .pop()
+            .ok_or_else(|| Error::Other("Prefill task response missing result".to_string()))
     }
 
     /// Run a prefill-only task for multiple texts in one IPC request.
@@ -1337,7 +1154,7 @@ impl Client {
             match rx.recv().await {
                 Some(delta) => {
                     if let Some(error) = delta.error.clone() {
-                        return Err(ClientError::RequestFailed(error));
+                        return Err(Error::Other(error));
                     }
                     let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
                     let is_final = delta.is_final_delta;
@@ -1350,7 +1167,7 @@ impl Client {
                     }
                 }
                 None => {
-                    return Err(ClientError::RequestFailed(
+                    return Err(Error::Other(
                         "Prefill task response channel closed before completion".to_string(),
                     ));
                 }
@@ -1358,6 +1175,111 @@ impl Client {
         }
         Ok(deltas_by_prompt)
     }
+}
+
+/// Build the PIE prompt payload for one chat conversation: profile sampling
+/// defaults, multimodal expansion, template, layout, tool schemas and seed.
+/// `replay_model` is the model being asked when its engine takes token segments: replies
+/// that model generated earlier in the conversation are then sent as their token ids.
+fn build_chat_payload(
+    formatter: &crate::formatter::ChatFormatter,
+    messages: &[HashMap<String, Value>],
+    params: &SamplingParams,
+    replay_model: Option<&str>,
+) -> Result<PromptPayload> {
+    let params = sampling_with_profile_defaults(formatter, params);
+    let (messages, replays) = replay::take_replays(messages, replay_model);
+    let messages = messages.as_slice();
+    let (reasoning_flag, reasoning_effort, thinking_tokens) = native_reasoning_settings(
+        formatter,
+        chat_reasoning_requested(formatter, &params),
+        &params.reasoning_effort,
+    );
+
+    // Build multimodal content (pass instructions if provided)
+    let (messages_for_template, image_buffers, audio_buffers, capabilities, content_order) =
+        build_multimodal_messages(formatter, messages, params.instructions.as_deref())?;
+
+    if messages_for_template.is_empty() {
+        return Err(Error::Other(
+            "Chat request must include at least one message".into(),
+        ));
+    }
+    tracing::trace!(
+        messages_for_template = ?messages_for_template,
+        "Chat messages after multimodal expansion"
+    );
+    // Core tools are rendered in the prompt; active tools drive PSE grammar.
+    let (core_tool_schemas, active_tool_schemas) = core_and_active_tool_schemas(&params);
+    let template_tools = (!core_tool_schemas.is_empty()).then_some(core_tool_schemas.as_slice());
+
+    // Apply template with reasoning flag
+    let prompt_text = formatter.apply_template_with_tools(
+        &messages_for_template,
+        true,
+        reasoning_flag,
+        params.task_name.as_deref(),
+        reasoning_effort.as_deref(),
+        template_tools,
+    )?;
+
+    // Build layout for multimodal content
+    let layout_segments = build_multimodal_layout(
+        formatter,
+        &prompt_text,
+        &image_buffers,
+        &audio_buffers,
+        &capabilities,
+        &content_order,
+    )?;
+
+    let (prompt, layout, token_segments) = replay::splice_replays(
+        &formatter.strip_template_placeholders(&prompt_text),
+        &convert_layout(&layout_segments),
+        &replays,
+    );
+    Ok(PromptPayload {
+        prompt,
+        image_buffers,
+        audio_buffers,
+        capabilities: convert_capabilities(&capabilities),
+        layout,
+        token_segments,
+        max_generated_tokens: params.max_tokens,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        top_k: params.top_k,
+        min_p: params.min_p,
+        rng_seed: pick_seed(params.rng_seed, params.deterministic),
+        deterministic: params.deterministic,
+        stop_sequences: params.stop,
+        num_candidates: params.n,
+        best_of: params.best_of,
+        final_candidates: params.final_candidates,
+        frequency_penalty: params.frequency_penalty,
+        presence_penalty: params.presence_penalty,
+        repetition_penalty: params.repetition_penalty,
+        repetition_context_size: params.repetition_context_size,
+        top_logprobs: params.top_logprobs,
+        logit_bias: params.logit_bias,
+        tool_schemas_json: serialize_tool_schemas(&core_tool_schemas),
+        active_tool_schemas_json: serialize_tool_schemas(&active_tool_schemas),
+        tool_calling_tokens: formatter.get_tool_calling_tokens().clone(),
+        output_frame_tokens: formatter.get_output_frame_tokens().clone(),
+        thinking_tokens,
+        tool_choice: tool_choice_to_string(params.tool_choice.as_ref()),
+        min_tool_calls: 1,
+        max_tool_calls: params.max_tool_calls.unwrap_or(0).max(0),
+        response_format_json: params
+            .response_format
+            .as_ref()
+            .map(|rf| serde_json::to_string(rf).unwrap_or_default())
+            .unwrap_or_default(),
+        modal_options_json: String::new(),
+        task_name: params.task_name,
+        reasoning_effort,
+        prefix_cache: params.prefix_cache,
+    })
 }
 
 /// Convert CapabilityInput from multimodal to CapabilityEntry for serialization.
@@ -1385,47 +1307,23 @@ fn convert_layout(segments: &[LayoutSegment]) -> Vec<LayoutEntry> {
 }
 
 fn build_embedding_prompt_payload(prompt: String) -> PromptPayload {
-    let prompt_len = prompt.len();
-
     PromptPayload {
-        prompt,
-        image_buffers: Vec::new(),
-        audio_buffers: Vec::new(),
-        capabilities: Vec::new(),
         layout: vec![LayoutEntry {
             segment_type: "text".to_string(),
-            length: prompt_len,
+            length: prompt.len(),
         }],
-        max_generated_tokens: 0,
+        prompt,
         temperature: defaults::TEMPERATURE,
         top_p: defaults::TOP_P,
         top_k: defaults::TOP_K,
-        min_p: 0.0,
         rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
         num_candidates: 1,
         best_of: Some(1),
         final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
         repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
         tool_choice: "auto".to_string(),
         min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        ..Default::default()
     }
 }
 
@@ -1474,13 +1372,7 @@ fn build_modal_artifact_prompt_payload(
         top_p: sampling_params.top_p,
         top_k: sampling_params.top_k,
         min_p: sampling_params.min_p,
-        rng_seed: if sampling_params.rng_seed != 0 {
-            Some(sampling_params.rng_seed)
-        } else if sampling_params.deterministic {
-            None
-        } else {
-            Some(rand::thread_rng().gen::<u64>())
-        },
+        rng_seed: pick_seed(sampling_params.rng_seed, sampling_params.deterministic),
         deterministic: sampling_params.deterministic,
         task_name: Some(task_name.to_string()),
         modal_options_json,
@@ -1490,13 +1382,8 @@ fn build_modal_artifact_prompt_payload(
 
 fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
     let audio_payload = encode_float32_pcm_bytes(pcm);
-    let audio_payload_size = audio_payload.len();
 
     PromptPayload {
-        prompt: String::new(),
-        image_buffers: Vec::new(),
-        audio_buffers: vec![audio_payload],
-        capabilities: Vec::new(),
         layout: vec![
             LayoutEntry {
                 segment_type: "text".to_string(),
@@ -1504,39 +1391,11 @@ fn build_stt_prompt_payload(pcm: &[f32]) -> PromptPayload {
             },
             LayoutEntry {
                 segment_type: "audio".to_string(),
-                length: audio_payload_size,
+                length: audio_payload.len(),
             },
         ],
-        max_generated_tokens: 0,
-        temperature: defaults::TEMPERATURE,
-        top_p: defaults::TOP_P,
-        top_k: defaults::TOP_K,
-        min_p: 0.0,
-        rng_seed: Some(rand::thread_rng().gen::<u64>()),
-        deterministic: false,
-        stop_sequences: Vec::new(),
-        num_candidates: 1,
-        best_of: Some(1),
-        final_candidates: Some(1),
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-        repetition_penalty: defaults::REPETITION_PENALTY,
-        repetition_context_size: 0,
-        top_logprobs: 0,
-        logit_bias: HashMap::new(),
-        tool_schemas_json: String::new(),
-        active_tool_schemas_json: String::new(),
-        tool_calling_tokens: Default::default(),
-        output_frame_tokens: Default::default(),
-        thinking_tokens: Default::default(),
-        tool_choice: "auto".to_string(),
-        min_tool_calls: 1,
-        max_tool_calls: 0,
-        response_format_json: String::new(),
-        modal_options_json: String::new(),
-        task_name: None,
-        reasoning_effort: None,
-        prefix_cache: None,
+        audio_buffers: vec![audio_payload],
+        ..build_embedding_prompt_payload(String::new())
     }
 }
 
@@ -1550,7 +1409,7 @@ fn modal_options_object<const N: usize>(
     }
     if let Some(options) = options {
         let Value::Object(options_object) = options else {
-            return Err(ClientError::RequestFailed(
+            return Err(Error::Other(
                 "Modal options must be a JSON object".to_string(),
             ));
         };
@@ -1560,15 +1419,16 @@ fn modal_options_object<const N: usize>(
 }
 
 fn modal_options_json(object: &Map<String, Value>) -> Result<String> {
-    serde_json::to_string(object).map_err(|err| ClientError::RequestFailed(err.to_string()))
+    serde_json::to_string(object).map_err(|err| Error::Other(err.to_string()))
 }
 
 fn modal_option_f64(object: &Map<String, Value>, key: &str) -> Result<Option<f64>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_f64().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a number"))
-        }),
+        Some(value) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a number"))),
     }
 }
 
@@ -1576,12 +1436,12 @@ fn modal_option_i32(object: &Map<String, Value>, key: &str) -> Result<Option<i32
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => {
-            let value = value.as_i64().ok_or_else(|| {
-                ClientError::RequestFailed(format!("modal option '{key}' must be an integer"))
-            })?;
-            i32::try_from(value).map(Some).map_err(|_| {
-                ClientError::RequestFailed(format!("modal option '{key}' is out of range"))
-            })
+            let value = value
+                .as_i64()
+                .ok_or_else(|| Error::Other(format!("modal option '{key}' must be an integer")))?;
+            i32::try_from(value)
+                .map(Some)
+                .map_err(|_| Error::Other(format!("modal option '{key}' is out of range")))
         }
     }
 }
@@ -1593,11 +1453,11 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
             if let Some(value) = value.as_u64() {
                 Ok(Some(value))
             } else if let Some(value) = value.as_i64() {
-                u64::try_from(value).map(Some).map_err(|_| {
-                    ClientError::RequestFailed(format!("modal option '{key}' must be non-negative"))
-                })
+                u64::try_from(value)
+                    .map(Some)
+                    .map_err(|_| Error::Other(format!("modal option '{key}' must be non-negative")))
             } else {
-                Err(ClientError::RequestFailed(format!(
+                Err(Error::Other(format!(
                     "modal option '{key}' must be an integer"
                 )))
             }
@@ -1608,9 +1468,10 @@ fn modal_option_u64(object: &Map<String, Value>, key: &str) -> Result<Option<u64
 fn modal_option_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bool>> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_bool().map(Some).ok_or_else(|| {
-            ClientError::RequestFailed(format!("modal option '{key}' must be a boolean"))
-        }),
+        Some(value) => value
+            .as_bool()
+            .map(Some)
+            .ok_or_else(|| Error::Other(format!("modal option '{key}' must be a boolean"))),
     }
 }
 
@@ -1642,14 +1503,13 @@ async fn collect_modal_artifacts(
     let mut artifacts = Vec::new();
     while let Some(delta) = rx.recv().await {
         if let Some(error) = delta.error.clone() {
-            return Err(ClientError::RequestFailed(error));
+            return Err(Error::Other(error));
         }
         if let Some(encoded) = delta.modal_bytes_b64.as_deref() {
             let metadata = match delta.modal_metadata_json.as_deref() {
-                Some(raw) if !raw.is_empty() => Some(
-                    serde_json::from_str(raw)
-                        .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
-                ),
+                Some(raw) if !raw.is_empty() => {
+                    Some(serde_json::from_str(raw).map_err(|err| Error::Other(err.to_string()))?)
+                }
                 _ => None,
             };
             artifacts.push(ModalArtifact {
@@ -1660,14 +1520,14 @@ async fn collect_modal_artifacts(
                 metadata,
                 data: BASE64
                     .decode(encoded)
-                    .map_err(|err| ClientError::RequestFailed(err.to_string()))?,
+                    .map_err(|err| Error::Other(err.to_string()))?,
             });
         }
         if delta.is_final_delta {
             return Ok(artifacts);
         }
     }
-    Err(ClientError::RequestFailed(
+    Err(Error::Other(
         "Modal artifact response channel closed before completion".to_string(),
     ))
 }
@@ -1684,7 +1544,7 @@ async fn collect_embeddings(
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 let prompt_index = delta.prompt_index.unwrap_or(0) as usize;
@@ -1702,7 +1562,7 @@ async fn collect_embeddings(
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Embedding response channel closed before completion".to_string(),
                 ));
             }
@@ -1714,7 +1574,7 @@ async fn collect_embeddings(
         .enumerate()
         .map(|(prompt_index, embedding)| {
             embedding.ok_or_else(|| {
-                ClientError::RequestFailed(format!(
+                Error::Other(format!(
                     "Embedding response missing bytes for prompt_index={}",
                     prompt_index
                 ))
@@ -1724,19 +1584,16 @@ async fn collect_embeddings(
 }
 
 fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
-    let mut chunks = bytes.chunks_exact(std::mem::size_of::<f32>());
-    if !chunks.remainder().is_empty() {
-        return Err(ClientError::RequestFailed(format!(
+    let (chunks, remainder) = bytes.as_chunks::<{ std::mem::size_of::<f32>() }>();
+    if !remainder.is_empty() {
+        return Err(Error::Other(format!(
             "Embedding payload length {} is not divisible by {}",
             bytes.len(),
             std::mem::size_of::<f32>()
         )));
     }
 
-    Ok(chunks
-        .by_ref()
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("f32 chunk size")))
-        .collect())
+    Ok(chunks.iter().copied().map(f32::from_le_bytes).collect())
 }
 
 async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -> Result<String> {
@@ -1746,7 +1603,7 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
         match rx.recv().await {
             Some(delta) => {
                 if let Some(error) = delta.error {
-                    return Err(ClientError::RequestFailed(error));
+                    return Err(Error::Other(error));
                 }
 
                 if let Some(content) = delta.content {
@@ -1758,12 +1615,51 @@ async fn collect_transcription(mut rx: mpsc::UnboundedReceiver<ResponseDelta>) -
                 }
             }
             None => {
-                return Err(ClientError::RequestFailed(
+                return Err(Error::Other(
                     "Speech-to-text response channel closed before completion".to_string(),
                 ));
             }
         }
     }
+}
+
+/// What warming one model's prefix cache did (see [`Client::awarm_prefix`]).
+#[derive(Debug, Clone, Default)]
+pub struct WarmResult {
+    pub model_id: String,
+    /// Tokens in the rendered transcript for this model.
+    pub prompt_tokens: u32,
+    /// How many of them were already cached (so: `prompt - cached` were prefilled now).
+    pub cached_tokens: u32,
+    pub elapsed: std::time::Duration,
+    pub error: Option<String>,
+}
+
+/// The params a warm-up sends: the turn's own, cut down to one sampled token.
+fn warm_params(params: SamplingParams) -> SamplingParams {
+    SamplingParams {
+        max_tokens: 1,
+        n: 1,
+        best_of: None,
+        final_candidates: None,
+        ..params
+    }
+}
+
+/// One result per warm task, in order. A task that panicked or was cancelled has no
+/// result of its own, so its model id travels next to its handle.
+async fn join_warm_tasks(
+    handles: Vec<(String, tokio::task::JoinHandle<WarmResult>)>,
+) -> Vec<WarmResult> {
+    let mut results = Vec::with_capacity(handles.len());
+    for (model_id, handle) in handles {
+        results.push(handle.await.unwrap_or_else(|error| WarmResult {
+            model_id,
+            error: Some(error.to_string()),
+            ..Default::default()
+        }));
+    }
+    results
 }
 
 /// Result of a chat operation.
@@ -1781,7 +1677,6 @@ struct CandidateState {
     content: String,
     finish_reason: Option<String>,
     completion_tokens: u32,
-    reasoning_tokens: u32,
     prompt_tokens: u32,
     cumulative_logprob: Option<f64>,
     generation_len: Option<u32>,
@@ -1828,6 +1723,7 @@ fn select_best_candidates(
 fn build_response_from_candidates(
     candidates: Vec<CandidateState>,
     total_completion_tokens: u32,
+    released_text: bool,
 ) -> ClientResponse {
     let prompt_tokens = candidates
         .iter()
@@ -1841,7 +1737,7 @@ fn build_response_from_candidates(
     let mut finish_reason = None;
 
     for candidate in candidates {
-        text.push_str(&aggregate_message_text(&candidate.deltas));
+        text.push_str(&aggregate_message_text(&candidate.deltas, released_text));
         if candidate.finish_reason.is_some() {
             finish_reason = candidate.finish_reason;
         }
@@ -1884,7 +1780,20 @@ fn value_to_text(value: &Value) -> String {
     }
 }
 
-fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
+/// The message text of one reply: the spans alone when the engine completes its text
+/// stream (`ModelInfo::releases_held_text`), otherwise read as it was before that existed.
+fn aggregate_message_text(deltas: &[ClientDelta], released_text: bool) -> String {
+    if released_text {
+        message_text_from_spans(deltas)
+    } else {
+        message_text_from_content_and_spans(deltas)
+    }
+}
+
+/// `content` wherever a delta has no events of another item, the spans elsewhere:
+/// the assembly for an engine without `released_text`, where only `content` has
+/// the text that was still held when the reply was cut off.
+fn message_text_from_content_and_spans(deltas: &[ClientDelta]) -> String {
     let mut text = String::new();
     let mut completed_value = None;
 
@@ -1936,6 +1845,38 @@ fn aggregate_message_text(deltas: &[ClientDelta]) -> String {
         return text;
     }
     completed_value.unwrap_or_default()
+}
+
+/// A reply that carries state events is its message spans: `content` next to
+/// them says held text twice (" the E" beside the span " the ", then the
+/// released "E") and spells the stop sequence and the markers of a tool call.
+/// Only a reply without any state event is read from `content`.
+fn message_text_from_spans(deltas: &[ClientDelta]) -> String {
+    if deltas.iter().all(|delta| delta.state_events.is_empty()) {
+        return deltas
+            .iter()
+            .filter_map(|delta| delta.content.as_deref())
+            .collect();
+    }
+
+    let mut text = String::new();
+    let mut completed_value = None;
+    let message_events = deltas
+        .iter()
+        .flat_map(|delta| &delta.state_events)
+        .filter(|event| event.item_type == "message");
+    for event in message_events {
+        if event.event_type == "content_delta" {
+            text.push_str(&event.delta);
+        } else if event.event_type == "item_completed" && event.value.is_some() {
+            completed_value = event.value.as_ref();
+        }
+    }
+
+    if !text.is_empty() {
+        return text;
+    }
+    completed_value.map(value_to_text).unwrap_or_default()
 }
 
 fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<ClientToolCall>) {
@@ -2021,8 +1962,8 @@ fn aggregate_structured_items(deltas: &[ClientDelta]) -> (Vec<String>, Vec<Clien
 }
 
 /// Aggregate deltas into a complete response.
-fn aggregate_response(deltas: Vec<ClientDelta>) -> ClientResponse {
-    let text = aggregate_message_text(&deltas);
+fn aggregate_response(deltas: Vec<ClientDelta>, released_text: bool) -> ClientResponse {
+    let text = aggregate_message_text(&deltas, released_text);
 
     let finish_reason = deltas
         .iter()
@@ -2045,515 +1986,16 @@ fn aggregate_response(deltas: Vec<ClientDelta>) -> ClientResponse {
 
 fn extract_usage(deltas: &[ClientDelta]) -> UsageStats {
     let mut usage = UsageStats::default();
-    let mut reasoning_tokens = 0;
 
     for delta in deltas {
         if let Some(count) = delta.prompt_token_count {
             usage.prompt_tokens = usage.prompt_tokens.max(count);
         }
-        if let Some(count) = delta.reasoning_tokens {
-            reasoning_tokens = reasoning_tokens.max(count);
-        }
         if let Some(len) = delta.generation_len {
-            usage.completion_tokens = usage
-                .completion_tokens
-                .max(len.saturating_sub(reasoning_tokens));
+            usage.completion_tokens = usage.completion_tokens.max(len);
         }
     }
 
     usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
     usage
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sampling_params_default() {
-        let params = SamplingParams::default();
-        assert_eq!(params.max_tokens, 8192);
-        assert_eq!(params.temperature, 1.0);
-        assert_eq!(params.top_p, 1.0);
-        assert_eq!(params.top_k, -1);
-        assert_eq!(params.repetition_context_size, 60);
-        assert_eq!(params.top_logprobs, 0);
-        assert!(params.logit_bias.is_empty());
-        assert!(params.core_tools.is_empty());
-        assert!(params.response_format.is_none());
-        assert!(!params.deterministic);
-        assert!(params.reasoning.is_none());
-        assert!(params.reasoning_effort.is_none());
-        assert!(params.instructions.is_none());
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_drop_llama3_fallback_tokens() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "llama3"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, true, &Some("high".to_string()));
-
-        assert!(!reasoning_flag);
-        assert!(reasoning_effort.is_none());
-        assert_eq!(thinking_tokens.start, "");
-        assert_eq!(thinking_tokens.end, "");
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_keep_gemma4_native_tokens() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "gemma4"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, true, &Some("high".to_string()));
-
-        assert!(reasoning_flag);
-        assert_eq!(reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
-        assert_eq!(thinking_tokens.end, "<channel|>");
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_effort_enables_gemma4_reasoning() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "gemma4"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, false, &Some("high".to_string()));
-
-        assert!(reasoning_flag);
-        assert_eq!(reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
-        assert_eq!(thinking_tokens.end, "<channel|>");
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_default_enables_gemma4_reasoning() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "gemma4"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, formatter.supports_native_thinking(), &None);
-
-        assert!(reasoning_flag);
-        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
-        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
-        assert_eq!(thinking_tokens.end, "<channel|>");
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_boolean_reasoning_uses_default_effort() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "gemma4"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, true, &None);
-
-        assert!(reasoning_flag);
-        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
-        assert_eq!(thinking_tokens.start, "<|channel>thought\n");
-        assert_eq!(thinking_tokens.end, "<channel|>");
-    }
-
-    #[test]
-    fn test_native_reasoning_settings_native_thinking_enables_afmoe_reasoning() {
-        let model_dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            model_dir.path().join("config.json"),
-            serde_json::json!({"model_type": "afmoe"}).to_string(),
-        )
-        .unwrap();
-        let formatter = crate::formatter::ChatFormatter::new(model_dir.path()).unwrap();
-
-        let (reasoning_flag, reasoning_effort, thinking_tokens) =
-            native_reasoning_settings(&formatter, formatter.supports_native_thinking(), &None);
-
-        assert!(reasoning_flag);
-        assert_eq!(reasoning_effort.as_deref(), Some("medium"));
-        assert_eq!(thinking_tokens.start, "<think>\n");
-        assert_eq!(thinking_tokens.end, "\n</think>");
-    }
-
-    #[test]
-    fn test_aggregate_response() {
-        let deltas = vec![
-            ClientDelta {
-                content: Some("Hello".to_string()),
-                is_final: false,
-                ..Default::default()
-            },
-            ClientDelta {
-                content: Some(" World".to_string()),
-                is_final: true,
-                finish_reason: Some("stop".to_string()),
-                ..Default::default()
-            },
-        ];
-
-        let response = aggregate_response(deltas);
-        assert_eq!(response.text, "Hello World");
-        assert_eq!(response.finish_reason, Some("stop".to_string()));
-    }
-
-    #[test]
-    fn test_delta_error_message_uses_engine_error_before_content() {
-        let delta = ResponseDelta {
-            finish_reason: Some("error".to_string()),
-            content: Some("fallback content".to_string()),
-            error: Some("Engine process disconnected.".to_string()),
-            ..Default::default()
-        };
-
-        assert_eq!(
-            delta_error_message(&delta),
-            Some("Engine process disconnected.".to_string())
-        );
-    }
-
-    #[test]
-    fn test_delta_error_message_ignores_non_error_finish_reason() {
-        let delta = ResponseDelta {
-            finish_reason: Some("stop".to_string()),
-            error: Some("not an error".to_string()),
-            ..Default::default()
-        };
-
-        assert_eq!(delta_error_message(&delta), None);
-    }
-
-    #[test]
-    fn test_aggregate_response_uses_message_state_events() {
-        let deltas = vec![
-            ClientDelta {
-                content: Some("hidden thought".to_string()),
-                state_events: vec![crate::ipc::client::ResponseStateEvent {
-                    event_type: "content_delta".to_string(),
-                    item_type: "reasoning".to_string(),
-                    identifier: "reasoning".to_string(),
-                    delta: "hidden thought".to_string(),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            ClientDelta {
-                content: Some("visible answer".to_string()),
-                state_events: vec![crate::ipc::client::ResponseStateEvent {
-                    event_type: "content_delta".to_string(),
-                    item_type: "message".to_string(),
-                    identifier: "message".to_string(),
-                    delta: "visible answer".to_string(),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-        ];
-
-        let response = aggregate_response(deltas);
-
-        assert_eq!(response.text, "visible answer");
-        assert_eq!(response.reasoning, vec!["hidden thought".to_string()]);
-    }
-
-    #[test]
-    fn test_aggregate_response_exposes_tool_calls() {
-        let deltas = vec![ClientDelta {
-            state_events: vec![crate::ipc::client::ResponseStateEvent {
-                event_type: "item_completed".to_string(),
-                item_type: "tool_call".to_string(),
-                output_index: 0,
-                identifier: "tool_call:share_to_party".to_string(),
-                value: Some(serde_json::json!({
-                    "name": "share_to_party",
-                    "arguments": {"content": "hi"}
-                })),
-                ..Default::default()
-            }],
-            ..Default::default()
-        }];
-
-        let response = aggregate_response(deltas);
-
-        assert_eq!(response.text, "");
-        assert_eq!(response.tool_calls.len(), 1);
-        assert_eq!(response.tool_calls[0].name, "share_to_party");
-        assert_eq!(
-            response.tool_calls[0].arguments,
-            serde_json::json!({"content": "hi"})
-        );
-    }
-
-    #[test]
-    fn test_aggregate_response_parses_tool_call_json_string_completion() {
-        let deltas = vec![ClientDelta {
-            state_events: vec![crate::ipc::client::ResponseStateEvent {
-                event_type: "item_completed".to_string(),
-                item_type: "tool_call".to_string(),
-                output_index: 0,
-                identifier: "tool_call:share_to_party".to_string(),
-                value: Some(Value::String(
-                    serde_json::json!({
-                        "name": "share_to_party",
-                        "arguments": {"content": "hi"}
-                    })
-                    .to_string(),
-                )),
-                ..Default::default()
-            }],
-            ..Default::default()
-        }];
-
-        let response = aggregate_response(deltas);
-
-        assert_eq!(response.text, "");
-        assert_eq!(response.tool_calls.len(), 1);
-        assert_eq!(response.tool_calls[0].name, "share_to_party");
-        assert_eq!(
-            response.tool_calls[0].arguments,
-            serde_json::json!({"content": "hi"})
-        );
-    }
-
-    #[test]
-    fn test_build_embedding_prompt_payload() {
-        let payload = build_embedding_prompt_payload("hello".to_string());
-
-        assert_eq!(payload.prompt, "hello");
-        assert_eq!(payload.max_generated_tokens, 0);
-        assert_eq!(payload.layout.len(), 1);
-        assert_eq!(payload.layout[0].segment_type, "text");
-        assert_eq!(payload.layout[0].length, 5);
-        assert_eq!(payload.num_candidates, 1);
-        assert_eq!(payload.best_of, Some(1));
-        assert_eq!(payload.final_candidates, Some(1));
-    }
-
-    #[test]
-    fn test_decode_embedding_bytes() {
-        let bytes = [
-            0.0f32.to_le_bytes(),
-            1.5f32.to_le_bytes(),
-            (-2.25f32).to_le_bytes(),
-        ]
-        .concat();
-
-        let embedding = decode_embedding_bytes(&bytes).expect("embedding should decode");
-        assert_eq!(embedding, vec![0.0, 1.5, -2.25]);
-    }
-
-    #[test]
-    fn test_decode_embedding_bytes_rejects_partial_float() {
-        let error = decode_embedding_bytes(&[0, 0, 128]).expect_err("decode should fail");
-        assert!(matches!(error, ClientError::RequestFailed(_)));
-    }
-
-    #[test]
-    fn test_build_stt_prompt_payload() {
-        let payload = build_stt_prompt_payload(&[0.25, -0.5]);
-
-        assert!(payload.prompt.is_empty());
-        assert_eq!(payload.audio_buffers.len(), 1);
-        assert_eq!(payload.audio_buffers[0].len(), 8);
-        assert!(payload.capabilities.is_empty());
-        assert_eq!(payload.layout.len(), 2);
-        assert_eq!(payload.layout[0].segment_type, "text");
-        assert_eq!(payload.layout[0].length, 0);
-        assert_eq!(payload.layout[1].segment_type, "audio");
-        assert_eq!(payload.layout[1].length, 8);
-    }
-
-    #[test]
-    fn test_encode_float32_pcm_bytes() {
-        let bytes = encode_float32_pcm_bytes(&[0.0, 1.5, -2.25]);
-        let decoded = decode_embedding_bytes(&bytes).expect("audio bytes should decode");
-        assert_eq!(decoded, vec![0.0, 1.5, -2.25]);
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_uses_total_completion_tokens() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "winner".to_string(),
-                finish_reason: Some("stop".to_string()),
-                completion_tokens: 2,
-                prompt_tokens: 5,
-                deltas: vec![ClientDelta {
-                    content: Some("winner".to_string()),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }],
-            /*total_completion_tokens=*/ 7,
-        );
-
-        assert_eq!(response.text, "winner");
-        assert_eq!(response.finish_reason, Some("stop".to_string()));
-        assert_eq!(response.usage.prompt_tokens, 5);
-        assert_eq!(response.usage.completion_tokens, 7);
-        assert_eq!(response.usage.total_tokens, 12);
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_uses_message_state_events() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "<think>private</think>{\"ok\":true}".to_string(),
-                finish_reason: Some("stop".to_string()),
-                prompt_tokens: 5,
-                deltas: vec![
-                    ClientDelta {
-                        state_events: vec![crate::ipc::client::ResponseStateEvent {
-                            event_type: "content_delta".to_string(),
-                            item_type: "reasoning".to_string(),
-                            identifier: "reasoning".to_string(),
-                            delta: "private".to_string(),
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                    ClientDelta {
-                        state_events: vec![crate::ipc::client::ResponseStateEvent {
-                            event_type: "content_delta".to_string(),
-                            item_type: "message".to_string(),
-                            identifier: "message".to_string(),
-                            delta: "{\"ok\":true}".to_string(),
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            2,
-        );
-
-        assert_eq!(response.text, "{\"ok\":true}");
-        assert_eq!(response.reasoning, vec!["private".to_string()]);
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_keeps_plain_raw_content() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "red, white, blue".to_string(),
-                finish_reason: Some("stop".to_string()),
-                prompt_tokens: 5,
-                deltas: vec![ClientDelta {
-                    content: Some("red, white, blue".to_string()),
-                    state_events: vec![crate::ipc::client::ResponseStateEvent {
-                        event_type: "content_delta".to_string(),
-                        item_type: "message".to_string(),
-                        identifier: "message".to_string(),
-                        delta: "red, white, ".to_string(),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }],
-            3,
-        );
-
-        assert_eq!(response.text, "red, white, blue");
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_uses_message_delta_when_raw_content_empty() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "red, white, ".to_string(),
-                finish_reason: Some("stop".to_string()),
-                prompt_tokens: 5,
-                deltas: vec![
-                    ClientDelta {
-                        content: Some("red, white, ".to_string()),
-                        ..Default::default()
-                    },
-                    ClientDelta {
-                        content: Some(String::new()),
-                        state_events: vec![crate::ipc::client::ResponseStateEvent {
-                            event_type: "content_delta".to_string(),
-                            item_type: "message".to_string(),
-                            identifier: "message".to_string(),
-                            delta: "blue".to_string(),
-                            ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            3,
-        );
-
-        assert_eq!(response.text, "red, white, blue");
-    }
-
-    #[test]
-    fn test_build_response_from_candidates_preserves_raw_suffix_after_state_text() {
-        let response = build_response_from_candidates(
-            vec![CandidateState {
-                content: "red, white, blue".to_string(),
-                finish_reason: Some("stop".to_string()),
-                prompt_tokens: 5,
-                deltas: vec![
-                    ClientDelta {
-                        content: Some("<think>hidden</think>red, white, ".to_string()),
-                        state_events: vec![
-                            crate::ipc::client::ResponseStateEvent {
-                                event_type: "content_delta".to_string(),
-                                item_type: "reasoning".to_string(),
-                                identifier: "reasoning".to_string(),
-                                delta: "hidden".to_string(),
-                                ..Default::default()
-                            },
-                            crate::ipc::client::ResponseStateEvent {
-                                event_type: "content_delta".to_string(),
-                                item_type: "message".to_string(),
-                                identifier: "message".to_string(),
-                                delta: "red, white, ".to_string(),
-                                ..Default::default()
-                            },
-                        ],
-                        ..Default::default()
-                    },
-                    ClientDelta {
-                        content: Some("blue".to_string()),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            3,
-        );
-
-        assert_eq!(response.text, "red, white, blue");
-        assert_eq!(response.reasoning, vec!["hidden".to_string()]);
-    }
 }

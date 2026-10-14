@@ -5,8 +5,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures::future::join_all;
 use orchard::{
     FunctionCallOutputContent, ModalArtifact, OutputFunctionCall, OutputMessage, OutputReasoning,
-    OutputStatus, ReasoningConfig, ResponseInputItem, ResponseOutputItem, ResponsesInput,
-    ResponsesRequest, ResponsesResult,
+    OutputStatus, ReasoningConfig, ResponseEvent, ResponseInputItem, ResponseOutputItem,
+    ResponsesInput, ResponsesRequest, ResponsesResult,
 };
 use serde_json::{json, Value};
 
@@ -203,8 +203,10 @@ fn wav_to_float32_pcm(wav_bytes: &[u8], target_rate: usize) -> Vec<f32> {
     assert_eq!(data.len() % (sample_width * channels), 0);
 
     let mono = if channels == 1 {
-        data.chunks_exact(2)
-            .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as f32 / 32768.0)
+        data.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|sample| i16::from_le_bytes(*sample) as f32 / 32768.0)
             .collect::<Vec<_>>()
     } else {
         data.chunks_exact(sample_width * channels)
@@ -320,6 +322,7 @@ fn generate_image_tool() -> Value {
 const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
 
 async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
+    let total_token_limit = request.max_output_tokens;
     let fixture = get_fixture().await;
     tokio::time::timeout(STREAM_TIMEOUT, async {
         let result = fixture
@@ -341,6 +344,29 @@ async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
                 "responses stream failed mid-turn for {}: {error}",
                 model.template_type
             );
+        }
+        if let Some(limit) = total_token_limit {
+            for event in &turn.events {
+                if let ResponseEvent::ResponseCompleted(completed) = event {
+                    let usage = completed
+                        .response
+                        .usage
+                        .as_ref()
+                        .expect("missing token usage");
+                    let reasoning = usage
+                        .output_tokens_details
+                        .as_ref()
+                        .map_or(0, |details| details.reasoning_tokens);
+                    // Canonical output usage includes reasoning; the detail is a subset.
+                    let generated = u64::from(usage.output_tokens);
+                    assert!(u64::from(reasoning) <= generated);
+                    assert!(
+                        generated <= limit as u64,
+                        "{}: {generated} generated tokens (including reasoning) exceed {limit}",
+                        model.template_type
+                    );
+                }
+            }
         }
         turn
     })
@@ -1970,6 +1996,12 @@ async fn test_tool_chaining() {
         turn2_request.core_tools = tools.clone();
         turn2_request.tool_choice = Some(json!("required"));
         turn2_request.reasoning = reasoning.clone();
+        // The existing LFM2.5 recording uses 496 reasoning + 20 visible tokens.
+        // This case tests dependent tool calls, not truncation: explicitly allow
+        // that complete turn under the engine's reasoning-inclusive cap.
+        if model.template_type == "lfm2_5" {
+            turn2_request.max_output_tokens = Some(768);
+        }
         let turn2 = run_stream(model, turn2_request).await;
         assert_or_record(model.template_type, "tool_chaining", "turn2", &turn2.events);
 

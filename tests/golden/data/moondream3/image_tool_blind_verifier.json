@@ -594,8 +594,8 @@
         ],
         "usage": {
           "input_tokens": 743,
-          "output_tokens": 2,
-          "total_tokens": 745,
+          "output_tokens": 31,
+          "total_tokens": 774,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -604,7 +604,8 @@
           }
         },
         "stop_token_id": 0,
-        "stop_token": "<|endoftext|>"
+        "stop_token": "<|endoftext|>",
+        "generation": {"model": "moondream/moondream3-preview","tokens": [37425,41190,1985,316,5910,18448,41315,41193,42149,32,5064,1821,1282,48367,41198,5779,47227,12913,42117,41462,41190,1432,1282,316,9635,287,12913,34,3,14299],"thinking": true}
       }
     },
     {

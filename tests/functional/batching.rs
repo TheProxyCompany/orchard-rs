@@ -6,6 +6,7 @@
 //! Note: test_chat_completion_batch_length_mismatch_returns_422 is HTTP-specific
 //! (validates 422 response code) and is not ported.
 
+use crate::fixture::semantic_token_limit;
 use orchard::{BatchChatResult, SamplingParams};
 
 use crate::fixture::{fanout, get_fixture, make_message, TEXT_MODELS};
@@ -18,7 +19,7 @@ async fn test_chat_completion_batched_homogeneous() {
     let client = &fixture.client;
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let params = SamplingParams {
-            max_tokens: 10, // max_completion_tokens in Python
+            max_tokens: semantic_token_limit(model_id, 10), // max_completion_tokens in Python
             temperature: 0.0,
             reasoning: Some(false),
             ..Default::default()

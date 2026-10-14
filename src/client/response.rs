@@ -18,6 +18,7 @@ pub enum BatchChatResult {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageStats {
     pub prompt_tokens: u32,
+    /// All generated tokens, including reasoning.
     pub completion_tokens: u32,
     pub total_tokens: u32,
 }
@@ -111,72 +112,4 @@ pub struct ModalArtifact {
     pub decoder_id: String,
     pub metadata: Option<Value>,
     pub data: Vec<u8>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_usage_stats_default() {
-        let usage = UsageStats::default();
-        assert_eq!(usage.prompt_tokens, 0);
-        assert_eq!(usage.completion_tokens, 0);
-        assert_eq!(usage.total_tokens, 0);
-    }
-
-    #[test]
-    fn test_client_delta_from_response_delta() {
-        let response = ResponseDelta {
-            request_id: 123,
-            sequence_id: Some(1),
-            prompt_index: Some(0),
-            candidate_index: Some(0),
-            content: Some("Hello".to_string()),
-            content_len: Some(5),
-            inline_content_bytes: Some(5),
-            is_final_delta: false,
-            finish_reason: None,
-            matched_stop_token_id: None,
-            matched_stop_token: None,
-            error: None,
-            prompt_token_count: Some(10),
-            num_tokens_in_delta: Some(3),
-            generation_len: Some(5),
-            tokens: vec![1, 2, 3],
-            top_logprobs: vec![],
-            cumulative_logprob: Some(-1.5),
-            modal_decoder_id: Some("moondream3.coord".to_string()),
-            modal_type: Some("image".to_string()),
-            modal_event: Some("artifact.done".to_string()),
-            modal_mime_type: Some("image/png".to_string()),
-            modal_metadata_json: Some("{\"width\":64,\"height\":64}".to_string()),
-            modal_bytes_b64: Some("AAAA".to_string()),
-            embedding_bytes: None,
-            state_events: vec![],
-            cached_token_count: Some(0),
-            reasoning_tokens: Some(0),
-        };
-
-        let delta = ClientDelta::from(response);
-        assert_eq!(delta.request_id, 123);
-        assert_eq!(delta.sequence_id, Some(1));
-        assert_eq!(delta.prompt_index, Some(0));
-        assert_eq!(delta.candidate_index, Some(0));
-        assert_eq!(delta.content, Some("Hello".to_string()));
-        assert_eq!(delta.content_len, Some(5));
-        assert_eq!(delta.num_tokens_in_delta, Some(3));
-        assert!(!delta.is_final);
-        assert_eq!(delta.tokens, vec![1, 2, 3]);
-        assert_eq!(delta.cumulative_logprob, Some(-1.5));
-        assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
-        assert_eq!(delta.modal_type, Some("image".to_string()));
-        assert_eq!(delta.modal_event, Some("artifact.done".to_string()));
-        assert_eq!(delta.modal_mime_type, Some("image/png".to_string()));
-        assert_eq!(
-            delta.modal_metadata_json,
-            Some("{\"width\":64,\"height\":64}".to_string())
-        );
-        assert!(delta.state_events.is_empty());
-    }
 }

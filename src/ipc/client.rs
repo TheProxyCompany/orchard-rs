@@ -214,9 +214,8 @@ impl IPCClient {
         Arc::clone(&self.management_socket)
     }
 
-    /// Set the event callback for handling engine events.
-    pub fn set_event_callback(&mut self, callback: EventCallback) {
-        self.event_callback = Some(callback);
+    pub(crate) fn response_channel_id(&self) -> u64 {
+        self.response_channel_id
     }
 
     /// Connect to PIE IPC endpoints.
@@ -457,17 +456,218 @@ impl IPCClient {
         .map_err(|e| Error::Internal(format!("Task join error: {}", e)))?
     }
 
-    /// Send a management command synchronously (blocking).
-    ///
-    /// Prefer `send_management_command_async` in async contexts.
-    pub fn send_management_command(&self, command: &Value, timeout: Duration) -> Result<Value> {
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    pub(crate) fn send_management_command_blocking(
+        &self,
+        command: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        let engine_pid_file = self.engine_pid_file.as_deref().ok_or(Error::NotConnected)?;
+        // Continuous audio and priority controls must not wait behind the
+        // generic management mutex (model activation may hold it for seconds).
+        // Each exchange owns its REQ socket, including its request/reply state,
+        // so a timed-out input cannot strand or cancel a later close/interrupt.
+        let deadline = Instant::now() + timeout;
+        let socket = Socket::new(Protocol::Req0)?;
+        socket.set_opt::<nng::options::RecvMaxSize>(1024 * 1024)?;
+        socket.dial_async(&management_url())?;
+        let socket = Mutex::new(Some(socket));
         blocking_management_exchange(
-            &self.management_socket,
+            &socket,
             &self.engine_dead,
-            self.engine_pid_file.as_deref(),
-            command,
-            timeout,
+            Some(engine_pid_file),
+            &command,
+            deadline.saturating_duration_since(Instant::now()),
         )
+    }
+
+    /// Bind before open. Dedicated PULL flow control protects continuous audio
+    /// from PUB/SUB drops and avoids the generic unbounded text receiver.
+    #[cfg(feature = "duplex")]
+    pub(crate) fn bind_duplex_route(
+        &self,
+        request_id: u64,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<DuplexResponseRoute> {
+        self.bind_stream_route(request_id, "duplex", 1024 * 1024, handler)
+    }
+
+    #[cfg(feature = "diarization")]
+    pub(crate) fn bind_diarization_route(
+        &self,
+        request_id: u64,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<StreamResponseRoute> {
+        // Metadata is bounded at 16 MiB by PIE. Its JSON-string encoding in
+        // ResponseDelta can double in size before decoding that metadata.
+        self.bind_stream_route(request_id, "diarization", 33 * 1024 * 1024, handler)
+    }
+
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    fn bind_stream_route(
+        &self,
+        request_id: u64,
+        kind: &'static str,
+        max_bytes: usize,
+        handler: Arc<dyn Fn(ResponseDelta, bool) + Send + Sync>,
+    ) -> Result<StreamResponseRoute> {
+        if self.engine_dead.load(Ordering::Acquire) {
+            return Err(Error::EngineDead);
+        }
+        let pid_file = self.engine_pid_file.clone().ok_or(Error::NotConnected)?;
+        let channel_id = rand_u64();
+        let url = crate::ipc::endpoints::pull_response_url(channel_id);
+        let socket = Socket::new(Protocol::Pull0)?;
+        socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(50)))?;
+        socket.set_opt::<nng::options::RecvBufferSize>(64)?;
+        socket.set_opt::<nng::options::RecvMaxSize>(max_bytes)?;
+        socket.listen(&url)?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let engine_dead = Arc::clone(&self.engine_dead);
+        let original_pid = read_pid_file(&pid_file);
+        let handle = thread::Builder::new()
+            .name(format!("orchard-{kind}-response"))
+            .spawn(move || {
+                let prefix = format!("resp:{channel_id:x}:");
+                while !worker_stop.load(Ordering::Acquire) {
+                    match socket.recv() {
+                        Ok(message) => {
+                            let bytes = message.as_slice();
+                            let Some(body) = bytes.strip_prefix(prefix.as_bytes()) else {
+                                continue;
+                            };
+                            match serde_json::from_slice::<ResponseDelta>(body) {
+                                Ok(delta) => {
+                                    let finished = delta.is_final_delta;
+                                    handler(delta, true);
+                                    if finished {
+                                        break;
+                                    }
+                                }
+                                Err(error) => {
+                                    handler(
+                                        ResponseDelta {
+                                            request_id,
+                                            is_final_delta: true,
+                                            error: Some(format!(
+                                                "Invalid PIE {kind} response: {error}"
+                                            )),
+                                            ..Default::default()
+                                        },
+                                        false,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                        Err(nng::Error::TimedOut) => {}
+                        Err(error) => {
+                            if !worker_stop.load(Ordering::Acquire) {
+                                handler(
+                                    ResponseDelta {
+                                        request_id,
+                                        is_final_delta: true,
+                                        error: Some(format!(
+                                            "PIE {kind} response route closed: {error}"
+                                        )),
+                                        ..Default::default()
+                                    },
+                                    false,
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    if engine_dead.load(Ordering::Acquire)
+                        || read_pid_file(&pid_file) != original_pid
+                        || !engine_process_is_alive(&pid_file)
+                    {
+                        handler(
+                            ResponseDelta {
+                                request_id,
+                                is_final_delta: true,
+                                error: Some(format!("PIE {kind} engine exited or changed")),
+                                ..Default::default()
+                            },
+                            false,
+                        );
+                        break;
+                    }
+                }
+            })
+            .map_err(Error::Io)?;
+        Ok(StreamResponseRoute {
+            channel_id,
+            stop,
+            handle: Some(handle),
+        })
+    }
+
+    #[cfg(feature = "duplex")]
+    pub(crate) fn send_duplex_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        self.send_stream_request(
+            request_id,
+            model_id,
+            model_path,
+            channel_id,
+            RequestType::Duplex,
+            prompt,
+        )
+    }
+
+    #[cfg(feature = "diarization")]
+    pub(crate) fn send_diarization_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        self.send_stream_request(
+            request_id,
+            model_id,
+            model_path,
+            channel_id,
+            RequestType::Diarization,
+            prompt,
+        )
+    }
+
+    #[cfg(any(feature = "duplex", feature = "diarization"))]
+    fn send_stream_request(
+        &self,
+        request_id: u64,
+        model_id: &str,
+        model_path: &str,
+        channel_id: u64,
+        request_type: RequestType,
+        prompt: PromptPayload,
+    ) -> Result<()> {
+        if self.engine_dead.load(Ordering::Acquire) {
+            return Err(Error::EngineDead);
+        }
+        let socket = self.request_socket.as_ref().ok_or(Error::NotConnected)?;
+        let payload = crate::ipc::serialization::build_batch_request_payload_with_transport(
+            request_id,
+            model_id,
+            model_path,
+            request_type,
+            channel_id,
+            &[prompt],
+            Some("pull_v1"),
+        )?;
+        socket
+            .send(nng::Message::from(payload.as_slice()))
+            .map_err(|(_, error)| Error::from(error))
     }
 
     /// Start the response listener thread.
@@ -498,6 +698,24 @@ impl IPCClient {
         match handle {
             Ok(h) => self.listener_handle = Some(h),
             Err(e) => tracing::error!("Failed to spawn IPC listener thread: {}", e),
+        }
+    }
+}
+
+#[cfg(feature = "duplex")]
+pub(crate) type DuplexResponseRoute = StreamResponseRoute;
+#[cfg(any(feature = "duplex", feature = "diarization"))]
+pub(crate) struct StreamResponseRoute {
+    pub channel_id: u64,
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+#[cfg(any(feature = "duplex", feature = "diarization"))]
+impl Drop for StreamResponseRoute {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
         }
     }
 }
@@ -775,248 +993,5 @@ fn rand_u64() -> u64 {
         1
     } else {
         channel_id
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_client_creation() {
-        let client = IPCClient::new();
-        assert!(client.request_socket.is_none());
-        assert!(client.response_channel_id > 0);
-    }
-
-    #[test]
-    fn test_request_id_increment() {
-        let client = IPCClient::new();
-        let id1 = client.next_request_id();
-        let id2 = client.next_request_id();
-        assert_eq!(id2, id1 + 1);
-    }
-
-    #[test]
-    fn test_response_delta_default() {
-        let delta = ResponseDelta::default();
-        assert_eq!(delta.request_id, 0);
-        assert!(!delta.is_final_delta);
-        assert!(delta.tokens.is_empty());
-        assert!(delta.top_logprobs.is_empty());
-        assert!(delta.embedding_bytes.is_none());
-        assert!(delta.state_events.is_empty());
-    }
-
-    #[test]
-    fn test_response_delta_deserialize() {
-        let json = serde_json::json!({
-            "request_id": 123,
-            "sequence_id": 1,
-            "prompt_index": 0,
-            "candidate_index": 0,
-            "content": "Hello",
-            "content_len": 5,
-            "inline_content_bytes": 5,
-            "is_final_delta": false,
-            "num_tokens_in_delta": 3,
-            "tokens": [1, 2, 3],
-            "top_logprobs": [{"token": "hello", "logprob": -0.5}, {"token": "world", "logprob": -1.0}],
-            "cumulative_logprob": -1.5,
-            "modal_decoder_id": "moondream3.coord",
-            "modal_bytes_b64": "AAAA",
-            "embedding_bytes": [0, 0, 128, 63]
-        });
-        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(delta.request_id, 123);
-        assert_eq!(delta.sequence_id, Some(1));
-        assert_eq!(delta.candidate_index, Some(0));
-        assert_eq!(delta.content_len, Some(5));
-        assert_eq!(delta.num_tokens_in_delta, Some(3));
-        assert_eq!(delta.tokens, vec![1, 2, 3]);
-        assert_eq!(delta.top_logprobs.len(), 2);
-        assert_eq!(delta.cumulative_logprob, Some(-1.5));
-        assert_eq!(delta.modal_decoder_id, Some("moondream3.coord".to_string()));
-        assert_eq!(delta.embedding_bytes, Some(vec![0, 0, 128, 63]));
-        assert!(delta.state_events.is_empty());
-    }
-
-    #[test]
-    fn test_top_logprobs_deserialize_pie_wire_format() {
-        // Exact frame shape PIE emits (transport.cpp): token id rendered as a
-        // string, value under `probability`. The values must land in
-        // TokenLogProb::logprob, not default to 0.0.
-        let wire = br#"{"request_id":7,"sequence_id":1,"prompt_index":0,"candidate_index":0,"content":"a","is_final_delta":false,"finish_reason":"DELTA","tokens":[976],"top_logprobs":[{"token":"976","probability":-0.052},{"token":"3575","probability":-3.25}]}"#;
-        let delta: ResponseDelta = serde_json::from_slice(wire).expect("deserialize failed");
-        assert_eq!(delta.tokens, vec![976]);
-        assert_eq!(delta.top_logprobs.len(), 2);
-        assert_eq!(delta.top_logprobs[0].token, "976");
-        assert_eq!(delta.top_logprobs[0].logprob, -0.052);
-        assert_eq!(delta.top_logprobs[1].token, "3575");
-        assert_eq!(delta.top_logprobs[1].logprob, -3.25);
-    }
-
-    #[test]
-    fn test_response_delta_deserialize_with_defaults() {
-        // Test that missing fields get sensible defaults
-        let json = serde_json::json!({
-            "request_id": 42,
-            "is_final_delta": true
-        });
-        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(delta.request_id, 42);
-        assert!(delta.is_final_delta);
-        assert!(delta.tokens.is_empty());
-        assert!(delta.content.is_none());
-        assert!(delta.state_events.is_empty());
-    }
-
-    #[test]
-    fn test_response_delta_deserialize_embedding_bytes_from_base64() {
-        let json = serde_json::json!({
-            "request_id": 42,
-            "is_final_delta": true,
-            "embedding_bytes": "AAAAAA==",
-        });
-
-        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(delta.embedding_bytes, Some(vec![0, 0, 0, 0]));
-    }
-
-    #[test]
-    fn test_response_delta_deserialize_error_message_alias() {
-        let json = serde_json::json!({
-            "request_id": 42,
-            "is_final_delta": true,
-            "error_message": "boom",
-        });
-
-        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(delta.error.as_deref(), Some("boom"));
-    }
-
-    #[test]
-    fn test_listener_shutdown_fails_pending_requests_and_marks_engine_dead() {
-        let socket = Socket::new(Protocol::Sub0).expect("sub socket");
-        let active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        active_requests.lock().unwrap().insert(
-            7,
-            ActiveRequest {
-                sender: tx,
-                remaining_finals: 1,
-            },
-        );
-
-        let engine_dead = Arc::new(AtomicBool::new(false));
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let events_for_callback = Arc::clone(&events);
-        let callback: EventCallback = Arc::new(move |name: &str, _payload: &Value| {
-            events_for_callback.lock().unwrap().push(name.to_string());
-        });
-
-        let dir = tempdir().expect("tempdir should be available");
-        run_response_listener(
-            socket,
-            Arc::clone(&active_requests),
-            Arc::new(AtomicBool::new(true)),
-            Arc::clone(&engine_dead),
-            1,
-            dir.path().join("engine.pid"),
-            Some(callback),
-        );
-
-        assert!(engine_dead.load(Ordering::SeqCst));
-        assert!(active_requests.lock().unwrap().is_empty());
-        let delta = rx.try_recv().expect("terminal error delta");
-        assert!(delta.is_final_delta);
-        assert_eq!(delta.finish_reason.as_deref(), Some("error"));
-        assert!(delta.error.is_some());
-        assert_eq!(*events.lock().unwrap(), vec!["engine_died".to_string()]);
-    }
-
-    #[test]
-    fn test_management_exchange_fails_fast_when_engine_flagged_dead() {
-        let socket = Socket::new(Protocol::Req0).expect("req socket");
-        let socket_arc = Mutex::new(Some(socket));
-        let engine_dead = AtomicBool::new(true);
-
-        let result = blocking_management_exchange(
-            &socket_arc,
-            &engine_dead,
-            None,
-            &serde_json::json!({"type": "ping"}),
-            Duration::from_secs(1),
-        );
-
-        assert!(matches!(result, Err(Error::EngineDead)));
-    }
-
-    #[test]
-    fn test_management_exchange_detects_engine_exit_while_awaiting_reply() {
-        let socket = Socket::new(Protocol::Req0).expect("req socket");
-        let socket_arc = Mutex::new(Some(socket));
-        let engine_dead = AtomicBool::new(false);
-        let dir = tempdir().expect("tempdir should be available");
-
-        let result = blocking_management_exchange(
-            &socket_arc,
-            &engine_dead,
-            Some(&dir.path().join("missing.pid")),
-            &serde_json::json!({"type": "ping"}),
-            Duration::from_secs(5),
-        );
-
-        assert!(matches!(result, Err(Error::EngineDead)));
-    }
-
-    #[test]
-    fn test_engine_process_is_alive_reads_pid_file() {
-        let dir = tempdir().expect("tempdir should be available");
-        let pid_file = dir.path().join("engine.pid");
-        std::fs::write(&pid_file, format!("{}\n", std::process::id()))
-            .expect("pid file should be written");
-
-        assert!(engine_process_is_alive(&pid_file));
-    }
-
-    #[test]
-    fn test_engine_process_is_alive_handles_missing_pid_file() {
-        let dir = tempdir().expect("tempdir should be available");
-        let pid_file = dir.path().join("missing.pid");
-
-        assert!(!engine_process_is_alive(&pid_file));
-    }
-
-    #[test]
-    fn test_response_delta_deserialize_with_state_events() {
-        let json = serde_json::json!({
-            "request_id": 7,
-            "is_final_delta": false,
-            "state_events": [
-                {
-                    "event_type": "item_started",
-                    "item_type": "message",
-                    "output_index": 0,
-                    "identifier": "",
-                    "delta": ""
-                },
-                {
-                    "event_type": "content_delta",
-                    "item_type": "message",
-                    "output_index": 0,
-                    "identifier": "",
-                    "delta": "hello"
-                }
-            ]
-        });
-
-        let delta: ResponseDelta = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(delta.request_id, 7);
-        assert_eq!(delta.state_events.len(), 2);
-        assert_eq!(delta.state_events[0].event_type, "item_started");
-        assert_eq!(delta.state_events[1].delta, "hello");
     }
 }

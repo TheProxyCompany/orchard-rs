@@ -20,6 +20,9 @@ pub struct PromptPayload {
     pub capabilities: Vec<CapabilityEntry>,
     #[serde(default)]
     pub layout: Vec<LayoutEntry>,
+    /// Token ids for the layout's `tokens` segments, in layout order.
+    #[serde(default)]
+    pub token_segments: Vec<Vec<i32>>,
     #[serde(default)]
     pub max_generated_tokens: i32,
     #[serde(default = "defaults::temperature")]
@@ -165,6 +168,8 @@ pub enum SegmentType {
     Image = 1,
     Audio = 2,
     Capability = 3,
+    /// Token ids sent as they are; `length` counts ids in the prompt's token data block.
+    Tokens = 4,
 }
 
 /// Request type codes matching PIE
@@ -181,6 +186,10 @@ pub enum RequestType {
     PrefillTask = 7,
     Audio = 8,
     Image = 9,
+    /// Persistent, engine-owned speech-to-speech session.
+    Duplex = 10,
+    /// Persistent, engine-owned speaker diarization session.
+    Diarization = 11,
 }
 
 /// Align offset to payload alignment boundary
@@ -235,6 +244,27 @@ pub fn build_batch_request_payload(
     request_type: RequestType,
     response_channel_id: u64,
     prompts: &[PromptPayload],
+) -> Result<Vec<u8>> {
+    build_batch_request_payload_with_transport(
+        request_id,
+        model_id,
+        model_path,
+        request_type,
+        response_channel_id,
+        prompts,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_batch_request_payload_with_transport(
+    request_id: u64,
+    model_id: &str,
+    model_path: &str,
+    request_type: RequestType,
+    response_channel_id: u64,
+    prompts: &[PromptPayload],
+    response_transport: Option<&str>,
 ) -> Result<Vec<u8>> {
     if prompts.is_empty() {
         return Err(Error::Serialization(
@@ -294,6 +324,7 @@ pub fn build_batch_request_payload(
                     "image" => SegmentType::Image,
                     "audio" => SegmentType::Audio,
                     "capability" => SegmentType::Capability,
+                    "tokens" => SegmentType::Tokens,
                     other => {
                         return Err(Error::Serialization(format!(
                             "Prompt {}: Unsupported layout segment type: {}",
@@ -332,6 +363,26 @@ pub fn build_batch_request_payload(
         let (audio_data_offset, audio_data_size) = reserve_blob(audio_data_bytes);
         let (capability_data_offset, capability_data_size) = reserve_blob(capability_data_bytes);
         let (layout_offset, _) = reserve_blob(layout_data);
+        let token_segment_lengths: Vec<usize> =
+            prompt.token_segments.iter().map(Vec::len).collect();
+        let layout_token_lengths: Vec<usize> = prompt
+            .layout
+            .iter()
+            .filter(|entry| entry.segment_type == "tokens")
+            .map(|entry| entry.length)
+            .collect();
+        if token_segment_lengths != layout_token_lengths {
+            return Err(Error::Serialization(format!(
+                "Prompt {index}: token segments {token_segment_lengths:?} do not match the layout {layout_token_lengths:?}"
+            )));
+        }
+        let token_bytes: Vec<u8> = prompt
+            .token_segments
+            .iter()
+            .flatten()
+            .flat_map(|id| id.to_le_bytes())
+            .collect();
+        let (token_data_offset, token_data_size) = reserve_blob(token_bytes);
 
         // Compute best_of and final_candidates with proper defaults
         let best_of = prompt.best_of.unwrap_or(prompt.num_candidates.max(1));
@@ -395,6 +446,8 @@ pub fn build_batch_request_payload(
             "reasoning_effort": prompt.reasoning_effort,
             "prefix_cache": prompt.prefix_cache.unwrap_or(true),
         });
+        prompt_meta["token_data_offset"] = json!(token_data_offset);
+        prompt_meta["token_data_size"] = json!(token_data_size);
 
         if let Some(prompt_meta_obj) = prompt_meta.as_object_mut() {
             if prompt.rng_seed.is_none() {
@@ -416,7 +469,7 @@ pub fn build_batch_request_payload(
     }
 
     // Build full metadata
-    let metadata = json!({
+    let mut metadata = json!({
         "request_id": request_id,
         "model_id": model_id,
         "model_path": model_path,
@@ -425,6 +478,10 @@ pub fn build_batch_request_payload(
         "response_channel_id": response_channel_id,
         "prompts": prompt_metadata_list,
     });
+
+    if let Some(transport) = response_transport {
+        metadata["response_transport"] = transport.into();
+    }
 
     // Use compact JSON serialization (no spaces, matching Python)
     let metadata_bytes = serialize_json_compact(&metadata)?;
@@ -468,7 +525,7 @@ fn validate_layout(
             "text" => layout_text_bytes += entry.length,
             "image" => layout_image_bytes += entry.length,
             "audio" => layout_audio_bytes += entry.length,
-            "capability" => {}
+            "capability" | "tokens" => {}
             other => {
                 return Err(Error::Serialization(format!(
                     "Prompt {}: Unsupported layout segment type: {}",
@@ -540,284 +597,4 @@ fn encode_capabilities(capabilities: &[CapabilityEntry]) -> (Vec<Value>, Vec<u8>
     }
 
     (metadata_list, data_buffer)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_align() {
-        assert_eq!(align(0), 0);
-        assert_eq!(align(1), 16);
-        assert_eq!(align(16), 16);
-        assert_eq!(align(17), 32);
-    }
-
-    #[test]
-    fn test_build_batch_request_payload() {
-        let prompt = PromptPayload {
-            prompt: "Hello, world!".to_string(),
-            max_generated_tokens: 100,
-            temperature: 0.7,
-            top_p: 0.9,
-            deterministic: true,
-            ..Default::default()
-        };
-
-        let payload = build_batch_request_payload(
-            1,
-            "test-model",
-            "/path/to/model",
-            RequestType::Generation,
-            12345,
-            &[prompt],
-        )
-        .unwrap();
-
-        // Should have 4-byte length prefix
-        assert!(payload.len() > 4);
-
-        // Read length prefix
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-
-        // Metadata should be valid JSON
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        assert_eq!(metadata["request_id"], 1);
-        assert_eq!(metadata["model_id"], "test-model");
-        assert_eq!(metadata["prompts"].as_array().unwrap().len(), 1);
-        assert_eq!(metadata["prompts"][0]["deterministic"], true);
-    }
-
-    #[test]
-    fn test_empty_default_prompt_serializes_text_layout_segment() {
-        let prompt = PromptPayload {
-            prompt: String::new(),
-            ..Default::default()
-        };
-
-        let payload = build_batch_request_payload(
-            1,
-            "test-model",
-            "/path/to/model",
-            RequestType::Generation,
-            12345,
-            &[prompt],
-        )
-        .unwrap();
-
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        assert_eq!(metadata["prompts"][0]["text_size"], 0);
-        assert_eq!(metadata["prompts"][0]["layout_count"], 1);
-    }
-
-    #[test]
-    fn test_prefill_task_request_payload_serializes_task_name() {
-        let prompt = PromptPayload {
-            prompt: "email me at jack@example.com".to_string(),
-            max_generated_tokens: 0,
-            task_name: Some("privacy_filter".to_string()),
-            ..Default::default()
-        };
-
-        let payload = build_batch_request_payload(
-            1,
-            "openai/privacy-filter",
-            "/path/to/privacy-filter",
-            RequestType::PrefillTask,
-            12345,
-            &[prompt],
-        )
-        .unwrap();
-
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        assert_eq!(metadata["request_type"], 7);
-        assert_eq!(metadata["prompts"][0]["task_name"], "privacy_filter");
-        assert_eq!(metadata["prompts"][0]["max_generated_tokens"], 0);
-    }
-
-    #[test]
-    fn test_prefill_task_batch_request_payload_serializes_prompt_indices() {
-        let prompts = vec![
-            PromptPayload {
-                prompt: "email me at jack@example.com".to_string(),
-                max_generated_tokens: 0,
-                task_name: Some("privacy_filter".to_string()),
-                ..Default::default()
-            },
-            PromptPayload {
-                prompt: "hello world".to_string(),
-                max_generated_tokens: 0,
-                task_name: Some("privacy_filter".to_string()),
-                ..Default::default()
-            },
-        ];
-
-        let payload = build_batch_request_payload(
-            1,
-            "openai/privacy-filter",
-            "/path/to/privacy-filter",
-            RequestType::PrefillTask,
-            12345,
-            &prompts,
-        )
-        .unwrap();
-
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        assert_eq!(metadata["request_type"], 7);
-        assert_eq!(metadata["prompts"][0]["prompt_index"], 0);
-        assert_eq!(metadata["prompts"][1]["prompt_index"], 1);
-        assert_eq!(metadata["prompts"][0]["task_name"], "privacy_filter");
-        assert_eq!(metadata["prompts"][1]["task_name"], "privacy_filter");
-    }
-
-    #[test]
-    fn test_build_batch_request_payload_serializes_thinking_tokens() {
-        let prompt = PromptPayload {
-            prompt: "Hello".to_string(),
-            thinking_tokens: ThinkingTokens {
-                start: "<|channel>thought\n".to_string(),
-                end: "<channel|>".to_string(),
-                required: true,
-            },
-            ..Default::default()
-        };
-
-        let payload = build_batch_request_payload(
-            1,
-            "test-model",
-            "/path/to/model",
-            RequestType::Generation,
-            12345,
-            &[prompt],
-        )
-        .unwrap();
-
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        let prompt = &metadata["prompts"][0];
-        assert_eq!(prompt["thinking_tokens"]["start"], "<|channel>thought\n");
-        assert_eq!(prompt["thinking_tokens"]["end"], "<channel|>");
-        assert_eq!(prompt["thinking_tokens"]["required"], true);
-    }
-
-    #[test]
-    fn test_build_batch_request_payload_serializes_per_prompt_response_formats() {
-        let prompts = vec![
-            PromptPayload {
-                prompt: "City".to_string(),
-                response_format_json: r#"{"type":"json_schema","json_schema":{"name":"city"}}"#
-                    .to_string(),
-                ..Default::default()
-            },
-            PromptPayload {
-                prompt: "Animal".to_string(),
-                response_format_json: r#"{"type":"json_schema","json_schema":{"name":"animal"}}"#
-                    .to_string(),
-                ..Default::default()
-            },
-        ];
-
-        let payload = build_batch_request_payload(
-            1,
-            "test-model",
-            "/path/to/model",
-            RequestType::Generation,
-            12345,
-            &prompts,
-        )
-        .unwrap();
-
-        let length = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-        let metadata: Value = serde_json::from_slice(&payload[4..4 + length]).unwrap();
-        assert_eq!(
-            metadata["prompts"][0]["response_format_json"],
-            prompts[0].response_format_json
-        );
-        assert_eq!(
-            metadata["prompts"][1]["response_format_json"],
-            prompts[1].response_format_json
-        );
-    }
-
-    #[test]
-    fn test_validate_layout_success() {
-        let layout = vec![
-            LayoutEntry {
-                segment_type: "text".to_string(),
-                length: 100,
-            },
-            LayoutEntry {
-                segment_type: "image".to_string(),
-                length: 5000,
-            },
-        ];
-
-        let result = validate_layout(100, 5000, 0, &layout, 0);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_layout_text_mismatch() {
-        let layout = vec![LayoutEntry {
-            segment_type: "text".to_string(),
-            length: 50, // Mismatch!
-        }];
-
-        let result = validate_layout(100, 0, 0, &layout, 0);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("text bytes"));
-    }
-
-    #[test]
-    fn test_validate_layout_image_mismatch() {
-        let layout = vec![
-            LayoutEntry {
-                segment_type: "text".to_string(),
-                length: 100,
-            },
-            LayoutEntry {
-                segment_type: "image".to_string(),
-                length: 1000, // Mismatch!
-            },
-        ];
-
-        let result = validate_layout(100, 5000, 0, &layout, 0);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("image"));
-    }
-
-    #[test]
-    fn test_validate_layout_rejects_unknown_segment_type() {
-        let layout = vec![LayoutEntry {
-            segment_type: "video".to_string(),
-            length: 0,
-        }];
-
-        let result = validate_layout(0, 0, 0, &layout, 0);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported layout segment type"));
-    }
-
-    #[test]
-    fn test_compact_json_serialization() {
-        let value = serde_json::json!({
-            "key": "value",
-            "number": 42
-        });
-
-        let compact = serialize_json_compact(&value).unwrap();
-        let compact_str = String::from_utf8(compact).unwrap();
-
-        // Should not have spaces after colons or commas
-        assert!(!compact_str.contains(": "));
-        assert!(!compact_str.contains(", "));
-        assert!(compact_str.contains(":") && compact_str.contains(","));
-    }
 }

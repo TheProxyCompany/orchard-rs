@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use orchard::{
     OutputFunctionCall, ResponseCompletedEvent, ResponseEvent, ResponseOutputItem, ResponseUsage,
@@ -164,13 +166,33 @@ pub(crate) fn assert_or_record(
         .get(turn)
         .unwrap_or_else(|| panic!("missing golden turn {template_type}/{scenario}/{turn}"));
 
-    if recorded == &Value::Array(live.clone()) {
-        return;
+    let diagnostics = std::env::var_os("ORCHARD_GOLDEN_DIFF_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-output/golden-diffs")
+        });
+    compare_strictly(
+        recorded,
+        &live,
+        &format!("{template_type}/{scenario}/{turn}"),
+        &diagnostics,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
+fn compare_strictly(
+    recorded: &Value,
+    live: &[Value],
+    label: &str,
+    diagnostics: &Path,
+) -> Result<(), String> {
+    if recorded.as_array().is_some_and(|expected| expected == live) {
+        return Ok(());
     }
 
     let recorded_events = recorded
         .as_array()
-        .unwrap_or_else(|| panic!("golden turn {template_type}/{scenario}/{turn} is not an array"));
+        .ok_or_else(|| format!("golden turn {label} is not an array"))?;
     let mut detail = if recorded_events.len() != live.len() {
         format!(
             "event count: golden={} live={}",
@@ -190,7 +212,53 @@ pub(crate) fn assert_or_record(
         }
     }
 
-    panic!("golden drift {template_type}/{scenario}/{turn}: {detail}");
+    match capture_drift(diagnostics, label, recorded, live) {
+        Ok(path) => detail.push_str(&format!(
+            "; full expected/actual streams: {}",
+            path.display()
+        )),
+        Err(error) => detail.push_str(&format!("; could not save full streams: {error}")),
+    }
+    Err(format!("golden drift {label}: {detail}"))
+}
+
+/// Capture evidence, never replace an expectation or convert a mismatch into
+/// success. Unique directories preserve concurrent mismatches for the same turn.
+fn capture_drift(
+    root: &Path,
+    label: &str,
+    recorded: &Value,
+    live: &[Value],
+) -> Result<PathBuf, String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let label: String = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let directory = root.join(format!(
+        "{label}-{at}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    for (name, value) in [
+        ("expected.json", recorded.clone()),
+        ("actual.json", Value::Array(live.to_vec())),
+    ] {
+        let contents = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+        fs::write(directory.join(name), contents).map_err(|error| error.to_string())?;
+    }
+    Ok(directory)
 }
 
 pub(crate) fn golden_path(template_type: &str, scenario: &str) -> PathBuf {

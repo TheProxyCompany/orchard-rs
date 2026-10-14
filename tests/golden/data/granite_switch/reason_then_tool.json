@@ -244,7 +244,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "mlx-community/granite-4.1-30b-4bit","tokens": [100270,198,5018,609,794,330,456,70464,498,330,16774,794,5324,2588,794,330,24661,13175,96742,100271],"thinking": false}
       }
     },
     {
@@ -748,7 +749,8 @@
           }
         },
         "stop_token_id": 100257,
-        "stop_token": "<|end_of_text|>"
+        "stop_token": "<|end_of_text|>",
+        "generation": {"model": "mlx-community/granite-4.1-30b-4bit","tokens": [791,1510,9282,304,5960,378,107,81428,9652,374,3146,2397,378,107,59572,334,323,433,753,3146,69,540,4680,334,13],"thinking": false}
       }
     },
     {
