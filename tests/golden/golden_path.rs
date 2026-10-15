@@ -203,8 +203,10 @@ fn wav_to_float32_pcm(wav_bytes: &[u8], target_rate: usize) -> Vec<f32> {
     assert_eq!(data.len() % (sample_width * channels), 0);
 
     let mono = if channels == 1 {
-        data.chunks_exact(2)
-            .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as f32 / 32768.0)
+        data.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|sample| i16::from_le_bytes(*sample) as f32 / 32768.0)
             .collect::<Vec<_>>()
     } else {
         data.chunks_exact(sample_width * channels)
