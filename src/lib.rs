@@ -43,7 +43,7 @@ pub use client::{
     ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
     ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
     ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
-    ResponsesResult, SamplingParams, StreamErrorDetail, StreamErrorEvent, UsageStats,
+    ResponsesResult, SamplingParams, StreamErrorDetail, StreamErrorEvent, UsageStats, WarmResult,
     OPENAI_PRIVACY_FILTER_MODEL_ID,
 };
 
