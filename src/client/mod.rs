@@ -1727,8 +1727,8 @@ async fn collect_embeddings(
 }
 
 fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
-    let mut chunks = bytes.chunks_exact(std::mem::size_of::<f32>());
-    if !chunks.remainder().is_empty() {
+    let (chunks, remainder) = bytes.as_chunks::<{ std::mem::size_of::<f32>() }>();
+    if !remainder.is_empty() {
         return Err(ClientError::RequestFailed(format!(
             "Embedding payload length {} is not divisible by {}",
             bytes.len(),
@@ -1737,8 +1737,8 @@ fn decode_embedding_bytes(bytes: &[u8]) -> Result<Vec<f32>> {
     }
 
     Ok(chunks
-        .by_ref()
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("f32 chunk size")))
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect())
 }
 
