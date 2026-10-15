@@ -9,6 +9,9 @@ use ctor::dtor;
 use futures::future::try_join_all;
 use orchard::{Client, InferenceEngine, ModelRegistry};
 
+#[path = "gpu_lease.rs"]
+pub(crate) mod gpu_lease;
+
 #[dtor]
 fn cleanup_engine() {
     // Only clean up an engine this test process actually used. If the fixture
@@ -259,6 +262,9 @@ pub(crate) fn ensure_test_namespace() {
 }
 
 fn init_fixture() -> TestFixture {
+    // Only tests that reach the engine get here, so `--list`, filtered runs
+    // and host-only tests never wait on the GPU.
+    gpu_lease::hold();
     ensure_test_namespace();
 
     if let Err(e) = InferenceEngine::shutdown(Duration::from_secs(30)) {
