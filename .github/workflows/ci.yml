@@ -90,7 +90,7 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/orchard-rs-buckshot.log"
 
       - name: Upload Orchard failure logs
-        if: failure()
+        if: failure() && env.ORCHARD_TEST_ROOT != ''
         uses: actions/upload-artifact@v4
         with:
           name: orchard-rs-logs-${{ github.run_id }}-${{ github.run_attempt }}
