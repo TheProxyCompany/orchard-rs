@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
 use crate::error::Error;
 use crate::formatter::ChatFormatter;
-use crate::ipc::client::IPCClient;
+use crate::ipc::client::{advertises_lossless_responses, IPCClient, LOSSLESS_RESPONSES_CAPABILITY};
 use crate::model::resolver::{ModelResolver, ResolvedModel};
 
 /// Model load state machine.
@@ -114,6 +115,11 @@ pub struct ModelRegistry {
     local_source_inspection_cache: RwLock<HashMap<String, ResolvedModel>>,
     /// IPC client for sending management commands to PIE
     ipc_client: RwLock<Option<Arc<IPCClient>>>,
+    /// Whether the latest load_model reply or `model_loaded` event listed
+    /// `lossless_responses`. An IPC client only hears it in those two, and a
+    /// model that is Ready is never loaded again, so a later client of this
+    /// registry has to be told (`set_ipc_client`).
+    engine_advertises_lossless: AtomicBool,
 }
 
 impl ModelRegistry {
@@ -125,11 +131,15 @@ impl ModelRegistry {
             alias_cache: RwLock::new(HashMap::new()),
             local_source_inspection_cache: RwLock::new(HashMap::new()),
             ipc_client: RwLock::new(None),
+            engine_advertises_lossless: AtomicBool::new(false),
         })
     }
 
     /// Set the IPC client for sending management commands to PIE.
     pub async fn set_ipc_client(&self, client: Arc<IPCClient>) {
+        if self.engine_advertises_lossless.load(Ordering::SeqCst) {
+            client.note_lossless_responses();
+        }
         let mut ipc = self.ipc_client.write().await;
         *ipc = Some(client);
     }
@@ -294,6 +304,12 @@ impl ModelRegistry {
         match status {
             "ok" => {
                 // Immediate success - extract capabilities and mark ready
+                self.engine_advertises_lossless.store(
+                    advertises_lossless_responses(
+                        response.pointer("/data/load_model/capabilities"),
+                    ),
+                    Ordering::SeqCst,
+                );
                 let capabilities = self.parse_capabilities(&response);
                 let minimum_memory_bytes = self.parse_minimum_memory_bytes(&response);
                 self.complete_activation(canonical_id, capabilities, minimum_memory_bytes)
@@ -335,6 +351,8 @@ impl ModelRegistry {
             .and_then(|c| c.as_object())
             .map(|obj| {
                 obj.iter()
+                    // It describes the engine, not a token of this model.
+                    .filter(|(k, _)| k.as_str() != LOSSLESS_RESPONSES_CAPABILITY)
                     .filter_map(|(k, v)| {
                         let vals: Vec<i32> = if let Some(arr) = v.as_array() {
                             arr.iter()
@@ -1025,10 +1043,17 @@ impl ModelRegistry {
             }
         };
 
+        self.engine_advertises_lossless.store(
+            advertises_lossless_responses(payload.get("capabilities")),
+            Ordering::SeqCst,
+        );
+
         // Extract and update capabilities
         if let Some(caps) = payload.get("capabilities").and_then(|c| c.as_object()) {
             let capabilities: HashMap<String, Vec<i32>> = caps
                 .iter()
+                // It describes the engine, not a token of this model.
+                .filter(|(k, _)| k.as_str() != LOSSLESS_RESPONSES_CAPABILITY)
                 .filter_map(|(k, v)| {
                     let vals: Vec<i32> = if let Some(arr) = v.as_array() {
                         arr.iter()
@@ -1402,6 +1427,43 @@ mod tests {
 
         assert_eq!(state, ModelLoadState::Ready);
         assert_eq!(resolved_id, canonical_id);
+    }
+
+    #[tokio::test]
+    async fn test_lossless_responses_is_not_kept_as_a_control_token_of_the_model() {
+        let registry = Arc::new(ModelRegistry::new().unwrap());
+        registry.entries.write().await.insert(
+            "model".to_string(),
+            ModelEntry {
+                state: ModelLoadState::Ready,
+                info: Some(ModelInfo {
+                    model_id: "model".to_string(),
+                    model_path: "/model".to_string(),
+                    formatter: None,
+                    capabilities: None,
+                    minimum_memory_bytes: None,
+                }),
+                ..ModelEntry::default()
+            },
+        );
+        let capabilities = json!({"answer": [3], "lossless_responses": [1]});
+
+        // The engine lists it among the model's control tokens, in a
+        // model_loaded event and in a load_model reply.
+        registry
+            .handle_model_loaded(&json!({"model_id": "model", "capabilities": capabilities}))
+            .await;
+        let client = crate::client::Client::new(Arc::new(IPCClient::new()), Arc::clone(&registry));
+        assert_eq!(
+            client.resolve_capabilities("model").await.unwrap(),
+            HashMap::from([("answer".to_string(), 3)])
+        );
+        assert_eq!(
+            registry.parse_capabilities(&json!({"data": {"load_model": {
+                "capabilities": capabilities,
+            }}})),
+            Some(HashMap::from([("answer".to_string(), vec![3])]))
+        );
     }
 
     #[tokio::test]

@@ -273,7 +273,13 @@ ipc_pipe_neg_cb(void *arg)
 	return;
 
 error:
-
+	// If the connection is closed, we need to pass back a different
+	// error code.  This is necessary to avoid a problem where the
+	// closed status is confused with the accept file descriptor
+	// being closed.
+	if (rv == NNG_ECLOSED) {
+		rv = NNG_ECONNSHUT;
+	}
 	nng_stream_close(p->conn);
 	// If we are waiting to negotiate on a client side, then a failure
 	// here has to be passed to the user app.

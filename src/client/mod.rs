@@ -36,7 +36,7 @@ fn get_sync_runtime() -> &'static tokio::runtime::Runtime {
 use crate::formatter::multimodal::{
     build_multimodal_layout, build_multimodal_messages, CapabilityInput, LayoutSegment,
 };
-use crate::ipc::client::{EventCallback, IPCClient, ResponseDelta};
+use crate::ipc::client::{cancel_request_command, EventCallback, IPCClient, ResponseDelta};
 use crate::ipc::serialization::{
     CapabilityEntry, LayoutEntry, PromptPayload, RequestType, ThinkingTokens,
 };
@@ -424,10 +424,7 @@ impl Client {
         let response = self
             .ipc
             .send_management_command_async(
-                serde_json::json!({
-                    "type": "cancel_request",
-                    "request_id": request_id,
-                }),
+                cancel_request_command(self.ipc.response_channel_id, request_id),
                 Duration::from_secs(2),
             )
             .await?;
