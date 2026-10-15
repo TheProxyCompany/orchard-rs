@@ -18,8 +18,19 @@ jobs:
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PIE_REVISION: 59fd4a6447bc3d7741aecb40f1d2934b78dd2391
 
     steps:
+      - name: Require 512 GiB for the full matrix
+        run: |
+          set -euo pipefail
+          memory_bytes="$(sysctl -n hw.memsize)"
+          if [[ ! "$memory_bytes" =~ ^[0-9]+$ ]] || (( memory_bytes < 512 * 1024 * 1024 * 1024 )); then
+            echo "::error::Full Orchard matrix requires at least 512 GiB RAM; found $memory_bytes bytes"
+            exit 1
+          fi
+          echo "Physical RAM: $memory_bytes bytes"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -56,9 +67,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: TheProxyCompany/proxy-inference-engine
+          ref: ${{ env.PIE_REVISION }}
           token: ${{ secrets.GH_PAT }}
           path: .ci/proxy-inference-engine
           submodules: recursive
+          persist-credentials: false
 
       - name: Build PIE
         working-directory: .ci/proxy-inference-engine
@@ -66,4 +79,22 @@ jobs:
 
       - name: Run full Orchard RS suite
         run: |
-          RUST_BACKTRACE=1 PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release" cargo test --release --test buckshot -- --nocapture
+          set -euo pipefail
+          # The test fixture shuts down only this fresh namespace's engine.
+          orchard_test_root="$(mktemp -d "$RUNNER_TEMP/orchard-rs.XXXXXX")"
+          echo "ORCHARD_TEST_ROOT=$orchard_test_root" >> "$GITHUB_ENV"
+          env -u ORCHARD_IPC_ROOT -u PROXY_GPU_LEASE -u PROXY_GPU_LEASE_HELD \
+            ORCHARD_CACHE_ROOT="$orchard_test_root" RUST_BACKTRACE=1 \
+            PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release" \
+            bash scripts/gpu_lease.sh cargo test --release --test buckshot -- --nocapture \
+            2>&1 | tee "$RUNNER_TEMP/orchard-rs-buckshot.log"
+
+      - name: Upload Orchard failure logs
+        if: failure() && env.ORCHARD_TEST_ROOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchard-rs-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.ORCHARD_TEST_ROOT }}/*.log
+            ${{ runner.temp }}/orchard-rs-buckshot.log
+          retention-days: 7
