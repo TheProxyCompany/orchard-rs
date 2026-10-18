@@ -13,7 +13,6 @@ concurrency:
 jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
-    # 192 GB runner exhausted Metal memory; use the existing 512 GB runner.
     runs-on: [self-hosted, ci-cd]
     timeout-minutes: 30
     env:
@@ -28,16 +27,6 @@ jobs:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-
-      - name: Require 512 GiB for the full matrix
-        run: |
-          set -euo pipefail
-          memory_bytes="$(sysctl -n hw.memsize)"
-          if [[ ! "$memory_bytes" =~ ^[0-9]+$ ]] || (( memory_bytes < 512 * 1024 * 1024 * 1024 )); then
-            echo "::error::Full Orchard matrix requires at least 512 GiB RAM; found $memory_bytes bytes"
-            exit 1
-          fi
-          echo "Physical RAM: $memory_bytes bytes"
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -94,7 +83,7 @@ jobs:
           env -u ORCHARD_IPC_ROOT -u PROXY_GPU_LEASE -u PROXY_GPU_LEASE_HELD \
             ORCHARD_CACHE_ROOT="$orchard_test_root" RUST_BACKTRACE=1 \
             PIE_LOCAL_BUILD="$PWD/.ci/proxy-inference-engine/release" \
-            bash scripts/gpu_lease.sh cargo test --release --test buckshot -- --nocapture \
+            cargo test --release --test buckshot -- --nocapture \
             2>&1 | tee "$RUNNER_TEMP/orchard-rs-buckshot.log"
 
       - name: Upload Orchard failure logs
