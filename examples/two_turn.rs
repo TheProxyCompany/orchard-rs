@@ -3,6 +3,9 @@
 //!
 //!   MODEL=google/gemma-4-26B-A4B-it cargo run --release --example two_turn
 
+#[path = "../tests/project/gpu_lease.rs"]
+mod gpu_lease;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -59,6 +62,7 @@ async fn turn(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    gpu_lease::hold(); // waits for any test or benchmark engine on this machine
     let model = std::env::var("MODEL").unwrap_or_else(|_| "google/gemma-4-E2B-it".into());
     let _engine = InferenceEngine::new().await?;
     let registry = Arc::new(ModelRegistry::new()?);
