@@ -8,9 +8,8 @@ use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, request_url, response_url, EVENT_TOPIC_PREFIX};
 use crate::ipc::serialization::{build_batch_request_payload, PromptPayload, RequestType};
 
+use crate::ipc::socket::{Protocol, Socket, SocketError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use nng::options::Options;
-use nng::{Protocol, Socket};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -226,23 +225,20 @@ impl IPCClient {
 
         // Create and connect request socket (PUSH)
         let request_socket = Socket::new(Protocol::Push0)?;
-        request_socket.set_opt::<nng::options::SendTimeout>(Some(REQUEST_SEND_TIMEOUT))?;
+        request_socket.set_send_timeout(REQUEST_SEND_TIMEOUT)?;
         request_socket.dial(&request_url())?;
         self.request_socket = Some(request_socket);
 
         // Create response socket (SUB) - subscribe BEFORE dial
         let response_socket = Socket::new(Protocol::Sub0)?;
-        response_socket.set_opt::<nng::options::RecvBufferSize>(RESPONSE_SOCKET_BUFFER_MESSAGES)?;
+        response_socket.set_receive_buffer(RESPONSE_SOCKET_BUFFER_MESSAGES)?;
 
         // Subscribe to our response topic
         let response_topic = format!("resp:{:x}:", self.response_channel_id);
-        response_socket.set_opt::<nng::options::protocol::pubsub::Subscribe>(
-            response_topic.as_bytes().to_vec(),
-        )?;
+        response_socket.subscribe(response_topic.as_bytes())?;
 
         // Subscribe to global events
-        response_socket
-            .set_opt::<nng::options::protocol::pubsub::Subscribe>(EVENT_TOPIC_PREFIX.to_vec())?;
+        response_socket.subscribe(EVENT_TOPIC_PREFIX)?;
 
         response_socket.dial(&response_url())?;
         self.response_socket = Some(response_socket);
@@ -403,8 +399,7 @@ impl IPCClient {
             );
         }
 
-        let msg = nng::Message::from(payload.as_slice());
-        if let Err((_, error)) = socket.send(msg) {
+        if let Err(error) = socket.send(&payload) {
             self.active_requests
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -469,7 +464,7 @@ impl IPCClient {
         // so a timed-out input cannot strand or cancel a later close/interrupt.
         let deadline = Instant::now() + timeout;
         let socket = Socket::new(Protocol::Req0)?;
-        socket.set_opt::<nng::options::RecvMaxSize>(1024 * 1024)?;
+        socket.set_receive_max_size(1024 * 1024)?;
         socket.dial_async(&management_url())?;
         let socket = Mutex::new(Some(socket));
         blocking_management_exchange(
@@ -518,9 +513,9 @@ impl IPCClient {
         let channel_id = rand_u64();
         let url = crate::ipc::endpoints::pull_response_url(channel_id);
         let socket = Socket::new(Protocol::Pull0)?;
-        socket.set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(50)))?;
-        socket.set_opt::<nng::options::RecvBufferSize>(64)?;
-        socket.set_opt::<nng::options::RecvMaxSize>(max_bytes)?;
+        socket.set_receive_timeout(Duration::from_millis(50))?;
+        socket.set_receive_buffer(64)?;
+        socket.set_receive_max_size(max_bytes)?;
         socket.listen(&url)?;
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
@@ -531,7 +526,7 @@ impl IPCClient {
             .spawn(move || {
                 let prefix = format!("resp:{channel_id:x}:");
                 while !worker_stop.load(Ordering::Acquire) {
-                    match socket.recv() {
+                    match socket.receive() {
                         Ok(message) => {
                             let bytes = message.as_slice();
                             let Some(body) = bytes.strip_prefix(prefix.as_bytes()) else {
@@ -561,7 +556,7 @@ impl IPCClient {
                                 }
                             }
                         }
-                        Err(nng::Error::TimedOut) => {}
+                        Err(SocketError::TIMED_OUT) => {}
                         Err(error) => {
                             if !worker_stop.load(Ordering::Acquire) {
                                 handler(
@@ -665,9 +660,7 @@ impl IPCClient {
             &[prompt],
             Some("pull_v1"),
         )?;
-        socket
-            .send(nng::Message::from(payload.as_slice()))
-            .map_err(|(_, error)| Error::from(error))
+        socket.send(&payload).map_err(Error::from)
     }
 
     /// Start the response listener thread.
@@ -764,37 +757,35 @@ fn blocking_management_exchange(
 
     // REQ send also blocks forever when the peer is gone (verified: it parks
     // in nng_aio_wait), so both directions run in timed slices.
-    socket.set_opt::<nng::options::SendTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
-    socket.set_opt::<nng::options::RecvTimeout>(Some(MANAGEMENT_LIVENESS_POLL_INTERVAL))?;
+    socket.set_send_timeout(MANAGEMENT_LIVENESS_POLL_INTERVAL)?;
+    socket.set_receive_timeout(MANAGEMENT_LIVENESS_POLL_INTERVAL)?;
     let deadline = Instant::now() + timeout;
 
     let data = serde_json::to_vec(command)?;
-    let mut msg = nng::Message::from(data.as_slice());
     loop {
-        match socket.send(msg) {
+        match socket.send(&data) {
             Ok(()) => break,
-            Err((returned, nng::Error::TimedOut)) => {
+            Err(SocketError::TIMED_OUT) => {
                 if engine_is_dead() {
                     return Err(Error::EngineDead);
                 }
                 if Instant::now() >= deadline {
-                    return Err(Error::Nng(nng::Error::TimedOut));
+                    return Err(Error::Nng(SocketError::TIMED_OUT));
                 }
-                msg = returned;
             }
-            Err((_, error)) => return Err(Error::Nng(error)),
+            Err(error) => return Err(Error::Nng(error)),
         }
     }
 
     loop {
-        match socket.recv() {
+        match socket.receive() {
             Ok(response) => return Ok(serde_json::from_slice(&response)?),
-            Err(nng::Error::TimedOut) => {
+            Err(SocketError::TIMED_OUT) => {
                 if engine_is_dead() {
                     return Err(Error::EngineDead);
                 }
                 if Instant::now() >= deadline {
-                    return Err(Error::Nng(nng::Error::TimedOut));
+                    return Err(Error::Nng(SocketError::TIMED_OUT));
                 }
             }
             Err(error) => return Err(Error::Nng(error)),
@@ -816,12 +807,12 @@ fn run_response_listener(
     let response_topic_bytes = response_topic.as_bytes();
 
     // Set receive timeout for responsive polling (10ms for better latency)
-    let _ = socket.set_opt::<nng::options::RecvTimeout>(Some(RESPONSE_RECV_TIMEOUT));
+    let _ = socket.set_receive_timeout(RESPONSE_RECV_TIMEOUT);
     let mut last_engine_check = Instant::now();
     let mut death_reason: Option<String> = None;
 
     while !should_stop.load(Ordering::SeqCst) {
-        match socket.recv() {
+        match socket.receive() {
             Ok(msg) => {
                 let data = msg.as_slice();
 
@@ -871,7 +862,7 @@ fn run_response_listener(
                     handle_engine_event(data, &event_callback);
                 }
             }
-            Err(nng::Error::TimedOut) => {
+            Err(SocketError::TIMED_OUT) => {
                 if last_engine_check.elapsed() >= ENGINE_LIVENESS_POLL_INTERVAL {
                     last_engine_check = Instant::now();
                     if !engine_process_is_alive(&engine_pid_file) {

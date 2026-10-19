@@ -14,7 +14,7 @@ pub enum Error {
     #[error("Invalid response from PIE")]
     InvalidResponse,
     #[error("NNG error: {0}")]
-    Nng(#[from] nng::Error),
+    Nng(#[from] crate::ipc::socket::SocketError),
     #[error("Request timeout")]
     Timeout,
     #[error("Channel closed")]

@@ -6,8 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use nng::options::Options;
-use nng::{Protocol, Socket};
 use serde_json::json;
 
 use crate::engine::fetch::EngineFetcher;
@@ -17,6 +15,7 @@ use crate::engine::multiprocess::{
 };
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, response_url, EVENT_TOPIC_PREFIX};
+use crate::ipc::socket::{Protocol, Socket, SocketError};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
 const LOCK_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -359,8 +358,8 @@ impl InferenceEngine {
 
     fn send_client_lifecycle_command(&self, command_type: &str, timeout: Duration) -> Result<()> {
         let socket = Socket::new(Protocol::Req0)?;
-        socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
-        socket.set_opt::<nng::options::SendTimeout>(Some(timeout))?;
+        socket.set_receive_timeout(timeout)?;
+        socket.set_send_timeout(timeout)?;
         socket.dial(&management_url())?;
 
         let payload = json!({
@@ -368,10 +367,9 @@ impl InferenceEngine {
             "client_pid": std::process::id(),
         });
         let data = serde_json::to_vec(&payload)?;
-        let msg = nng::Message::from(data.as_slice());
-        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+        socket.send(&data)?;
 
-        let response = socket.recv()?;
+        let response = socket.receive()?;
         let json: serde_json::Value = serde_json::from_slice(&response)?;
         let status = json.get("status").and_then(|value| value.as_str());
         if matches!(status, Some("ok") | Some("accepted")) {
@@ -415,15 +413,15 @@ impl InferenceEngine {
         let telemetry_topic = [EVENT_TOPIC_PREFIX, b"telemetry"].concat();
         let response_url = response_url();
 
-        let socket = nng::Socket::new(nng::Protocol::Sub0)
+        let socket = Socket::new(Protocol::Sub0)
             .map_err(|e| Error::StartupFailed(format!("Failed to create Sub0 socket: {}", e)))?;
 
         socket
-            .set_opt::<nng::options::protocol::pubsub::Subscribe>(telemetry_topic.clone())
+            .subscribe(&telemetry_topic)
             .map_err(|e| Error::StartupFailed(format!("Failed to subscribe: {}", e)))?;
 
         socket
-            .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(250)))
+            .set_receive_timeout(Duration::from_millis(250))
             .map_err(|e| Error::StartupFailed(format!("Failed to set timeout: {}", e)))?;
 
         // Non-blocking dial - nng will reconnect automatically in background
@@ -445,9 +443,9 @@ impl InferenceEngine {
             }
 
             // Try to receive a message
-            let msg = match socket.recv() {
+            let msg = match socket.receive() {
                 Ok(msg) => msg,
-                Err(nng::Error::TimedOut) => continue,
+                Err(SocketError::TIMED_OUT) => continue,
                 Err(e) => {
                     tracing::debug!("Error receiving telemetry: {}", e);
                     continue;

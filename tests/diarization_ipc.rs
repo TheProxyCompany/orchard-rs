@@ -1,10 +1,10 @@
 //! Hermetic wire/lifecycle checks. No native library, model hydration or GPU is used.
 #![cfg(feature = "diarization")]
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use nng::{options::Options, Protocol, Socket};
 use orchard::diarization::{
     DiarizationDevice, DiarizationEvent, DiarizationOptions, DiarizationSession,
 };
+use orchard::ipc::socket::{Protocol, Socket, SocketError};
 use orchard::ipc::{client::IPCClient, endpoints};
 use orchard::ModelRegistry;
 use serde_json::{json, Value};
@@ -144,11 +144,9 @@ impl FakePie {
         let socket = |protocol, url: String| {
             let socket = Socket::new(protocol).unwrap();
             socket
-                .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(20)))
+                .set_receive_timeout(Duration::from_millis(20))
                 .unwrap();
-            socket
-                .set_opt::<nng::options::SendTimeout>(Some(Duration::from_millis(300)))
-                .unwrap();
+            socket.set_send_timeout(Duration::from_millis(300)).unwrap();
             socket.listen(&url).unwrap();
             socket
         };
@@ -171,8 +169,8 @@ impl FakePie {
             let request = Arc::clone(&request);
             workers.push(std::thread::spawn(move || {
                 while !state.stop.load(Ordering::Acquire) {
-                    let message = match request.recv() {
-                        Ok(value)=>value, Err(nng::Error::TimedOut)=>continue,
+                    let message = match request.receive() {
+                        Ok(value)=>value, Err(SocketError::TIMED_OUT)=>continue,
                         Err(_) if state.stop.load(Ordering::Acquire)=>break, Err(error)=>panic!("fake request: {error}"),
                     };
                     let bytes=message.as_slice(); let length=u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
@@ -185,8 +183,8 @@ impl FakePie {
                     for key in ["device","chunk_frames","fifo_frames","speaker_cache_frames"] { assert!(options.get(key).is_none()); }
                     let channel=metadata["response_channel_id"].as_u64().unwrap();
                     let response=Socket::new(Protocol::Push0).unwrap();
-                    response.set_opt::<nng::options::SendTimeout>(Some(Duration::from_millis(300))).unwrap();
-                    response.set_opt::<nng::options::SendBufferSize>(0).unwrap();
+                    response.set_send_timeout(Duration::from_millis(300)).unwrap();
+                    response.set_send_buffer(0).unwrap();
                     response.dial(&endpoints::pull_response_url(channel)).unwrap();
                     let route=Route{socket:Arc::new(response),request:metadata["request_id"].as_u64().unwrap(),channel,
                         model:metadata["model_id"].as_str().unwrap().into(),session:options["session_id"].as_str().unwrap().into()};
@@ -202,7 +200,7 @@ impl FakePie {
             let management = Arc::clone(&management);
             workers.push(std::thread::spawn(move||{
                 while !state.stop.load(Ordering::Acquire) {
-                    let message=match management.recv(){Ok(value)=>value,Err(nng::Error::TimedOut)=>continue,
+                    let message=match management.receive(){Ok(value)=>value,Err(SocketError::TIMED_OUT)=>continue,
                         Err(_) if state.stop.load(Ordering::Acquire)=>break,Err(error)=>panic!("fake management: {error}")};
                     let command:Value=serde_json::from_slice(&message).unwrap();let kind=command["type"].as_str().unwrap();
                     state.commands.lock().unwrap().push(command.clone());state.wake.notify_all();
