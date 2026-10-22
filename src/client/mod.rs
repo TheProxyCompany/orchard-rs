@@ -965,6 +965,173 @@ impl Client {
         }
     }
 
+    /// Stream native audio artifacts into a bounded consumer queue.
+    ///
+    /// This explicitly requests `streaming: true`; the consumer must validate
+    /// the selected model's chunk metadata. A `completed` artifact is not a
+    /// retirement receipt: only this future returning `Ok(())` confirms the
+    /// terminal engine response. On cancellation or a closed consumer, await
+    /// this future so it can cancel and confirm retirement. Dropping it is not
+    /// a cancellation acknowledgement.
+    pub async fn agenerate_audio_streaming_cancellable(
+        &self,
+        model_id: &str,
+        text: &str,
+        options: Option<Value>,
+        canceled: impl std::future::Future<Output = ()>,
+        artifacts: mpsc::Sender<ModalArtifact>,
+    ) -> Result<()> {
+        if artifacts.max_capacity() > 8 {
+            return Err(Error::Other(
+                "Audio stream queue must hold at most eight artifacts".into(),
+            ));
+        }
+        if artifacts.is_closed() {
+            return Err(Error::ChannelClosed);
+        }
+        tokio::pin!(canceled);
+        let info = tokio::select! {
+            biased;
+            _ = &mut canceled => return Err(Error::Cancelled),
+            _ = artifacts.closed() => return Err(Error::ChannelClosed),
+            info = self.registry.ensure_loaded(model_id) => info?,
+        };
+        if !info.capabilities.as_ref().is_some_and(|capabilities| {
+            capabilities
+                .get("qwen3_tts_streaming")
+                .is_some_and(|value| value.as_slice() == [1])
+        }) {
+            return Err(Error::Other(
+                "The loaded engine does not support incremental Qwen audio".into(),
+            ));
+        }
+        let request_id = self.ipc.next_request_id();
+        let mut options = options;
+        let max_output_tokens = match options.as_mut() {
+            Some(Value::Object(object)) => match object.remove("max_output_tokens") {
+                Some(value) => value
+                    .as_i64()
+                    .filter(|value| (0..=8192).contains(value))
+                    .ok_or_else(|| {
+                        Error::Other(
+                            "Audio stream token limit must be between zero and 8192".into(),
+                        )
+                    })? as i32,
+                None => 8192,
+            },
+            Some(_) => return Err(Error::Other("Modal options must be a JSON object".into())),
+            None => 8192,
+        };
+        let mut modal_options = modal_options_object(
+            [
+                ("sample_rate", Value::from(24000)),
+                ("language", Value::from("auto")),
+            ],
+            options,
+        )?;
+        modal_options.insert("streaming".into(), true.into());
+        let sampling_params = modal_sampling_params(&modal_options)?;
+        let prompt_payload = build_modal_artifact_prompt_payload(
+            text,
+            Vec::new(),
+            Vec::new(),
+            max_output_tokens,
+            "text_to_speech",
+            modal_options_json(&modal_options)?,
+            sampling_params,
+        );
+        let (_, mut rx) = self.ipc.send_batch_request_with_type(
+            request_id,
+            info.model_id.as_str(),
+            &info.model_path,
+            RequestType::Audio,
+            &[prompt_payload],
+        )?;
+        let terminal = AtomicBool::new(false);
+        let forward = async {
+            let mut total_bytes = 0usize;
+            while let Some(delta) = rx.recv().await {
+                if delta.is_final_delta {
+                    terminal.store(true, Ordering::Release);
+                }
+                if let Some(error) = delta.error {
+                    return Err(Error::Other(error));
+                }
+                if let Some(encoded) = delta.modal_bytes_b64.as_deref() {
+                    // Bound decoded payloads as well as the consumer's queue.
+                    // Current PCM chunks are much smaller; a full response from
+                    // an older engine must not become an unbounded stream item.
+                    if encoded.len() > 1_400_000 {
+                        return Err(Error::Other("Audio stream artifact exceeds one MiB".into()));
+                    }
+                    let data = BASE64
+                        .decode(encoded)
+                        .map_err(|error| Error::Other(error.to_string()))?;
+                    total_bytes = total_bytes.saturating_add(data.len());
+                    if data.len() > 1024 * 1024 || total_bytes > 32 * 1024 * 1024 {
+                        return Err(Error::Other(
+                            "Audio stream exceeds its bounded payload budget".into(),
+                        ));
+                    }
+                    let metadata = match delta.modal_metadata_json.as_deref() {
+                        Some(raw) if !raw.is_empty() => Some(
+                            serde_json::from_str(raw)
+                                .map_err(|error| Error::Other(error.to_string()))?,
+                        ),
+                        _ => None,
+                    };
+                    artifacts
+                        .send(ModalArtifact {
+                            modal_type: delta.modal_type.unwrap_or_default(),
+                            event: delta.modal_event.unwrap_or_default(),
+                            mime_type: delta.modal_mime_type.unwrap_or_default(),
+                            decoder_id: delta.modal_decoder_id.unwrap_or_default(),
+                            metadata,
+                            data,
+                        })
+                        .await
+                        .map_err(|_| Error::ChannelClosed)?;
+                }
+                if delta.is_final_delta {
+                    return Ok(());
+                }
+            }
+            Err(Error::Other(
+                "Audio stream ended without a terminal response".into(),
+            ))
+        };
+        let outcome = {
+            tokio::pin!(forward);
+            tokio::select! {
+                biased;
+                _ = &mut canceled => Err(Error::Cancelled),
+                _ = artifacts.closed() => Err(Error::ChannelClosed),
+                result = &mut forward => result,
+            }
+        };
+        if terminal.load(Ordering::Acquire) {
+            return outcome;
+        }
+        // A consumer rejection is also cancellation. Stop forwarding first,
+        // then drain only for the actual terminal receipt, never for playback.
+        let _cancel_ack =
+            tokio::time::timeout(Duration::from_secs(2), self.cancel_request(request_id)).await;
+        let retired = tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(delta) = rx.recv().await {
+                if delta.is_final_delta {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        if retired == Ok(true) {
+            outcome
+        } else {
+            Err(Error::CancellationUnconfirmed)
+        }
+    }
+
     /// Generate image artifacts with a native PIE image-generation model.
     pub async fn agenerate_image(
         &self,
