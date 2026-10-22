@@ -951,7 +951,9 @@ impl Client {
                 // A missing management ACK does not prove the request survived:
                 // still await its terminal stream response. Conversely, a closed
                 // channel or timeout must never be reported as confirmed retirement.
-                let _cancel_ack = self.cancel_request(request_id).await;
+                let _cancel_ack = tokio::time::timeout(
+                    Duration::from_secs(2), self.cancel_request(request_id)
+                ).await;
                 let retired = tokio::time::timeout(Duration::from_secs(5), &mut artifacts).await;
                 if retired.is_ok() && terminal.load(Ordering::Acquire) {
                     Err(Error::Cancelled)
