@@ -236,16 +236,35 @@ impl ModelResolver {
                 if !comp_dir.is_dir() {
                     return Ok(false);
                 }
-                let config_file = if key == "scheduler" {
-                    comp_dir.join("scheduler_config.json")
+                let is_non_weight = key == "scheduler"
+                    || key.starts_with("tokenizer")
+                    || key.contains("processor")
+                    || key.contains("feature_extractor");
+                let cfg_candidates: Vec<PathBuf> = if key == "scheduler" {
+                    vec![
+                        comp_dir.join("scheduler_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
                 } else if key.starts_with("tokenizer") {
-                    comp_dir.join("tokenizer_config.json")
+                    vec![
+                        comp_dir.join("tokenizer_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
+                } else if key.contains("processor") || key.contains("feature_extractor") {
+                    vec![
+                        comp_dir.join("preprocessor_config.json"),
+                        comp_dir.join("tokenizer_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
                 } else {
-                    comp_dir.join("config.json")
+                    vec![comp_dir.join("config.json")]
                 };
-                if !Self::is_materialized_weight_file(&config_file) {
+                let Some(config_file) = cfg_candidates
+                    .into_iter()
+                    .find(|p| Self::is_materialized_weight_file(p))
+                else {
                     return Ok(false);
-                }
+                };
                 if std::fs::read_to_string(&config_file)
                     .ok()
                     .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -253,7 +272,7 @@ impl ModelResolver {
                 {
                     return Ok(false);
                 }
-                if !key.starts_with("scheduler") && !key.starts_with("tokenizer") {
+                if !is_non_weight {
                     let comp_safetensors = Self::find_files_with_suffix(&comp_dir, ".safetensors")?;
                     if comp_safetensors.is_empty() {
                         return Ok(false);
