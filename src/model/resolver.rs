@@ -213,55 +213,113 @@ impl ModelResolver {
     }
 
     fn is_hf_snapshot_complete(model_dir: &Path) -> Result<bool> {
-        let index_files = Self::find_files_with_suffix(model_dir, ".safetensors.index.json")?;
-        if !index_files.is_empty() {
-            for index_file in index_files {
-                let content = std::fs::read_to_string(&index_file)?;
-                let payload: serde_json::Value = serde_json::from_str(&content)?;
-                let Some(weight_map) = payload
-                    .get("weight_map")
-                    .and_then(|value| value.as_object())
-                else {
-                    return Ok(false);
-                };
-                let mut shard_names = BTreeSet::new();
-                for shard in weight_map.values().filter_map(|value| value.as_str()) {
-                    shard_names.insert(shard.to_string());
+        let model_index_path = model_dir.join("model_index.json");
+        if model_index_path.is_file() {
+            let content = std::fs::read_to_string(&model_index_path)?;
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&content) else {
+                return Ok(false);
+            };
+            let Some(obj) = payload.as_object() else {
+                return Ok(false);
+            };
+            for (key, value) in obj {
+                if key.starts_with('_') {
+                    continue;
                 }
-                if shard_names.is_empty() {
+                let Some(arr) = value.as_array() else {
+                    continue;
+                };
+                if arr.len() < 2 || arr.iter().any(|item| item.is_null()) {
+                    continue;
+                }
+                let comp_dir = model_dir.join(key);
+                if !comp_dir.is_dir() {
                     return Ok(false);
                 }
-                let Some(index_dir) = index_file.parent() else {
-                    return Ok(false);
+                let config_file = if key == "scheduler" {
+                    comp_dir.join("scheduler_config.json")
+                } else if key.starts_with("tokenizer") {
+                    comp_dir.join("tokenizer_config.json")
+                } else {
+                    comp_dir.join("config.json")
                 };
-                for shard_name in shard_names {
-                    if !Self::is_materialized_weight_file(&index_dir.join(shard_name)) {
+                if !Self::is_materialized_weight_file(&config_file) {
+                    return Ok(false);
+                }
+                if std::fs::read_to_string(&config_file)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .is_none()
+                {
+                    return Ok(false);
+                }
+                if !key.starts_with("scheduler") && !key.starts_with("tokenizer") {
+                    let comp_safetensors = Self::find_files_with_suffix(&comp_dir, ".safetensors")?;
+                    if comp_safetensors.is_empty() {
                         return Ok(false);
                     }
                 }
             }
-            return Ok(true);
+        }
+
+        let index_files = Self::find_files_with_suffix(model_dir, ".safetensors.index.json")?;
+        for index_file in &index_files {
+            let content = std::fs::read_to_string(index_file)?;
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&content) else {
+                return Ok(false);
+            };
+            let Some(weight_map) = payload
+                .get("weight_map")
+                .and_then(|value| value.as_object())
+            else {
+                return Ok(false);
+            };
+            let mut shard_names = BTreeSet::new();
+            for shard in weight_map.values().filter_map(|value| value.as_str()) {
+                shard_names.insert(shard.to_string());
+            }
+            if shard_names.is_empty() {
+                return Ok(false);
+            }
+            let Some(index_dir) = index_file.parent() else {
+                return Ok(false);
+            };
+            for shard_name in shard_names {
+                if !Self::is_materialized_weight_file(&index_dir.join(shard_name)) {
+                    return Ok(false);
+                }
+            }
         }
 
         let single_file = model_dir.join("model.safetensors");
-        if single_file.exists() || single_file.is_symlink() {
-            return Ok(Self::is_materialized_weight_file(&single_file));
+        if (single_file.exists() || single_file.is_symlink())
+            && !Self::is_materialized_weight_file(&single_file)
+        {
+            return Ok(false);
         }
 
         let safetensors = Self::find_files_with_suffix(model_dir, ".safetensors")?;
         if safetensors.is_empty() {
             return Ok(false);
         }
-        if safetensors.iter().any(|path| {
-            path.file_name()
+        for path in &safetensors {
+            if !Self::is_materialized_weight_file(path) {
+                return Ok(false);
+            }
+            let is_sharded = path
+                .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.contains("-of-") && name.ends_with(".safetensors"))
-        }) {
-            return Ok(false);
+                .is_some_and(|name| name.contains("-of-") && name.ends_with(".safetensors"));
+            if is_sharded {
+                let Some(parent) = path.parent() else {
+                    return Ok(false);
+                };
+                if Self::find_files_with_suffix(parent, ".safetensors.index.json")?.is_empty() {
+                    return Ok(false);
+                }
+            }
         }
-        Ok(safetensors
-            .iter()
-            .all(|path| Self::is_materialized_weight_file(path)))
+        Ok(true)
     }
 
     fn find_files_with_suffix(root: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
