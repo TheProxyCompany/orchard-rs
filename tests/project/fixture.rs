@@ -16,7 +16,7 @@ fn cleanup_engine() {
     // fixture's namespace setup a shutdown here would target the machine's
     // default engine namespace, killing an engine that belongs to someone
     // else (e.g. Proxy.app's Grand Central engine).
-    if FIXTURE.get().is_some() {
+    if matches!(FIXTURE.get(), Some(Ok(_))) {
         if let Some(start) = VOLLEY_START.get() {
             // Mirrors orchard-py's BUCKSHOT wall print: volley only, engine
             // setup and shutdown excluded, so the harnesses compare directly.
@@ -224,7 +224,7 @@ pub(crate) struct TestFixture {
     pub(crate) registry: Arc<ModelRegistry>,
 }
 
-static FIXTURE: OnceLock<TestFixture> = OnceLock::new();
+static FIXTURE: OnceLock<Result<TestFixture, String>> = OnceLock::new();
 static VOLLEY_START: OnceLock<Instant> = OnceLock::new();
 
 /// Tests must never operate in the default engine namespace: that namespace
@@ -315,9 +315,26 @@ fn init_fixture() -> TestFixture {
 }
 
 pub(crate) async fn get_fixture() -> &'static TestFixture {
-    tokio::task::spawn_blocking(|| FIXTURE.get_or_init(init_fixture))
-        .await
-        .expect("spawn_blocking failed")
+    let result = tokio::task::spawn_blocking(|| {
+        FIXTURE.get_or_init(|| {
+            std::panic::catch_unwind(init_fixture).map_err(|payload| {
+                if let Some(s) = payload.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "init_fixture panicked with non-string payload".to_string()
+                }
+            })
+        })
+    })
+    .await
+    .expect("spawn_blocking failed");
+
+    match result {
+        Ok(fixture) => fixture,
+        Err(msg) => panic!("Fixture initialization failed: {msg}"),
+    }
 }
 
 pub(crate) fn make_message(role: &str, content: &str) -> HashMap<String, serde_json::Value> {
