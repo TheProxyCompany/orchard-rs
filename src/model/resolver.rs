@@ -252,6 +252,13 @@ impl ModelResolver {
         if safetensors.is_empty() {
             return Ok(false);
         }
+        if safetensors.iter().any(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains("-of-") && name.ends_with(".safetensors"))
+        }) {
+            return Ok(false);
+        }
         Ok(safetensors
             .iter()
             .all(|path| Self::is_materialized_weight_file(path)))
