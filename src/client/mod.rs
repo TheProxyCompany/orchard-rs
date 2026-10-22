@@ -10,7 +10,10 @@ mod responses;
 mod vision;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -879,7 +882,25 @@ impl Client {
         text: &str,
         options: Option<Value>,
     ) -> Result<Vec<ModalArtifact>> {
-        let info = self.registry.ensure_loaded(model_id).await?;
+        self.agenerate_audio_cancellable(model_id, text, options, std::future::pending())
+            .await
+    }
+
+    /// Generate native audio and retire the request when its owning turn ends.
+    /// Await this future through cancellation; dropping it is not a cancel ACK.
+    pub async fn agenerate_audio_cancellable(
+        &self,
+        model_id: &str,
+        text: &str,
+        options: Option<Value>,
+        canceled: impl std::future::Future<Output = ()>,
+    ) -> Result<Vec<ModalArtifact>> {
+        tokio::pin!(canceled);
+        let info = tokio::select! {
+            biased;
+            _ = &mut canceled => return Err(Error::Cancelled),
+            info = self.registry.ensure_loaded(model_id) => info?,
+        };
         let request_id = self.ipc.next_request_id();
         let mut options = options;
         let max_output_tokens = match options.as_mut() {
@@ -921,7 +942,25 @@ impl Client {
             RequestType::Audio,
             &[prompt_payload],
         )?;
-        collect_modal_artifacts(rx).await
+        let terminal = Arc::new(AtomicBool::new(false));
+        let artifacts = collect_modal_artifacts_observed(rx, Some(Arc::clone(&terminal)));
+        tokio::pin!(artifacts);
+        tokio::select! {
+            biased;
+            _ = &mut canceled => {
+                // A missing management ACK does not prove the request survived:
+                // still await its terminal stream response. Conversely, a closed
+                // channel or timeout must never be reported as confirmed retirement.
+                let _cancel_ack = self.cancel_request(request_id).await;
+                let retired = tokio::time::timeout(Duration::from_secs(5), &mut artifacts).await;
+                if retired.is_ok() && terminal.load(Ordering::Acquire) {
+                    Err(Error::Cancelled)
+                } else {
+                    Err(Error::CancellationUnconfirmed)
+                }
+            },
+            result = &mut artifacts => result,
+        }
     }
 
     /// Generate image artifacts with a native PIE image-generation model.
@@ -1498,10 +1537,22 @@ fn encode_float32_pcm_bytes(pcm: &[f32]) -> Vec<u8> {
 }
 
 async fn collect_modal_artifacts(
+    rx: mpsc::UnboundedReceiver<ResponseDelta>,
+) -> Result<Vec<ModalArtifact>> {
+    collect_modal_artifacts_observed(rx, None).await
+}
+
+async fn collect_modal_artifacts_observed(
     mut rx: mpsc::UnboundedReceiver<ResponseDelta>,
+    terminal: Option<Arc<AtomicBool>>,
 ) -> Result<Vec<ModalArtifact>> {
     let mut artifacts = Vec::new();
     while let Some(delta) = rx.recv().await {
+        if delta.is_final_delta {
+            if let Some(terminal) = &terminal {
+                terminal.store(true, Ordering::Release);
+            }
+        }
         if let Some(error) = delta.error.clone() {
             return Err(Error::Other(error));
         }

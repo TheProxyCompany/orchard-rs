@@ -51,6 +51,7 @@ impl ModelOperations {
         };
         if has_formatter
             && !native("speech_to_text")
+            && !native("audio_generation")
             && profile.get("duplex").is_none()
             && profile.get("diarization").is_none()
         {
@@ -71,6 +72,13 @@ impl ModelOperations {
         if native("captioning") {
             add("vision_caption");
             result.vision_tasks = true;
+        }
+        if native("audio_generation") {
+            if let Some(tasks) = profile["audio_generation"]["tasks"].as_array() {
+                for task in tasks.iter().filter_map(Value::as_str) {
+                    add(task);
+                }
+            }
         }
         if native("speech_to_text") {
             add("audio_transcription");
