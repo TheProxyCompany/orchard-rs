@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "orchard_runtime_revision": "cbd95d886c2134a5f5e3802ed1e4da1876ae54ef",
+  "pie_revision": "b7b75ae3d484bd27ae1a335cbd5c24e7f4461ab2",
+  "pie_binary_sha256": "d824c85c5d37c1d7667cbac4e2d8a6ac4f4a719794e1156d60a86089a36e6b92",
+  "component_proof_path": "Orchard Python \u2192 native IPC \u2192 actual Qwen \u2192 native artifacts",
+  "receipts": [
+    {
+      "path": "/Users/aidenmean/Proxy/work/mobile-voice-evidence/pie-streaming-after-d/receipt.json",
+      "sha256": "46b558b88c53d758d0073ff01471e2a89049c506b07763cfa12a19957faa2408"
+    },
+    {
+      "path": "/Users/aidenmean/Proxy/work/mobile-voice-evidence/pie-streaming-asr-c/receipt.json",
+      "sha256": "1882d01d1527611986fc63907901b83e1831158978442a5764430eb4f7b5eb92"
+    }
+  ],
+  "gc_rust_streaming_integration": "pending H acceptance",
+  "broader_pie_client_cycle": "attempted; blocked by unavailable unrelated Llama model",
+  "limits": [
+    "No automatic engine update in this library change.",
+    "No physical iPhone, microphone, playback or end-to-end latency claim.",
+    "Native cancellation terminal and clean next request do not by themselves establish GPU quiescence after terminal."
+  ]
+}
