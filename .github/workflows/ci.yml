@@ -12,11 +12,11 @@ concurrency:
 jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
-    runs-on: [self-hosted, ci-cd]
+    runs-on: [self-hosted, ci-cd, pie-ci]
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      PIE_REVISION: c783963bc5937fab0103af4ddcf78b03b04a2038
+      PIE_REVISION: 67345c351efda50060e45b01a72eb25368f613e3
 
     steps:
       - name: Get the App's token
