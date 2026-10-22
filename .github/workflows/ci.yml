@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
-    runs-on: [self-hosted, ci-cd, pie-ci]
+    runs-on: [self-hosted, ci-cd]
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
