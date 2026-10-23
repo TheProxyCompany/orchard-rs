@@ -12,11 +12,11 @@ concurrency:
 jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
-    runs-on: [self-hosted, ci-cd, pie-ci]
-    timeout-minutes: 30
+    runs-on: [self-hosted, ci-cd]
+    timeout-minutes: 60
     env:
-      PATH: /Users/theproxycompany/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      PIE_REVISION: 5fb2aa0f8cbea54ab7dedba789e5c8969e88bbcc
+      PATH: /opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PIE_REVISION: d1d6dd4a3bc1be5b7c09cf1a11a9b5d4d7398704
 
     steps:
       - name: Get the App's token
