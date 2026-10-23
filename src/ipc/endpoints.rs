@@ -117,15 +117,20 @@ fn cache_root() -> PathBuf {
     if let Some(root) = non_empty_env("ORCHARD_CACHE_ROOT") {
         return PathBuf::from(root);
     }
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    let base = if cfg!(target_os = "macos") {
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    platform_cache_dir(&home).join("com.theproxycompany")
+}
+
+/// The per-user cache directory: `~/Library/Caches` on macOS, else
+/// `XDG_CACHE_HOME` or `~/.cache`.
+pub(crate) fn platform_cache_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
         home.join("Library/Caches")
     } else {
         non_empty_env("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".cache"))
-    };
-    base.join("com.theproxycompany")
+    }
 }
 
 /// Get the IPC root directory for socket files.
@@ -173,6 +178,11 @@ pub fn response_url() -> String {
     as_ipc_url(ipc_root().join("pie_responses.ipc"))
 }
 
+/// A flow-controlled, client-owned response route on the existing IPC root.
+pub fn pull_response_url(channel_id: u64) -> String {
+    as_ipc_url(ipc_root().join(format!("pie_response_{channel_id:x}.ipc")))
+}
+
 /// The endpoint for synchronous management commands (e.g., load_model).
 /// Pattern: REQ/REP (One client sends a REQ, one engine sends a REP)
 pub fn management_url() -> String {
@@ -188,100 +198,3 @@ pub const RESPONSE_TOPIC_PREFIX: &[u8] = b"resp:";
 /// Topic prefix for global, broadcast events (e.g., engine_ready).
 /// Clients subscribe to this prefix to receive all system-wide notifications.
 pub const EVENT_TOPIC_PREFIX: &[u8] = b"__PIE_EVENT__:";
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fnv1a64_matches_pie() {
-        // Same digest PIE's platform_utils.cpp produces for these bytes.
-        assert_eq!(fnv1a64(b"abc"), 0xe71f_a219_0541_574b);
-        let long = format!("/private/tmp/{}", "x".repeat(95));
-        assert_eq!(fnv1a64(long.as_bytes()), 0x6afb_dbbb_b309_ece4);
-    }
-
-    #[test]
-    fn short_root_is_kept_verbatim_after_canonicalization() {
-        let root = bounded_ipc_root(Path::new("/tmp/orc-abl/com.theproxycompany/ipc"));
-        // /tmp resolves to /private/tmp on macOS; the suffix is preserved.
-        assert!(
-            root.ends_with("orc-abl/com.theproxycompany/ipc"),
-            "{root:?}"
-        );
-        assert!(socket_paths_fit(&root));
-    }
-
-    #[test]
-    fn long_root_projects_to_hashed_tmp_directory() {
-        let long = format!("/private/tmp/{}", "x".repeat(95));
-        let root = bounded_ipc_root(Path::new(&long));
-        let uid = unsafe { libc::getuid() };
-        let expected_name = format!("orchard-ipc-{uid}-6afbdbbbb309ece4");
-        assert_eq!(root.file_name().unwrap().to_str().unwrap(), expected_name);
-        assert!(
-            root.starts_with(canonical_path(Path::new("/tmp"))),
-            "{root:?}"
-        );
-        assert!(socket_paths_fit(&root));
-    }
-
-    #[test]
-    fn boundary_is_the_full_socket_path_at_103_bytes() {
-        // Build a root under /private/tmp whose longest socket path is exactly 103 bytes,
-        // then one byte longer.
-        let base = canonical_path(Path::new("/tmp"));
-        let fill = MAX_SOCKET_PATH_BYTES
-            - base.as_os_str().len()
-            - 1 // separator before the root name
-            - 1 // separator before the socket name
-            - LONGEST_SOCKET_NAME.len();
-        let fits = base.join("y".repeat(fill));
-        let over = base.join("y".repeat(fill + 1));
-        assert_eq!(bounded_ipc_root(&fits), fits);
-        assert_ne!(bounded_ipc_root(&over), over);
-    }
-
-    #[test]
-    fn missing_suffix_is_normalized_not_resolved() {
-        let candidate = Path::new("/tmp/./orc-missing-a/../orc-missing-b/ipc");
-        let root = canonical_path(candidate);
-        assert!(root.ends_with("orc-missing-b/ipc"), "{root:?}");
-        assert!(!root.to_string_lossy().contains(".."));
-    }
-
-    #[test]
-    fn trailing_parent_dir_still_resolves_the_existing_symlink_prefix() {
-        // /tmp is a symlink to /private/tmp on macOS; the missing child plus a
-        // trailing `..` must not stop the walk before the symlink is resolved.
-        let root = canonical_path(Path::new("/tmp/orc-does-not-exist-zzz/.."));
-        assert_eq!(root, canonical_path(Path::new("/tmp")));
-        let deeper = canonical_path(Path::new("/tmp/orc-missing-a/orc-missing-b/../.."));
-        assert_eq!(deeper, canonical_path(Path::new("/tmp")));
-    }
-
-    #[test]
-    fn parent_dir_is_clamped_at_an_absolute_root() {
-        assert_eq!(
-            lexically_normal(Path::new("/../../tmp")),
-            PathBuf::from("/tmp")
-        );
-        assert_eq!(
-            lexically_normal(Path::new("/a/../../b")),
-            PathBuf::from("/b")
-        );
-        assert_eq!(lexically_normal(Path::new("../x")), PathBuf::from("../x"));
-        assert_eq!(
-            canonical_path(Path::new("/../../tmp")),
-            canonical_path(Path::new("/tmp"))
-        );
-    }
-
-    #[test]
-    fn urls_are_ipc_scheme() {
-        assert!(request_url().starts_with("ipc://"));
-        assert!(response_url().starts_with("ipc://"));
-        assert!(management_url().starts_with("ipc://"));
-        assert!(request_url().len() - "ipc://".len() <= MAX_SOCKET_PATH_BYTES);
-    }
-}

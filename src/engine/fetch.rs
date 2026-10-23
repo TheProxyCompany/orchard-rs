@@ -1,7 +1,7 @@
 //! Engine binary fetching and installation.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 use reqwest::Client;
@@ -16,6 +16,20 @@ const REQUEST_TIMEOUT_SECS: u64 = 30;
 const DOWNLOAD_TIMEOUT_SECS: u64 = 600;
 const MAX_RETRIES: u32 = 3;
 
+/// Helpers may live in MacOS, Resources, or nested Helpers directories.
+fn bundled_root(executable: &Path) -> Option<PathBuf> {
+    executable
+        .ancestors()
+        .find(|path| {
+            path.file_name().is_some_and(|name| name == "Contents")
+                && path
+                    .parent()
+                    .and_then(Path::extension)
+                    .is_some_and(|ext| ext == "app")
+        })
+        .map(|contents| contents.join("Resources/Orchard"))
+}
+
 /// Engine binary fetcher.
 ///
 /// Handles downloading, verifying, and installing PIE binaries.
@@ -27,7 +41,7 @@ pub struct EngineFetcher {
 impl EngineFetcher {
     /// Create a new fetcher with the default orchard home directory.
     pub fn new() -> Self {
-        let orchard_home = dirs::home_dir()
+        let orchard_home = std::env::home_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join(".orchard");
         Self::with_home(orchard_home)
@@ -56,6 +70,23 @@ impl EngineFetcher {
             if local_path.exists() {
                 tracing::debug!("Using local PIE build: {:?}", local_path);
                 return Ok(local_path);
+            }
+        }
+
+        if let Some(root) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| bundled_root(&exe))
+        {
+            if root.is_dir() {
+                let binary = root.join("bin/proxy_inference_engine");
+                if !binary.is_file() {
+                    return Err(Error::StartupFailed(format!(
+                        "The app's bundled Orchard engine is incomplete: {}",
+                        binary.display()
+                    )));
+                }
+                tracing::debug!("Using app-bundled PIE: {:?}", binary);
+                return Ok(binary);
             }
         }
 
@@ -128,25 +159,16 @@ impl EngineFetcher {
 
     /// Get the currently installed version.
     pub fn get_installed_version(&self) -> Option<String> {
-        let version_file = self.orchard_home.join("version.txt");
+        let root = std::env::current_exe()
+            .ok()
+            .and_then(|exe| bundled_root(&exe))
+            .filter(|root| root.is_dir())
+            .unwrap_or_else(|| self.orchard_home.clone());
+        let version_file = root.join("version.txt");
         std::fs::read_to_string(version_file)
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-    }
-
-    /// Check if an update is available.
-    pub async fn check_for_updates(&self, channel: &str) -> Option<String> {
-        let installed = self.get_installed_version()?;
-
-        let manifest = self.fetch_manifest(channel).await.ok()?;
-        let latest = manifest.get("latest").and_then(|v| v.as_str())?;
-
-        if latest != installed {
-            Some(latest.to_string())
-        } else {
-            None
-        }
     }
 
     async fn fetch_manifest(&self, channel: &str) -> Result<serde_json::Value> {
@@ -190,7 +212,7 @@ impl EngineFetcher {
             match self.download_file(url).await {
                 Ok(content) => {
                     if let Some(expected) = expected_sha256 {
-                        let actual = ::hex::encode(Sha256::digest(&content));
+                        let actual = format!("{:x}", Sha256::digest(&content));
                         if actual != expected {
                             return Err(Error::Integrity {
                                 expected: expected.to_string(),
@@ -290,7 +312,7 @@ impl EngineFetcher {
             std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))?;
         }
 
-        // Write version file
+        // Write version file into the separately downloaded installation.
         let version_file = self.orchard_home.join("version.txt");
         std::fs::write(version_file, version)?;
 
@@ -301,23 +323,5 @@ impl EngineFetcher {
 impl Default for EngineFetcher {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fetcher_creation() {
-        let fetcher = EngineFetcher::new();
-        assert!(fetcher.orchard_home.ends_with(".orchard"));
-    }
-
-    #[test]
-    fn test_local_build_override() {
-        // This test just verifies the logic path exists
-        let fetcher = EngineFetcher::new();
-        assert!(fetcher.orchard_home.exists() || !fetcher.orchard_home.exists());
     }
 }

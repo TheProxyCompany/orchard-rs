@@ -3,6 +3,7 @@
 //! Mirrors orchard-py/tests/functional/test_multi_candidate.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use std::collections::HashMap;
 
 use orchard::SamplingParams;
@@ -18,7 +19,7 @@ async fn test_chat_completion_multi_candidate_non_streaming() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
-            max_tokens: 10,
+            max_tokens: semantic_token_limit(model_id, 10),
             temperature: 0.0,
             n: candidate_count,
             reasoning: Some(false),
@@ -87,7 +88,7 @@ async fn test_chat_completion_multi_candidate_streaming() {
     fanout(TEXT_MODELS.iter().map(|&model_id| async move {
         let candidate_count = 3;
         let params = SamplingParams {
-            max_tokens: 10,
+            max_tokens: semantic_token_limit(model_id, 10),
             temperature: 0.0,
             n: candidate_count,
             reasoning: Some(false),

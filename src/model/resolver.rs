@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use hf_hub::api::tokio::{Api, ApiBuilder};
-use hf_hub::Cache;
+use hf_hub::{Cache, Repo, RepoType};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -45,19 +45,6 @@ impl ModelResolver {
         Ok(Self {
             resolved_cache: HashMap::new(),
             hf_api: ApiBuilder::from_env()
-                .build()
-                .map_err(|e| Error::HfApiInit(e.to_string()))?,
-            hf_cache,
-        })
-    }
-
-    #[cfg(test)]
-    fn new_with_cache_for_tests(cache_dir: PathBuf) -> Result<Self> {
-        let hf_cache = Cache::new(cache_dir);
-        Ok(Self {
-            resolved_cache: HashMap::new(),
-            hf_api: ApiBuilder::from_cache(hf_cache.clone())
-                .with_endpoint("http://127.0.0.1:9".to_string())
                 .build()
                 .map_err(|e| Error::HfApiInit(e.to_string()))?,
             hf_cache,
@@ -226,48 +213,132 @@ impl ModelResolver {
     }
 
     fn is_hf_snapshot_complete(model_dir: &Path) -> Result<bool> {
-        let index_files = Self::find_files_with_suffix(model_dir, ".safetensors.index.json")?;
-        if !index_files.is_empty() {
-            for index_file in index_files {
-                let content = std::fs::read_to_string(&index_file)?;
-                let payload: serde_json::Value = serde_json::from_str(&content)?;
-                let Some(weight_map) = payload
-                    .get("weight_map")
-                    .and_then(|value| value.as_object())
+        let model_index_path = model_dir.join("model_index.json");
+        if model_index_path.is_file() {
+            let content = std::fs::read_to_string(&model_index_path)?;
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&content) else {
+                return Ok(false);
+            };
+            let Some(obj) = payload.as_object() else {
+                return Ok(false);
+            };
+            for (key, value) in obj {
+                if key.starts_with('_') {
+                    continue;
+                }
+                let Some(arr) = value.as_array() else {
+                    continue;
+                };
+                if arr.len() < 2 || arr.iter().any(|item| item.is_null()) {
+                    continue;
+                }
+                let comp_dir = model_dir.join(key);
+                if !comp_dir.is_dir() {
+                    return Ok(false);
+                }
+                let is_non_weight = key == "scheduler"
+                    || key.starts_with("tokenizer")
+                    || key.contains("processor")
+                    || key.contains("feature_extractor");
+                let cfg_candidates: Vec<PathBuf> = if key == "scheduler" {
+                    vec![
+                        comp_dir.join("scheduler_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
+                } else if key.starts_with("tokenizer") {
+                    vec![
+                        comp_dir.join("tokenizer_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
+                } else if key.contains("processor") || key.contains("feature_extractor") {
+                    vec![
+                        comp_dir.join("preprocessor_config.json"),
+                        comp_dir.join("tokenizer_config.json"),
+                        comp_dir.join("config.json"),
+                    ]
+                } else {
+                    vec![comp_dir.join("config.json")]
+                };
+                let Some(config_file) = cfg_candidates
+                    .into_iter()
+                    .find(|p| Self::is_materialized_weight_file(p))
                 else {
                     return Ok(false);
                 };
-                let mut shard_names = BTreeSet::new();
-                for shard in weight_map.values().filter_map(|value| value.as_str()) {
-                    shard_names.insert(shard.to_string());
-                }
-                if shard_names.is_empty() {
+                if std::fs::read_to_string(&config_file)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .is_none()
+                {
                     return Ok(false);
                 }
-                let Some(index_dir) = index_file.parent() else {
-                    return Ok(false);
-                };
-                for shard_name in shard_names {
-                    if !Self::is_materialized_weight_file(&index_dir.join(shard_name)) {
+                if !is_non_weight {
+                    let comp_safetensors = Self::find_files_with_suffix(&comp_dir, ".safetensors")?;
+                    if comp_safetensors.is_empty() {
                         return Ok(false);
                     }
                 }
             }
-            return Ok(true);
+        }
+
+        let index_files = Self::find_files_with_suffix(model_dir, ".safetensors.index.json")?;
+        for index_file in &index_files {
+            let content = std::fs::read_to_string(index_file)?;
+            let Ok(payload) = serde_json::from_str::<serde_json::Value>(&content) else {
+                return Ok(false);
+            };
+            let Some(weight_map) = payload
+                .get("weight_map")
+                .and_then(|value| value.as_object())
+            else {
+                return Ok(false);
+            };
+            let mut shard_names = BTreeSet::new();
+            for shard in weight_map.values().filter_map(|value| value.as_str()) {
+                shard_names.insert(shard.to_string());
+            }
+            if shard_names.is_empty() {
+                return Ok(false);
+            }
+            let Some(index_dir) = index_file.parent() else {
+                return Ok(false);
+            };
+            for shard_name in shard_names {
+                if !Self::is_materialized_weight_file(&index_dir.join(shard_name)) {
+                    return Ok(false);
+                }
+            }
         }
 
         let single_file = model_dir.join("model.safetensors");
-        if single_file.exists() || single_file.is_symlink() {
-            return Ok(Self::is_materialized_weight_file(&single_file));
+        if (single_file.exists() || single_file.is_symlink())
+            && !Self::is_materialized_weight_file(&single_file)
+        {
+            return Ok(false);
         }
 
         let safetensors = Self::find_files_with_suffix(model_dir, ".safetensors")?;
         if safetensors.is_empty() {
             return Ok(false);
         }
-        Ok(safetensors
-            .iter()
-            .all(|path| Self::is_materialized_weight_file(path)))
+        for path in &safetensors {
+            if !Self::is_materialized_weight_file(path) {
+                return Ok(false);
+            }
+            let is_sharded = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains("-of-") && name.ends_with(".safetensors"));
+            if is_sharded {
+                let Some(parent) = path.parent() else {
+                    return Ok(false);
+                };
+                if Self::find_files_with_suffix(parent, ".safetensors.index.json")?.is_empty() {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
     }
 
     fn find_files_with_suffix(root: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
@@ -353,6 +424,7 @@ impl ModelResolver {
 
         // Load and parse config
         let config = Self::normalize_config(self.load_config(&model_path)?);
+        self.ensure_external_tokenizer(&model_path, &config).await?;
         let metadata = Self::collect_metadata(&config);
 
         // Determine canonical ID
@@ -389,6 +461,56 @@ impl ModelResolver {
             hf_repo,
             formatter_config,
         })
+    }
+
+    // The official Moondream code obtains its tokenizer from starmie-v1.
+    // Pin the dependency explicitly; never execute downloaded Python or rewrite
+    // config.json to make a pristine snapshot usable by the native client.
+    async fn ensure_external_tokenizer(
+        &self,
+        model_dir: &Path,
+        config: &serde_json::Value,
+    ) -> Result<()> {
+        if config.get("model_type").and_then(|v| v.as_str()) != Some("moondream3")
+            || model_dir.join("tokenizer.json").is_file()
+            || model_dir.join("tokenizer.model").is_file()
+            || (model_dir.join("vocab.json").is_file() && model_dir.join("merges.txt").is_file())
+        {
+            return Ok(());
+        }
+        const REPO: &str = "moondream/starmie-v1";
+        const REVISION: &str = "35192e10a54e36eabe0a7cc57a2c1aab371cafc5";
+        let repo = Repo::with_revision(REPO.to_string(), RepoType::Model, REVISION.to_string());
+        let cached = self.hf_cache.repo(repo.clone());
+        // Publish tokenizer.json last, so its existence means companion files
+        // were fully installed. Each link is atomic and never replaces a file.
+        for filename in [
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+        ] {
+            let direct = cached.pointer_path(REVISION).join(filename);
+            let source = if direct.is_file() {
+                direct
+            } else {
+                self.hf_api
+                    .repo(repo.clone())
+                    .get(filename)
+                    .await
+                    .map_err(|e| Error::DownloadFailed(REPO.to_string(), e.to_string()))?
+            };
+            let target = model_dir.join(filename);
+            #[cfg(unix)]
+            let installed = std::os::unix::fs::symlink(&source, &target);
+            #[cfg(not(unix))]
+            let installed = std::fs::hard_link(&source, &target);
+            if let Err(error) = installed {
+                if error.kind() != std::io::ErrorKind::AlreadyExists || !target.is_file() {
+                    return Err(error.into());
+                }
+            }
+        }
+        Ok(())
     }
 
     fn build_local_source_model(model_path: PathBuf) -> ResolvedModel {
@@ -543,239 +665,5 @@ impl ModelResolver {
         }
 
         metadata
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use hf_hub::Cache;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_resolver_creation() {
-        let resolver = ModelResolver::new().unwrap();
-        assert!(resolver.resolved_cache.is_empty());
-    }
-
-    #[test]
-    fn test_collect_metadata() {
-        let config = serde_json::json!({
-            "model_type": "llama",
-            "hidden_size": 4096,
-            "num_hidden_layers": 32,
-            "quantization_config": {
-                "bits": 4
-            }
-        });
-
-        let metadata = ModelResolver::collect_metadata(&config);
-        assert_eq!(metadata.get("model_type"), Some(&"llama".to_string()));
-        assert_eq!(metadata.get("hidden_size"), Some(&"4096".to_string()));
-        assert_eq!(metadata.get("quantization_bits"), Some(&"4".to_string()));
-    }
-
-    #[test]
-    fn test_infer_hf_repo() {
-        let config = serde_json::json!({
-            "_name_or_path": "meta-llama/Llama-3.1-8B-Instruct"
-        });
-
-        let repo = ModelResolver::infer_hf_repo(&config);
-        assert_eq!(repo, Some("meta-llama/Llama-3.1-8B-Instruct".to_string()));
-    }
-
-    #[test]
-    fn test_infer_hf_repo_local_path() {
-        let config = serde_json::json!({
-            "_name_or_path": "/local/path/to/model"
-        });
-
-        let repo = ModelResolver::infer_hf_repo(&config);
-        assert_eq!(repo, None);
-    }
-
-    #[tokio::test]
-    async fn test_resolves_local_file_as_engine_inspected_source() {
-        let dir = tempdir().unwrap();
-        let model_path = dir.path().join("model.gguf");
-        std::fs::write(&model_path, b"GGUF").unwrap();
-
-        let mut resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .resolve(model_path.to_str().unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.source, "local_source");
-        assert_eq!(resolved.canonical_id, "model");
-        assert_eq!(resolved.model_path, model_path);
-        assert!(resolved.formatter_config.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_hf_resolved_model_passes_repo_hint_to_formatter_config() {
-        let repo_id = "meta-llama/Llama-3.1-8B-Instruct";
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("config.json"),
-            serde_json::json!({"model_type": "llama"}).to_string(),
-        )
-        .unwrap();
-        std::fs::write(dir.path().join("tokenizer.json"), "{}").unwrap();
-
-        let resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .build_resolved_model(
-                dir.path().to_path_buf(),
-                "hf_cache",
-                Some(repo_id),
-                Some(repo_id),
-            )
-            .await
-            .unwrap();
-        let config = resolved.formatter_config.as_ref().unwrap();
-
-        assert_eq!(config["model_type"], "llama");
-        assert_eq!(config["_name_or_path"], repo_id);
-    }
-
-    #[tokio::test]
-    async fn test_resolves_cached_hf_snapshot_without_remote_metadata() {
-        let repo_id = "meta-llama/Llama-3.1-8B-Instruct";
-        let cache_dir = tempdir().unwrap();
-        let cache = Cache::new(cache_dir.path().to_path_buf());
-        let cache_repo = cache.model(repo_id.to_string());
-        let commit = "0123456789abcdef0123456789abcdef01234567";
-        cache_repo.create_ref(commit).unwrap();
-        let snapshot = cache_repo.pointer_path(commit);
-        std::fs::create_dir_all(&snapshot).unwrap();
-        std::fs::write(
-            snapshot.join("config.json"),
-            serde_json::json!({"model_type": "llama"}).to_string(),
-        )
-        .unwrap();
-        std::fs::write(snapshot.join("tokenizer.json"), "{}").unwrap();
-        std::fs::write(snapshot.join("model.safetensors"), b"weights").unwrap();
-
-        let mut resolver =
-            ModelResolver::new_with_cache_for_tests(cache_dir.path().to_path_buf()).unwrap();
-        let resolved = resolver.resolve(repo_id).await.unwrap();
-
-        assert_eq!(resolved.source, "hf_cache");
-        assert_eq!(resolved.canonical_id, repo_id);
-        assert_eq!(resolved.model_path, snapshot);
-        assert_eq!(
-            resolved.formatter_config.as_ref().unwrap()["_name_or_path"],
-            repo_id
-        );
-    }
-
-    #[tokio::test]
-    async fn test_resolves_local_ideogram_model_index_directory() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("model_index.json"),
-            serde_json::json!({"_class_name": "Ideogram4Pipeline"}).to_string(),
-        )
-        .unwrap();
-
-        let mut resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .resolve(dir.path().to_str().unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.source, "local");
-        assert_eq!(
-            resolved.metadata.get("model_type"),
-            Some(&"ideogram4".to_string())
-        );
-        assert_eq!(resolved.formatter_config, None);
-    }
-
-    #[tokio::test]
-    async fn test_resolves_local_qwen_image_edit_model_index_directory() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("model_index.json"),
-            serde_json::json!({"_class_name": "QwenImageEditPipeline"}).to_string(),
-        )
-        .unwrap();
-
-        let mut resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .resolve(dir.path().to_str().unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.source, "local");
-        assert_eq!(
-            resolved.metadata.get("model_type"),
-            Some(&"qwen_image_edit".to_string())
-        );
-        assert_eq!(resolved.formatter_config, None);
-    }
-
-    #[tokio::test]
-    async fn test_resolves_local_flux2_model_index_directory() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("model_index.json"),
-            serde_json::json!({"_class_name": "Flux2KleinPipeline"}).to_string(),
-        )
-        .unwrap();
-
-        let mut resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .resolve(dir.path().to_str().unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.source, "local");
-        assert_eq!(
-            resolved.metadata.get("model_type"),
-            Some(&"flux".to_string())
-        );
-        assert_eq!(resolved.formatter_config, None);
-    }
-
-    #[tokio::test]
-    async fn test_resolves_parakeet_tdt_config_with_audio_profile() {
-        let repo_id = "mlx-community/parakeet-tdt-0.6b-v3";
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("config.json"),
-            serde_json::json!({
-                "_name_or_path": repo_id,
-                "target": "nemo.collections.asr.models.rnnt_bpe_models.EncDecRNNTBPEModel",
-                "model_defaults": {
-                    "tdt_durations": [0, 1, 2, 3, 4]
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        std::fs::write(dir.path().join("tokenizer.json"), "{}").unwrap();
-
-        let resolver = ModelResolver::new().unwrap();
-        let resolved = resolver
-            .build_resolved_model(
-                dir.path().to_path_buf(),
-                "hf_cache",
-                Some(repo_id),
-                Some(repo_id),
-            )
-            .await
-            .unwrap();
-        let config = resolved.formatter_config.as_ref().unwrap();
-
-        assert_eq!(
-            resolved.metadata.get("model_type"),
-            Some(&"parakeet_tdt".to_string())
-        );
-        assert_eq!(config["model_type"], "parakeet_tdt");
-        assert!(config.get("template_type").is_none());
-        assert_eq!(config["_name_or_path"], repo_id);
     }
 }

@@ -1,6 +1,10 @@
 //! Orchard - Rust client for high-performance LLM inference on Apple Silicon.
 
 mod defaults;
+#[cfg(feature = "diarization")]
+pub mod diarization;
+#[cfg(feature = "duplex")]
+pub mod duplex;
 pub mod error;
 
 pub mod client;
@@ -22,6 +26,8 @@ pub use engine::fetch::EngineFetcher;
 pub use engine::lifecycle::{EnginePaths, InferenceEngine};
 pub use engine::multiprocess;
 
+pub use model::catalog::{catalog_capabilities, catalog_models, catalog_operations, CatalogModel};
+pub use model::operations::{AudioGeometry, ModelLoadOptions, ModelLoadRequest, ModelOperations};
 pub use model::registry::{ModelEntry, ModelInfo, ModelLoadState, ModelRegistry};
 pub use model::resolver::{ModelResolver, ResolvedModel};
 
@@ -32,19 +38,19 @@ pub use formatter::multimodal::{
 pub use formatter::ChatFormatter;
 
 pub use client::{
-    BatchChatResult, ChatResult, Client, ClientDelta, ClientResponse, ContentPartAddedEvent,
-    ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent, FunctionCallArgumentsDoneEvent,
-    FunctionCallOutputContent, IncompleteDetails, InputTokensDetails, ModalArtifact,
-    OpenAIPrivacyFilterClient, OutputFunctionCall, OutputItemAddedEvent, OutputItemDoneEvent,
-    OutputMessage, OutputReasoning, OutputStatus, OutputTextContent, OutputTextDeltaEvent,
-    OutputTextDoneEvent, OutputTokensDetails, ReasoningConfig, ReasoningContent,
-    ReasoningDeltaEvent, ReasoningDoneEvent, ReasoningSummaryTextContent,
-    ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent, ResponseCompletedEvent,
-    ResponseCreatedEvent, ResponseError, ResponseEvent, ResponseFailedEvent,
-    ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem, ResponseObject,
-    ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput, ResponsesRequest,
-    ResponsesResult, SamplingParams, StreamErrorDetail, StreamErrorEvent, UsageStats,
-    OPENAI_PRIVACY_FILTER_MODEL_ID,
+    response_input_items, BatchChatResult, CaptionWithMetrics, ChatResult, Client, ClientDelta,
+    ClientResponse, ContentPartAddedEvent, ContentPartDoneEvent, FunctionCallArgumentsDeltaEvent,
+    FunctionCallArgumentsDoneEvent, FunctionCallOutputContent, IncompleteDetails,
+    InputTokensDetails, ModalArtifact, OpenAIPrivacyFilterClient, OutputFunctionCall,
+    OutputItemAddedEvent, OutputItemDoneEvent, OutputMessage, OutputReasoning, OutputStatus,
+    OutputTextContent, OutputTextDeltaEvent, OutputTextDoneEvent, OutputTokensDetails,
+    ReasoningConfig, ReasoningContent, ReasoningDeltaEvent, ReasoningDoneEvent,
+    ReasoningSummaryTextContent, ReasoningSummaryTextDeltaEvent, ReasoningSummaryTextDoneEvent,
+    ResponseCompletedEvent, ResponseCreatedEvent, ResponseError, ResponseEvent,
+    ResponseFailedEvent, ResponseInProgressEvent, ResponseIncompleteEvent, ResponseInputItem,
+    ResponseObject, ResponseOutputItem, ResponseSnapshot, ResponseUsage, ResponsesInput,
+    ResponsesRequest, ResponsesResult, SamplingParams, StreamErrorDetail, StreamErrorEvent,
+    UsageStats, WarmResult, OPENAI_PRIVACY_FILTER_MODEL_ID,
 };
 
 /// Library version

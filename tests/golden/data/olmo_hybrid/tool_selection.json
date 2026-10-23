@@ -278,7 +278,8 @@
           }
         },
         "stop_token_id": null,
-        "stop_token": null
+        "stop_token": null,
+        "generation": {"model": "allenai/Olmo-Hybrid-Instruct-DPO-7B","tokens": [100268,90,330,609,794,330,456,70464,498,330,16774,794,314,330,2588,794,330,24661,13175,1,335,335,100269],"thinking": false}
       }
     },
     {

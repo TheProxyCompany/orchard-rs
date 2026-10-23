@@ -6,3 +6,4 @@
 pub mod client;
 pub mod endpoints;
 pub mod serialization;
+pub mod socket;

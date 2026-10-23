@@ -3,6 +3,7 @@
 //! Mirrors orchard-py/tests/functional/test_responses_tools.py
 //! Run with: cargo test --test functional
 
+use crate::fixture::semantic_token_limit;
 use orchard::{
     ResponseEvent, ResponseInputItem, ResponseOutputItem, ResponsesInput, ResponsesRequest,
     ResponsesResult,
@@ -78,7 +79,7 @@ async fn test_responses_tool_call_non_streaming() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(semantic_token_limit(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -159,7 +160,7 @@ async fn test_responses_tool_call_streaming() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(semantic_token_limit(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -268,7 +269,7 @@ async fn test_responses_tool_result_continuation() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(semantic_token_limit(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),
@@ -344,7 +345,7 @@ async fn test_responses_tool_result_continuation() {
             deterministic: false,
             frequency_penalty: None,
             presence_penalty: None,
-            max_output_tokens: Some(128),
+            max_output_tokens: Some(semantic_token_limit(model_id, 128)),
             top_logprobs: None,
             core_tools: vec![weather_tool()],
             active_tools: Vec::new(),

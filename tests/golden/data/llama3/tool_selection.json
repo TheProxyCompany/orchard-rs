@@ -180,7 +180,8 @@
           }
         },
         "stop_token_id": 128008,
-        "stop_token": "<|eom_id|>"
+        "stop_token": "<|eom_id|>",
+        "generation": {"model": "meta-llama/Llama-3.1-8B-Instruct","tokens": [128010,456,70464,23509,429,24661,13175,909],"thinking": false}
       }
     },
     {

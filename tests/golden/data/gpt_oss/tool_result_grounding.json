@@ -436,8 +436,8 @@
         ],
         "usage": {
           "input_tokens": 151,
-          "output_tokens": 24,
-          "total_tokens": 175,
+          "output_tokens": 34,
+          "total_tokens": 185,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -446,7 +446,8 @@
           }
         },
         "stop_token_id": 200012,
-        "stop_token": "<|call|>"
+        "stop_token": "<|call|>",
+        "generation": {"model": "openai/gpt-oss-20b","tokens": [200005,35644,200008,2167,1309,316,1199,290,717,170154,1114,13,200007,200006,173781,200005,12606,815,316,28,44580,775,170154,220,200003,4108,200008,10848,7693,7534,28499,18826,18583],"thinking": true}
       }
     },
     {
@@ -1368,8 +1369,8 @@
         ],
         "usage": {
           "input_tokens": 205,
-          "output_tokens": 26,
-          "total_tokens": 231,
+          "output_tokens": 56,
+          "total_tokens": 261,
           "input_tokens_details": {
             "cached_tokens": 0
           },
@@ -1378,7 +1379,8 @@
           }
         },
         "stop_token_id": 200002,
-        "stop_token": "<|return|>"
+        "stop_token": "<|return|>",
+        "generation": {"model": "openai/gpt-oss-20b","tokens": [200005,35644,200008,2167,3508,11122,25,12088,220,24,26557,11,7060,15214,289,30,4569,7890,14210,395,6610,18826,13,3072,4275,4584,885,1238,13,51441,6052,13,200007,200005,17196,200008,976,2208,11122,306,6610,35971,106672,13009,382,220,24,35971,26557,326,480,802,15214,289,13],"thinking": true}
       }
     },
     {

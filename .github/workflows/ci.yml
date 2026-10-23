@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,11 +12,11 @@ concurrency:
 jobs:
   build-and-test:
     # Buckshot preloads the full text/vision/media matrix concurrently. The
-    runs-on: [self-hosted, ci-cd]
+    runs-on: [self-hosted, ci-cd, pie-ci]
     timeout-minutes: 30
     env:
       PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      PIE_REVISION: 59fd4a6447bc3d7741aecb40f1d2934b78dd2391
+      PIE_REVISION: 67345c351efda50060e45b01a72eb25368f613e3
 
     steps:
       - name: Get the App's token

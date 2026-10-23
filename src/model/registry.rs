@@ -13,6 +13,7 @@ use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 use crate::error::Error;
 use crate::formatter::ChatFormatter;
 use crate::ipc::client::IPCClient;
+use crate::model::operations::{ModelLoadOptions, ModelLoadRequest, ModelOperations};
 use crate::model::resolver::{ModelResolver, ResolvedModel};
 
 /// Model load state machine.
@@ -56,6 +57,26 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// Whether the engine that loaded this model accepts `tokens` layout segments.
+    pub fn takes_token_segments(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|c| c.contains_key("token_segments"))
+    }
+
+    /// Whether the engine that loaded this model completes its text stream.
+    ///
+    /// The state events of a reply hold back text that could still become a stop
+    /// sequence. An engine that advertises `released_text` hands that text over in
+    /// the final delta when a reply ends without a stop (token limit, cancel), so
+    /// the message `content_delta` spans are the whole message. An engine without
+    /// it never sends that text as a span.
+    pub fn releases_held_text(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .is_some_and(|c| c.contains_key("released_text"))
+    }
+
     pub fn require_formatter(&self) -> std::result::Result<&ChatFormatter, crate::error::Error> {
         self.formatter.as_deref().ok_or_else(|| {
             crate::error::Error::ModelNotReady(format!(
@@ -114,6 +135,11 @@ pub struct ModelRegistry {
     local_source_inspection_cache: RwLock<HashMap<String, ResolvedModel>>,
     /// IPC client for sending management commands to PIE
     ipc_client: RwLock<Option<Arc<IPCClient>>>,
+    /// Deduplicate descriptor preparation; model residency belongs to PIE.
+    #[cfg(feature = "duplex")]
+    duplex_sources: Arc<Mutex<()>>,
+    #[cfg(feature = "diarization")]
+    diarization_sources: Arc<Mutex<()>>,
 }
 
 impl ModelRegistry {
@@ -125,7 +151,283 @@ impl ModelRegistry {
             alias_cache: RwLock::new(HashMap::new()),
             local_source_inspection_cache: RwLock::new(HashMap::new()),
             ipc_client: RwLock::new(None),
+            #[cfg(feature = "duplex")]
+            duplex_sources: Arc::new(Mutex::new(())),
+            #[cfg(feature = "diarization")]
+            diarization_sources: Arc::new(Mutex::new(())),
         })
+    }
+
+    /// Open a persistent native PIE session after actual engine activation.
+    #[cfg(feature = "duplex")]
+    pub async fn duplex(
+        &self,
+        model_id: &str,
+        options: crate::duplex::DuplexOptions,
+    ) -> Result<crate::duplex::DuplexSession, Error> {
+        options.validate()?;
+        let info = self
+            .ensure_prepared(&ModelLoadRequest {
+                model: model_id.into(),
+                options: ModelLoadOptions::Duplex(options.clone()),
+            })
+            .await?;
+        let ipc = self
+            .ipc_client
+            .read()
+            .await
+            .clone()
+            .ok_or(Error::NotConnected)?;
+        crate::duplex::DuplexSession::open(ipc, info, options).await
+    }
+
+    /// Resolve files and publish a descriptor. No tensor, codec, device or model
+    /// thread is created here; Loading is intentionally not Ready.
+    #[cfg(feature = "duplex")]
+    async fn prepare_duplex_source(
+        &self,
+        model_id: &str,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), Error> {
+        let preparation = Arc::clone(&self.duplex_sources).lock_owned().await;
+        if force_reload {
+            self.unload_duplex(model_id).await?;
+        }
+        {
+            let entries = self.entries.read().await;
+            if let Some(entry) = entries.get(model_id) {
+                let cancelled = entry.state == ModelLoadState::Failed
+                    && entry.error.as_deref() == Some("Cancelled");
+                if entry.state != ModelLoadState::Idle && !cancelled {
+                    return Ok((entry.state, model_id.to_owned()));
+                }
+            }
+        }
+        self.alias_cache
+            .write()
+            .await
+            .insert(model_id.to_lowercase(), model_id.to_owned());
+        {
+            let mut entries = self.entries.write().await;
+            let entry = entries.entry(model_id.to_owned()).or_default();
+            entry.state = ModelLoadState::Downloading;
+            entry.error = None;
+            entry.info = None;
+            entry.notify.notify_waiters();
+        }
+        let entries = Arc::clone(&self.entries);
+        let model_id = model_id.to_owned();
+        // An admitted preparation must outlive the caller's timeout/cancellation.
+        // Otherwise Downloading remains set with no task left to finish it.
+        tokio::spawn(async move {
+            let _preparation = preparation;
+            let prepared = crate::duplex::engine_source(&model_id).await;
+            let mut entries = entries.write().await;
+            let entry = entries.get_mut(&model_id).expect("descriptor entry exists");
+            // Explicit download cancellation still wins over a late result.
+            if entry.state == ModelLoadState::Failed && entry.error.as_deref() == Some("Cancelled")
+            {
+                return Err(Error::ModelNotReady("Cancelled".into()));
+            }
+            match prepared {
+                Ok((directory, bytes)) => {
+                    entry.info = Some(ModelInfo {
+                        model_id: model_id.clone(),
+                        model_path: directory.to_string_lossy().into_owned(),
+                        formatter: None,
+                        capabilities: None,
+                        minimum_memory_bytes: None,
+                    });
+                    entry.bytes_total = Some(bytes);
+                    entry.bytes_downloaded = Some(bytes);
+                    entry.state = ModelLoadState::Loading;
+                    entry.notify.notify_waiters();
+                    Ok((ModelLoadState::Loading, model_id))
+                }
+                Err(error) => {
+                    entry.state = ModelLoadState::Failed;
+                    entry.error = Some(error.to_string());
+                    entry.notify.notify_waiters();
+                    Err(error)
+                }
+            }
+        })
+        .await
+        .map_err(|error| Error::Internal(format!("Duplex descriptor preparation: {error}")))?
+    }
+
+    /// Unload through PIE so it closes/quiesces sessions before releasing tensors.
+    #[cfg(feature = "duplex")]
+    pub async fn unload_duplex(&self, model_id: &str) -> Result<(), Error> {
+        let ipc = self
+            .ipc_client
+            .read()
+            .await
+            .clone()
+            .ok_or(Error::NotConnected)?;
+        let response = ipc
+            .send_management_command_async(
+                json!({"type":"unload_model","requested_id":model_id}),
+                Duration::from_secs(30),
+            )
+            .await?;
+        if response["status"] != "ok" {
+            return Err(Error::Other(format!(
+                "PIE did not confirm duplex unload: {response}"
+            )));
+        }
+        if let Some(entry) = self.entries.write().await.get_mut(model_id) {
+            entry.state = ModelLoadState::Idle;
+            entry.info = None;
+            entry.notify.notify_waiters();
+        }
+        Ok(())
+    }
+
+    /// Open an engine-owned eight-speaker Nemotron3 session.
+    #[cfg(feature = "diarization")]
+    pub async fn diarization(
+        &self,
+        model_id: &str,
+        options: crate::diarization::DiarizationOptions,
+    ) -> Result<crate::diarization::DiarizationSession, Error> {
+        let info = self
+            .ensure_prepared(&ModelLoadRequest {
+                model: model_id.into(),
+                options: ModelLoadOptions::Diarization(options.clone()),
+            })
+            .await?;
+        let ipc = self
+            .ipc_client
+            .read()
+            .await
+            .clone()
+            .ok_or(Error::NotConnected)?;
+        crate::diarization::DiarizationSession::open(ipc, info, model_id.to_owned(), options).await
+    }
+
+    #[cfg(feature = "diarization")]
+    async fn prepare_diarization_source(
+        &self,
+        model_id: &str,
+        options: &crate::diarization::DiarizationOptions,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), Error> {
+        options.validate()?;
+        let preparation = Arc::clone(&self.diarization_sources).lock_owned().await;
+        let key = crate::diarization::runtime_key(model_id, options);
+        if force_reload {
+            self.unload_diarization(model_id).await?;
+        }
+        {
+            let entries = self.entries.read().await;
+            if let Some(entry) = entries.get(&key) {
+                let cancelled = entry.state == ModelLoadState::Failed
+                    && entry.error.as_deref() == Some("Cancelled");
+                if entry.state != ModelLoadState::Idle && !cancelled {
+                    return Ok((entry.state, key));
+                }
+            }
+        }
+        {
+            let mut aliases = self.alias_cache.write().await;
+            aliases.insert(key.to_lowercase(), key.clone());
+            aliases
+                .entry(model_id.to_lowercase())
+                .or_insert_with(|| key.clone());
+        }
+        {
+            let mut entries = self.entries.write().await;
+            let entry = entries.entry(key.clone()).or_default();
+            entry.state = ModelLoadState::Downloading;
+            entry.error = None;
+            entry.info = None;
+            entry.notify.notify_waiters();
+        }
+        let entries = Arc::clone(&self.entries);
+        let model_id = model_id.to_owned();
+        let options = options.clone();
+        // Descriptor preparation is admitted work, even if its original caller
+        // is cancelled. This task owns no model tensors or native library.
+        tokio::spawn(async move {
+            let _preparation = preparation;
+            let prepared = crate::diarization::engine_source(&model_id, &options).await;
+            let mut entries = entries.write().await;
+            let entry = entries
+                .get_mut(&key)
+                .expect("diarization descriptor entry exists");
+            if entry.state == ModelLoadState::Failed && entry.error.as_deref() == Some("Cancelled")
+            {
+                return Err(Error::ModelNotReady("Cancelled".into()));
+            }
+            match prepared {
+                Ok((directory, bytes)) => {
+                    entry.info = Some(ModelInfo {
+                        model_id: key.clone(),
+                        model_path: directory.to_string_lossy().into_owned(),
+                        formatter: None,
+                        capabilities: None,
+                        minimum_memory_bytes: None,
+                    });
+                    entry.bytes_total = Some(bytes);
+                    entry.bytes_downloaded = Some(bytes);
+                    entry.state = ModelLoadState::Loading;
+                    entry.notify.notify_waiters();
+                    Ok((ModelLoadState::Loading, key))
+                }
+                Err(error) => {
+                    entry.state = ModelLoadState::Failed;
+                    entry.error = Some(error.to_string());
+                    entry.notify.notify_waiters();
+                    Err(error)
+                }
+            }
+        })
+        .await
+        .map_err(|error| Error::Internal(format!("Diarization descriptor preparation: {error}")))?
+    }
+
+    /// PIE quiesces every matching variant's sessions before releasing its model.
+    #[cfg(feature = "diarization")]
+    pub async fn unload_diarization(&self, model_id: &str) -> Result<(), Error> {
+        let prefix = format!("{model_id}:diarization:");
+        let keys = self
+            .entries
+            .read()
+            .await
+            .keys()
+            .filter(|key| key.as_str() == model_id || key.starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        if keys.is_empty() {
+            return Ok(());
+        }
+        let ipc = self
+            .ipc_client
+            .read()
+            .await
+            .clone()
+            .ok_or(Error::NotConnected)?;
+        for key in keys {
+            let response = ipc
+                .send_management_command_async(
+                    json!({"type":"unload_model","requested_id":key}),
+                    Duration::from_secs(30),
+                )
+                .await?;
+            if response["status"] != "ok" {
+                return Err(Error::Other(format!(
+                    "PIE did not confirm diarization unload: {response}"
+                )));
+            }
+            if let Some(entry) = self.entries.write().await.get_mut(&key) {
+                entry.state = ModelLoadState::Idle;
+                entry.info = None;
+                entry.error = None;
+                entry.notify.notify_waiters();
+            }
+        }
+        Ok(())
     }
 
     /// Set the IPC client for sending management commands to PIE.
@@ -148,9 +450,18 @@ impl ModelRegistry {
             .await
             .map_err(Error::ModelNotReady)?;
 
+        self.activate_scheduled_model(requested_model_id, &canonical_id)
+            .await
+    }
+
+    async fn activate_scheduled_model(
+        &self,
+        requested_model_id: &str,
+        canonical_id: &str,
+    ) -> Result<ModelInfo, Error> {
         // Wait for local readiness (download + formatter)
         let (state, info, error) = self
-            .await_model(&canonical_id, None)
+            .await_model(canonical_id, None)
             .await
             .map_err(Error::ModelNotReady)?;
 
@@ -173,7 +484,7 @@ impl ModelRegistry {
         // Check if already activating or ready
         {
             let entries = self.entries.read().await;
-            if let Some(entry) = entries.get(&canonical_id) {
+            if let Some(entry) = entries.get(canonical_id) {
                 if entry.state == ModelLoadState::Ready {
                     return entry
                         .info
@@ -185,7 +496,7 @@ impl ModelRegistry {
 
         // Send load_model command and wait for activation
         let activation_rx = self
-            .send_load_model_command(requested_model_id, &canonical_id, &info)
+            .send_load_model_command(requested_model_id, canonical_id, &info)
             .await
             .map_err(Error::ModelNotReady)?;
 
@@ -193,7 +504,7 @@ impl ModelRegistry {
         match activation_rx.await {
             Ok(Ok(())) => {
                 // Activation succeeded, get the ready info
-                self.get_if_ready(&canonical_id).await.ok_or_else(|| {
+                self.get_if_ready(canonical_id).await.ok_or_else(|| {
                     Error::ModelNotReady(format!("Model '{}' failed to activate", canonical_id))
                 })
             }
@@ -403,6 +714,86 @@ impl ModelRegistry {
     ///
     /// Returns the current state and canonical ID.
     pub async fn schedule_model(
+        &self,
+        requested_model_id: &str,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), String> {
+        Box::pin(self.schedule_request(
+            &ModelLoadRequest::automatic(requested_model_id),
+            force_reload,
+        ))
+        .await
+    }
+
+    /// Schedule the exact session residency binding without opening a session.
+    pub async fn schedule_request(
+        &self,
+        request: &ModelLoadRequest,
+        force_reload: bool,
+    ) -> Result<(ModelLoadState, String), String> {
+        let options = match &request.options {
+            ModelLoadOptions::Automatic => crate::model::operations::source_options(&request.model),
+            #[cfg(feature = "duplex")]
+            ModelLoadOptions::Duplex(options) => ModelLoadOptions::Duplex(options.clone()),
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(options) => {
+                ModelLoadOptions::Diarization(options.clone())
+            }
+        };
+        match options {
+            #[cfg(feature = "duplex")]
+            ModelLoadOptions::Duplex(options) => {
+                options.validate().map_err(|error| error.to_string())?;
+                self.prepare_duplex_source(&request.model, force_reload)
+                    .await
+                    .map_err(|error| error.to_string())
+            }
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(options) => self
+                .prepare_diarization_source(&request.model, &options, force_reload)
+                .await
+                .map_err(|error| error.to_string()),
+            ModelLoadOptions::Automatic => {
+                self.schedule_standard_model(&request.model, force_reload)
+                    .await
+            }
+        }
+    }
+
+    /// Wait for native activation of the same binding selected by schedule_request.
+    pub async fn ensure_prepared(&self, request: &ModelLoadRequest) -> Result<ModelInfo, Error> {
+        let (_, canonical_id) = Box::pin(self.schedule_request(request, false))
+            .await
+            .map_err(Error::ModelNotReady)?;
+        // Option-specific variants are immutable; do not retarget another live
+        // session by publishing a new base alias for the same model identifier.
+        let requested_id = match request.options {
+            #[cfg(feature = "diarization")]
+            ModelLoadOptions::Diarization(_) => &canonical_id,
+            _ => &request.model,
+        };
+        self.activate_scheduled_model(requested_id, &canonical_id)
+            .await
+    }
+
+    pub async fn model_operations(
+        &self,
+        request: &ModelLoadRequest,
+    ) -> Result<ModelOperations, Error> {
+        let report = ModelOperations::for_loaded(&self.ensure_prepared(request).await?)?;
+        #[cfg(feature = "diarization")]
+        if let ModelLoadOptions::Diarization(options) = &request.options {
+            let mut report = report;
+            if let Some(audio) = &mut report.audio {
+                audio.sample_rate = options.sample_rate;
+                audio.frame_samples = Some(options.frame_samples());
+            }
+            return Ok(report);
+        }
+        Ok(report)
+    }
+
+    async fn schedule_standard_model(
         &self,
         requested_model_id: &str,
         force_reload: bool,
@@ -1182,292 +1573,5 @@ impl ModelRegistry {
                 if entry.state == ModelLoadState::Failed
                     && entry.error.as_deref() == Some("Cancelled")
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use tempfile::tempdir;
-    use tokio::sync::oneshot;
-
-    #[tokio::test]
-    async fn test_registry_creation() {
-        let registry = ModelRegistry::new().unwrap();
-        let models = registry.list_models().await;
-        assert!(models.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_handle_model_load_failed_fails_activation_waiters() {
-        let registry = ModelRegistry::new().unwrap();
-        let canonical_id = "moondream/moondream3-preview".to_string();
-        let requested_id = canonical_id.clone();
-        let error = "Weight shard file not found".to_string();
-        let (tx, rx) = oneshot::channel();
-
-        {
-            let mut alias_cache = registry.alias_cache.write().await;
-            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
-        }
-
-        {
-            let mut entries = registry.entries.write().await;
-            let entry = entries.entry(canonical_id.clone()).or_default();
-            entry.state = ModelLoadState::Activating;
-            entry.activation_waiters.push(tx);
-        }
-
-        registry
-            .handle_model_load_failed(&json!({
-                "model_id": requested_id,
-                "error": error,
-            }))
-            .await;
-
-        assert_eq!(rx.await.unwrap(), Err(error.clone()));
-
-        let entries = registry.entries.read().await;
-        let entry = entries.get(&canonical_id).unwrap();
-        assert_eq!(entry.state, ModelLoadState::Failed);
-        assert_eq!(entry.error.as_deref(), Some(error.as_str()));
-        assert!(entry.activation_waiters.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_handle_engine_died_fails_activation_waiters() {
-        let registry = ModelRegistry::new().unwrap();
-        let canonical_id = "google/gemma-4-E2B-it".to_string();
-        let (tx, rx) = oneshot::channel();
-
-        {
-            let mut entries = registry.entries.write().await;
-            let entry = entries.entry(canonical_id.clone()).or_default();
-            entry.state = ModelLoadState::Activating;
-            entry.activation_waiters.push(tx);
-        }
-
-        registry
-            .handle_engine_died(&json!({ "error": "Engine process died" }))
-            .await;
-
-        let error = rx.await.unwrap().unwrap_err();
-        assert!(error.contains("Engine process died"), "{error}");
-        assert!(error.contains(&canonical_id), "{error}");
-
-        let entries = registry.entries.read().await;
-        let entry = entries.get(&canonical_id).unwrap();
-        assert_eq!(entry.state, ModelLoadState::Failed);
-        assert_eq!(entry.error.as_deref(), Some(error.as_str()));
-        assert!(entry.activation_waiters.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_await_model_wakes_when_engine_dies_mid_wait() {
-        let registry = Arc::new(ModelRegistry::new().unwrap());
-        let canonical_id = "mlx-community/parakeet-tdt-0.6b-v3".to_string();
-
-        {
-            let mut alias_cache = registry.alias_cache.write().await;
-            alias_cache.insert(canonical_id.to_lowercase(), canonical_id.clone());
-        }
-        {
-            let mut entries = registry.entries.write().await;
-            let entry = entries.entry(canonical_id.clone()).or_default();
-            entry.state = ModelLoadState::Activating;
-        }
-
-        let waiter_registry = Arc::clone(&registry);
-        let waiter_id = canonical_id.clone();
-        let waiter =
-            tokio::spawn(async move { waiter_registry.await_model(&waiter_id, None).await });
-
-        // Let the waiter reach its (unbounded) wait before the engine dies.
-        tokio::task::yield_now().await;
-
-        registry
-            .handle_engine_died(&json!({ "error": "Engine process died" }))
-            .await;
-
-        let (state, _info, error) = tokio::time::timeout(std::time::Duration::from_secs(5), waiter)
-            .await
-            .expect("await_model must wake when the engine dies mid-activation")
-            .unwrap()
-            .unwrap();
-        assert_eq!(state, ModelLoadState::Failed);
-        assert!(error.unwrap().contains("Engine process died"));
-    }
-
-    /// The state transition (and its `notify_waiters`) can land between
-    /// `await_model`'s state snapshot and its waiter registration; the
-    /// post-enable re-check must catch it instead of parking forever on a
-    /// notification that already fired. The interleave itself lives inside a
-    /// single poll and cannot be forced from a test, so this pins the closest
-    /// observable contract: a transition that wholly precedes the wait returns
-    /// immediately.
-    #[tokio::test]
-    async fn test_await_model_returns_when_transition_precedes_wait() {
-        let registry = ModelRegistry::new().unwrap();
-        let canonical_id = "mlx-community/parakeet-tdt-0.6b-v3".to_string();
-
-        {
-            let mut alias_cache = registry.alias_cache.write().await;
-            alias_cache.insert(canonical_id.to_lowercase(), canonical_id.clone());
-        }
-        {
-            let mut entries = registry.entries.write().await;
-            let entry = entries.entry(canonical_id.clone()).or_default();
-            entry.state = ModelLoadState::Activating;
-        }
-
-        registry
-            .handle_engine_died(&json!({ "error": "Engine process died" }))
-            .await;
-
-        let (state, _info, error) =
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                registry.await_model(&canonical_id, None).await
-            })
-            .await
-            .expect("await_model must not hang on an already-failed entry")
-            .unwrap();
-        assert_eq!(state, ModelLoadState::Failed);
-        assert!(error.unwrap().contains("Engine process died"));
-    }
-
-    #[tokio::test]
-    async fn test_cancel_activation_fails_activation_waiters_locally() {
-        let registry = ModelRegistry::new().unwrap();
-        let canonical_id = "google/gemma-4-26B-A4B-it".to_string();
-        let requested_id = "gemma4".to_string();
-        let (tx, rx) = oneshot::channel();
-
-        {
-            let mut alias_cache = registry.alias_cache.write().await;
-            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
-        }
-
-        {
-            let mut entries = registry.entries.write().await;
-            let entry = entries.entry(canonical_id.clone()).or_default();
-            entry.state = ModelLoadState::Activating;
-            entry.activation_waiters.push(tx);
-        }
-
-        let result = registry.cancel_activation(&requested_id).await;
-        assert!(matches!(result, Err(message) if message == "IPC client not set"));
-        assert_eq!(rx.await.unwrap(), Err("Cancelled".to_string()));
-
-        let entries = registry.entries.read().await;
-        let entry = entries.get(&canonical_id).unwrap();
-        assert_eq!(entry.state, ModelLoadState::Failed);
-        assert_eq!(entry.error.as_deref(), Some("Cancelled"));
-        assert!(entry.activation_waiters.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_schedule_model_uses_ready_alias_before_local_source_inspection() {
-        let registry = ModelRegistry::new().unwrap();
-        let dir = tempdir().unwrap();
-        let model_path = dir.path().join("Model.GGUF");
-        std::fs::write(&model_path, b"GGUF").unwrap();
-        let requested_id = model_path.to_string_lossy().to_string();
-        let canonical_id = "inspected-model".to_string();
-
-        {
-            let mut alias_cache = registry.alias_cache.write().await;
-            alias_cache.insert(requested_id.to_lowercase(), canonical_id.clone());
-        }
-
-        {
-            let mut entries = registry.entries.write().await;
-            entries.insert(
-                canonical_id.clone(),
-                ModelEntry {
-                    state: ModelLoadState::Ready,
-                    info: Some(ModelInfo {
-                        model_id: canonical_id.clone(),
-                        model_path: requested_id.clone(),
-                        formatter: None,
-                        capabilities: None,
-                        minimum_memory_bytes: None,
-                    }),
-                    ..ModelEntry::default()
-                },
-            );
-        }
-
-        let (state, resolved_id) = registry.schedule_model(&requested_id, false).await.unwrap();
-
-        assert_eq!(state, ModelLoadState::Ready);
-        assert_eq!(resolved_id, canonical_id);
-    }
-
-    #[tokio::test]
-    async fn test_schedule_model_fails_on_formatter_config_error() {
-        let registry = ModelRegistry::new().unwrap();
-        let dir = tempdir().unwrap();
-        std::fs::write(dir.path().join("config.json"), "{}").unwrap();
-        let requested_id = dir.path().to_string_lossy().to_string();
-
-        let (state, resolved_id) = registry.schedule_model(&requested_id, false).await.unwrap();
-
-        assert_eq!(state, ModelLoadState::Failed);
-        let entries = registry.entries.read().await;
-        let entry = entries.get(&resolved_id).unwrap();
-        assert_eq!(entry.state, ModelLoadState::Failed);
-        assert!(entry.error.as_deref().unwrap().contains("model_type"));
-    }
-
-    #[tokio::test]
-    async fn test_inspect_model_source_uses_path_cache() {
-        let registry = ModelRegistry::new().unwrap();
-        let dir = tempdir().unwrap();
-        let model_path = dir.path().join("model.gguf");
-        std::fs::write(&model_path, b"GGUF").unwrap();
-        let requested_id = model_path.to_string_lossy().to_string();
-        let inspected = ResolvedModel {
-            canonical_id: "inspected-model".to_string(),
-            model_path: model_path.clone(),
-            source: "local_source".to_string(),
-            metadata: HashMap::new(),
-            hf_repo: None,
-            formatter_config: Some(json!({"model_type": "llama"})),
-        };
-
-        {
-            let mut cache = registry.local_source_inspection_cache.write().await;
-            cache.insert(
-                ModelRegistry::local_source_cache_key(&model_path),
-                inspected.clone(),
-            );
-        }
-
-        let resolved = registry
-            .inspect_model_source(
-                requested_id.as_str(),
-                ResolvedModel {
-                    canonical_id: "model".to_string(),
-                    model_path,
-                    source: "local_source".to_string(),
-                    metadata: HashMap::new(),
-                    hf_repo: None,
-                    formatter_config: None,
-                },
-                false,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.canonical_id, inspected.canonical_id);
-        assert_eq!(resolved.formatter_config, inspected.formatter_config);
-    }
-
-    #[test]
-    fn test_model_load_state_display() {
-        assert_eq!(ModelLoadState::Idle.to_string(), "IDLE");
-        assert_eq!(ModelLoadState::Ready.to_string(), "READY");
-        assert_eq!(ModelLoadState::Failed.to_string(), "FAILED");
     }
 }

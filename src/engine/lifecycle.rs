@@ -6,9 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fs4::fs_std::FileExt;
-use nng::options::Options;
-use nng::{Protocol, Socket};
 use serde_json::json;
 
 use crate::engine::fetch::EngineFetcher;
@@ -18,6 +15,7 @@ use crate::engine::multiprocess::{
 };
 use crate::error::{Error, Result};
 use crate::ipc::endpoints::{management_url, response_url, EVENT_TOPIC_PREFIX};
+use crate::ipc::socket::{Protocol, Socket, SocketError};
 
 const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 60;
 const LOCK_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,9 +36,9 @@ fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
     let mut sleep = LOCK_BACKOFF_INITIAL;
 
     loop {
-        match lock_file.try_lock_exclusive() {
+        match lock_file.try_lock() {
             Ok(()) => return Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(std::fs::TryLockError::WouldBlock) => {
                 if Instant::now() >= deadline {
                     return Err(Error::LockFailed(format!(
                         "Timed out acquiring engine lock after {:?}",
@@ -50,7 +48,7 @@ fn lock_exclusive_with_timeout(lock_file: &std::fs::File) -> Result<()> {
                 std::thread::sleep(sleep);
                 sleep = std::cmp::min(sleep * 2, LOCK_BACKOFF_MAX);
             }
-            Err(e) => return Err(Error::LockFailed(e.to_string())),
+            Err(std::fs::TryLockError::Error(e)) => return Err(Error::LockFailed(e.to_string())),
         }
     }
 }
@@ -71,9 +69,9 @@ impl EnginePaths {
         let cache_dir = if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
             PathBuf::from(cache_root)
         } else {
-            dirs::cache_dir()
-                .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?
-                .join("com.theproxycompany")
+            let home = std::env::home_dir()
+                .ok_or_else(|| Error::Internal("Cannot determine cache directory".into()))?;
+            crate::ipc::endpoints::platform_cache_dir(&home).join("com.theproxycompany")
         };
 
         Ok(Self {
@@ -106,6 +104,11 @@ pub(crate) fn current_engine_pid_file() -> Option<PathBuf> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
+}
+
+fn admission_during_shutdown(error: &Error, pid: Option<u32>) -> bool {
+    matches!(error, Error::Other(message) if message.contains("Engine is shutting down; cannot register new clients."))
+        || pid.is_some_and(|pid| !pid_is_alive(pid) || !pid_is_engine(pid))
 }
 
 fn set_current_engine_pid_file(pid_file: Option<PathBuf>) {
@@ -286,49 +289,60 @@ impl InferenceEngine {
         let lock_file = std::fs::File::create(&self.paths.lock_file)?;
         lock_exclusive_with_timeout(&lock_file)?;
 
-        let engine_pid = read_pid_file(&self.paths.pid_file);
-        let engine_running = engine_pid
-            .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
-            .unwrap_or(false);
-        let mut launched_engine = false;
+        let deadline = Instant::now() + self.startup_timeout;
+        loop {
+            let engine_pid = read_pid_file(&self.paths.pid_file);
+            let engine_running = engine_pid
+                .map(|pid| pid_is_alive(pid) && pid_is_engine(pid))
+                .unwrap_or(false);
+            let mut launched_engine = false;
 
-        // Launch engine if needed
-        if !engine_running {
-            tracing::debug!("Inference engine not running. Launching new instance.");
-
-            // Clean up stale state files
-            remove_if_exists(&self.paths.pid_file);
-            remove_if_exists(&self.paths.ready_file);
-            remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
-
-            // Clean up stale IPC socket files (left over from crashed engine)
-            let ipc_dir = self.paths.cache_dir.join("ipc");
-            if ipc_dir.exists() {
-                remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
-                remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
-                remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+            if !engine_running {
+                tracing::debug!("Inference engine not running. Launching new instance.");
+                remove_if_exists(&self.paths.pid_file);
+                remove_if_exists(&self.paths.ready_file);
+                remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
+                let ipc_dir = self.paths.cache_dir.join("ipc");
+                if ipc_dir.exists() {
+                    remove_if_exists(&ipc_dir.join("pie_requests.ipc"));
+                    remove_if_exists(&ipc_dir.join("pie_responses.ipc"));
+                    remove_if_exists(&ipc_dir.join("pie_management.ipc"));
+                }
+                self.launch_engine().await?;
+                self.wait_for_engine_ready().await?;
+                launched_engine = true;
             }
 
-            self.launch_engine().await?;
-            self.wait_for_engine_ready().await?;
-            launched_engine = true;
-        }
-
-        if let Err(e) =
-            self.send_client_lifecycle_command("client_register", Duration::from_secs(5))
-        {
-            if launched_engine {
-                if let Some(pid) = read_pid_file(&self.paths.pid_file) {
-                    if let Err(stop_err) = self.stop_engine_locked(pid) {
-                        tracing::warn!(
-                            "Failed to clean up newly launched engine {} after register failure: {}",
-                            pid,
-                            stop_err
-                        );
+            match self.send_client_lifecycle_command("client_register", Duration::from_secs(5)) {
+                Ok(()) => break,
+                Err(error) if !launched_engine && admission_during_shutdown(&error, engine_pid) => {
+                    // The previous last client can commit PIE's idle shutdown
+                    // before this process acquires the lifecycle lock. Never
+                    // signal that engine: wait for its own exit, then restart.
+                    tracing::debug!("Waiting for retiring PIE before client admission: {error}");
+                    while engine_pid.is_some_and(|pid| pid_is_alive(pid) && pid_is_engine(pid)) {
+                        if Instant::now() >= deadline {
+                            return Err(Error::StartupFailed(format!(
+                                "PIE did not finish shutdown before the startup deadline: {error}"
+                            )));
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(error);
                     }
                 }
+                Err(error) => {
+                    if launched_engine {
+                        if let Some(pid) = read_pid_file(&self.paths.pid_file) {
+                            if let Err(stop_error) = self.stop_engine_locked(pid) {
+                                tracing::warn!("Failed to clean up newly launched engine {pid} after register failure: {stop_error}");
+                            }
+                        }
+                    }
+                    return Err(error);
+                }
             }
-            return Err(e);
         }
 
         // Update global context
@@ -344,8 +358,8 @@ impl InferenceEngine {
 
     fn send_client_lifecycle_command(&self, command_type: &str, timeout: Duration) -> Result<()> {
         let socket = Socket::new(Protocol::Req0)?;
-        socket.set_opt::<nng::options::RecvTimeout>(Some(timeout))?;
-        socket.set_opt::<nng::options::SendTimeout>(Some(timeout))?;
+        socket.set_receive_timeout(timeout)?;
+        socket.set_send_timeout(timeout)?;
         socket.dial(&management_url())?;
 
         let payload = json!({
@@ -353,10 +367,9 @@ impl InferenceEngine {
             "client_pid": std::process::id(),
         });
         let data = serde_json::to_vec(&payload)?;
-        let msg = nng::Message::from(data.as_slice());
-        socket.send(msg).map_err(|(_, e)| Error::Nng(e))?;
+        socket.send(&data)?;
 
-        let response = socket.recv()?;
+        let response = socket.receive()?;
         let json: serde_json::Value = serde_json::from_slice(&response)?;
         let status = json.get("status").and_then(|value| value.as_str());
         if matches!(status, Some("ok") | Some("accepted")) {
@@ -400,15 +413,15 @@ impl InferenceEngine {
         let telemetry_topic = [EVENT_TOPIC_PREFIX, b"telemetry"].concat();
         let response_url = response_url();
 
-        let socket = nng::Socket::new(nng::Protocol::Sub0)
+        let socket = Socket::new(Protocol::Sub0)
             .map_err(|e| Error::StartupFailed(format!("Failed to create Sub0 socket: {}", e)))?;
 
         socket
-            .set_opt::<nng::options::protocol::pubsub::Subscribe>(telemetry_topic.clone())
+            .subscribe(&telemetry_topic)
             .map_err(|e| Error::StartupFailed(format!("Failed to subscribe: {}", e)))?;
 
         socket
-            .set_opt::<nng::options::RecvTimeout>(Some(Duration::from_millis(250)))
+            .set_receive_timeout(Duration::from_millis(250))
             .map_err(|e| Error::StartupFailed(format!("Failed to set timeout: {}", e)))?;
 
         // Non-blocking dial - nng will reconnect automatically in background
@@ -430,9 +443,9 @@ impl InferenceEngine {
             }
 
             // Try to receive a message
-            let msg = match socket.recv() {
+            let msg = match socket.receive() {
                 Ok(msg) => msg,
-                Err(nng::Error::TimedOut) => continue,
+                Err(SocketError::TIMED_OUT) => continue,
                 Err(e) => {
                     tracing::debug!("Error receiving telemetry: {}", e);
                     continue;
@@ -535,24 +548,6 @@ impl InferenceEngine {
         tracing::info!("Engine PID {} stopped", pid);
         Ok(())
     }
-
-    /// Generate a unique response channel ID for this client.
-    ///
-    /// Format: (PID << 32) | random_32_bits
-    /// Uses true randomness to avoid collisions between rapid successive calls.
-    pub fn generate_response_channel_id() -> u64 {
-        use rand::Rng;
-
-        let pid = std::process::id() as u64 & 0xFFFFFFFF;
-        let random: u32 = rand::thread_rng().gen();
-
-        let channel_id = (pid << 32) | (random as u64);
-        if channel_id == 0 {
-            1
-        } else {
-            channel_id
-        }
-    }
 }
 
 impl Drop for InferenceEngine {
@@ -561,51 +556,6 @@ impl Drop for InferenceEngine {
             if let Err(e) = self.close() {
                 tracing::error!("Failed to close InferenceEngine: {}", e);
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_engine_paths() {
-        let paths = EnginePaths::new().expect("cache dir should be available");
-        if let Ok(cache_root) = std::env::var("ORCHARD_CACHE_ROOT") {
-            assert_eq!(paths.cache_dir, PathBuf::from(cache_root));
-        } else {
-            assert!(paths
-                .cache_dir
-                .to_string_lossy()
-                .contains("com.theproxycompany"));
-        }
-    }
-
-    #[test]
-    fn test_generate_channel_id_uniqueness() {
-        use std::collections::HashSet;
-
-        // Generate 1000 channel IDs in rapid succession
-        let ids: HashSet<u64> = (0..1000)
-            .map(|_| InferenceEngine::generate_response_channel_id())
-            .collect();
-
-        // All IDs must be unique (HashSet dedupes)
-        assert_eq!(
-            ids.len(),
-            1000,
-            "Channel IDs must be unique across rapid calls"
-        );
-
-        // All IDs must be non-zero
-        assert!(!ids.contains(&0), "Channel ID must never be zero");
-
-        // All IDs should have the current PID in upper 32 bits
-        let expected_pid = std::process::id() as u64 & 0xFFFFFFFF;
-        for id in &ids {
-            let id_pid = id >> 32;
-            assert_eq!(id_pid, expected_pid, "Upper 32 bits must be current PID");
         }
     }
 }

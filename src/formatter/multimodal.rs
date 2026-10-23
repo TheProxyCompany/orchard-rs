@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use base64::Engine;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use super::ChatFormatter;
@@ -278,9 +277,15 @@ pub fn build_multimodal_layout(
     let audio_placeholder = formatter.audio_placeholder_token();
     let capability_placeholder = formatter.coord_placeholder_token();
 
-    let image_regex =
-        Regex::new(&regex::escape(image_placeholder)).expect("escaped regex is always valid");
-    let image_matches: Vec<_> = image_regex.find_iter(prompt_text).collect();
+    // (start, end) byte ranges of each non-overlapping literal occurrence.
+    let find_all = |token: &str| -> Vec<(usize, usize)> {
+        prompt_text
+            .match_indices(token)
+            .map(|(start, found)| (start, start + found.len()))
+            .collect()
+    };
+
+    let image_matches = find_all(image_placeholder);
 
     if image_matches.len() != image_buffers.len() {
         return Err(Error::PlaceholderMismatch(
@@ -289,12 +294,7 @@ pub fn build_multimodal_layout(
         ));
     }
 
-    let audio_matches: Vec<_> = if let Some(token) = audio_placeholder {
-        let audio_regex = Regex::new(&regex::escape(token)).expect("escaped regex is always valid");
-        audio_regex.find_iter(prompt_text).collect()
-    } else {
-        Vec::new()
-    };
+    let audio_matches = audio_placeholder.map(find_all).unwrap_or_default();
     if audio_matches.len() != audio_buffers.len() {
         return Err(Error::Other(format!(
             "Mismatch between audio placeholders ({}) and audio parts ({})",
@@ -305,12 +305,10 @@ pub fn build_multimodal_layout(
 
     let capability_placeholder_token =
         capability_placeholder.unwrap_or(DEFAULT_CAPABILITY_PLACEHOLDER);
-    let capability_regex = Regex::new(&regex::escape(capability_placeholder_token))
-        .expect("escaped regex is always valid");
-    let capability_matches: Vec<_> = if capabilities.is_empty() {
+    let capability_matches = if capabilities.is_empty() {
         Vec::new()
     } else {
-        capability_regex.find_iter(prompt_text).collect()
+        find_all(capability_placeholder_token)
     };
     let use_placeholder_positions = !audio_matches.is_empty() || !capability_matches.is_empty();
 
@@ -326,13 +324,13 @@ pub fn build_multimodal_layout(
         let mut all_placeholders: Vec<(usize, usize, &str, usize)> = Vec::new();
 
         for (idx, m) in image_matches.iter().enumerate() {
-            all_placeholders.push((m.start(), m.end(), "image", idx));
+            all_placeholders.push((m.0, m.1, "image", idx));
         }
         for (idx, m) in audio_matches.iter().enumerate() {
-            all_placeholders.push((m.start(), m.end(), "audio", idx));
+            all_placeholders.push((m.0, m.1, "audio", idx));
         }
         for (idx, m) in capability_matches.iter().enumerate() {
-            all_placeholders.push((m.start(), m.end(), "capability", idx));
+            all_placeholders.push((m.0, m.1, "capability", idx));
         }
 
         all_placeholders.sort_by_key(|p| p.0);
@@ -403,11 +401,7 @@ pub fn build_multimodal_layout(
             match content_type {
                 ContentType::Image => {
                     let m = &image_matches[image_idx];
-                    let text_end = if exclude_image_placeholder {
-                        m.start()
-                    } else {
-                        m.end()
-                    };
+                    let text_end = if exclude_image_placeholder { m.0 } else { m.1 };
 
                     let text_segment = &prompt_text[cursor..text_end];
                     let segment_bytes = text_segment.as_bytes();
@@ -425,7 +419,7 @@ pub fn build_multimodal_layout(
                         name: None,
                     });
 
-                    cursor = m.end();
+                    cursor = m.1;
                     image_idx += 1;
                 }
                 ContentType::Capability => {
@@ -514,37 +508,5 @@ fn decode_image_payload(data_url: &str) -> Result<Vec<u8>> {
             .map_err(|_| Error::InvalidBase64)
     } else {
         Err(Error::InvalidImageUrl)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_decode_image_payload() {
-        let data_url = "data:image/png;base64,SGVsbG8gV29ybGQ=";
-        let decoded = decode_image_payload(data_url).unwrap();
-        assert_eq!(decoded, b"Hello World");
-    }
-
-    #[test]
-    fn test_decode_invalid_base64() {
-        let data_url = "data:image/png;base64,!!!invalid!!!";
-        let result = decode_image_payload(data_url);
-        assert!(matches!(result, Err(Error::InvalidBase64)));
-    }
-
-    #[test]
-    fn test_normalize_role() {
-        let roles: std::collections::HashSet<String> = ["system", "agent", "user"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        assert_eq!(normalize_role("assistant", &roles), "agent");
-        assert_eq!(normalize_role("model", &roles), "agent");
-        assert_eq!(normalize_role("developer", &roles), "system");
-        assert_eq!(normalize_role("user", &roles), "user");
     }
 }

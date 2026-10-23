@@ -12,9 +12,22 @@ categories = ["api-bindings", "asynchronous"]
 name = "orchard"
 crate-type = ["lib"]
 
+[features]
+default = []
+diarization = []
+# Stateful audio is inferred by PIE; these flags expose the lightweight IPC client.
+duplex = []
+# Compatibility alias for callers that previously selected an SDK Metal backend.
+duplex-metal = ["duplex"]
+
+[[bin]]
+name = "orchard-duplex"
+path = "src/bin/duplex.rs"
+required-features = ["duplex"]
+
 [dependencies]
-# NNG for IPC communication with PIE
-nng = "1.0"
+# nng, the IPC transport PIE speaks
+nng-sys = "0.4.0-v2pre.3"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "macros", "process", "fs", "io-util", "time"] }
@@ -41,41 +54,37 @@ hf-hub = { version = "0.5", features = ["tokio"] }
 minijinja = { version = "2", features = ["json", "preserve_order"] }
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 
-# File locking for cross-process coordination
-fs4 = "0.9"
-
 # Base64 decoding for multimodal content
 base64 = "0.22"
 
-# Regex for placeholder parsing
-regex = "1"
-
 # Utilities
 thiserror = "2"
-dirs = "5"
 tracing = "0.1.44"
-futures = "0.3"
-async-trait = "0.1"
 rand = "0.8"
-hex = "0.4"
 
 # Unix system calls (Unix only)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
+hound = "3.5"
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
 ctor = "0.2"
+futures = "0.3"
 
 [build-dependencies]
 serde_json = "1"
 
-# nng-sys 1.4.0-rc.0 bundles nng C 1.4.0, which carries upstream bug #1523: a
-# use-after-free race between sub0_recv_cb and sub0_ctx_cancel on SUB sockets
-# with short receive timeouts — our 10ms recv loop rolls it ~100x/second and
-# segfaulted Proxy.app after ~25h (nni_list_remove, NULL deref). The vendored
-# copy backports upstream e623deda (nni_aio_completions). Workspaces that
-# consume orchard-rs must repeat this [patch] at their own root.
-[patch.crates-io]
-nng-sys = { path = "vendor/nng-sys" }
+[[example]]
+name = "diarization_acceptance"
+required-features = ["diarization"]
+
+[[bin]]
+name = "orchard-diarize"
+path = "src/bin/diarize.rs"
+required-features = ["diarization"]
+
+[[example]]
+name = "media_concurrency"
+required-features = ["duplex", "diarization"]
