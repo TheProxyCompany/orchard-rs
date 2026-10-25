@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use orchard::{ChatResult, Client, InferenceEngine, ModelRegistry, SamplingParams};
 
@@ -194,8 +194,6 @@ async fn test_shared_prefix_turn_by_turn_benchmark() {
     });
 
     crate::fixture::ensure_test_namespace();
-    InferenceEngine::shutdown(Duration::from_secs(30))
-        .expect("failed to stop existing engine before benchmark");
     let _engine = InferenceEngine::new().await.expect("failed to start PIE");
     let registry = Arc::new(ModelRegistry::new().expect("failed to create model registry"));
     let client = Client::connect(Arc::clone(&registry))
