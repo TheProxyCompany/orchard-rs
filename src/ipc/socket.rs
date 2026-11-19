@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::ops::Deref;
 use std::ptr;
-use std::sync::Once;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use nng_sys::*;
@@ -45,11 +45,17 @@ fn check(code: std::ffi::c_int) -> Result<(), SocketError> {
     }
 }
 
-fn initialize() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| unsafe {
-        nng_init(ptr::null());
-    });
+fn initialize() -> Result<(), SocketError> {
+    static INITIALIZED: Mutex<bool> = Mutex::new(false);
+    let mut initialized = INITIALIZED.lock().unwrap_or_else(|error| error.into_inner());
+    if !*initialized {
+        let result = unsafe { nng_init(ptr::null()) };
+        if result.0 != 0 {
+            return Err(SocketError(result));
+        }
+        *initialized = true;
+    }
+    Ok(())
 }
 
 fn url(text: &str) -> Result<CString, SocketError> {
@@ -69,7 +75,7 @@ unsafe impl Sync for Socket {}
 
 impl Socket {
     pub fn new(protocol: Protocol) -> Result<Self, SocketError> {
-        initialize();
+        initialize()?;
         let mut socket = nng_socket::default();
         let open = match protocol {
             Protocol::Push0 => nng_push0_open,

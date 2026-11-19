@@ -27,7 +27,7 @@ required-features = ["duplex"]
 
 [dependencies]
 # nng, the IPC transport PIE speaks
-nng-sys = "0.4.0-v2pre.3"
+nng-sys = "0.4.0"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "macros", "process", "fs", "io-util", "time"] }
