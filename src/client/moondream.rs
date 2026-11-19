@@ -143,6 +143,25 @@ pub struct MoondreamClient {
     capability_token_ids: HashMap<String, i32>,
 }
 
+async fn next_task_delta(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<crate::ipc::client::ResponseDelta>,
+    task: &str,
+) -> Result<crate::ipc::client::ResponseDelta> {
+    let delta = rx.recv().await.ok_or_else(|| {
+        Error::Other(format!(
+            "Moondream {task} stream ended before its final delta"
+        ))
+    })?;
+    if let Some(message) = delta
+        .error
+        .clone()
+        .or_else(|| super::delta_error_message(&delta))
+    {
+        return Err(Error::Other(message));
+    }
+    Ok(delta)
+}
+
 impl MoondreamClient {
     /// Create a new MoondreamClient.
     ///
@@ -328,7 +347,8 @@ impl MoondreamClient {
         let answer_id = *self.capability_token_ids.get("answer").unwrap_or(&3);
         let placeholder_id = *self.capability_token_ids.get("placeholder").unwrap_or(&8);
 
-        while let Some(delta) = rx.recv().await {
+        loop {
+            let delta = next_task_delta(&mut rx, "query").await?;
             let client_delta = ClientDelta::from(delta);
             let mut append_content = true;
 
@@ -529,10 +549,8 @@ impl MoondreamClient {
             elapsed_ms: 0.0,
             first_token_ms: None,
         };
-        while let Some(delta) = rx.recv().await {
-            if let Some(error) = &delta.error {
-                return Err(Error::Other(error.clone()));
-            }
+        loop {
+            let delta = next_task_delta(&mut rx, "caption").await?;
             observation.prompt_tokens = observation
                 .prompt_tokens
                 .max(delta.prompt_token_count.unwrap_or(0));
@@ -555,9 +573,6 @@ impl MoondreamClient {
                 return Ok(observation);
             }
         }
-        Err(Error::Other(
-            "Moondream caption stream ended before its final delta".into(),
-        ))
     }
 
     /// Find points where an object appears in an image.
@@ -602,7 +617,8 @@ impl MoondreamClient {
 
         let mut coords: Vec<f64> = Vec::new();
 
-        while let Some(delta) = rx.recv().await {
+        loop {
+            let delta = next_task_delta(&mut rx, "point").await?;
             let client_delta = ClientDelta::from(delta);
 
             // Check for coordinate modal decoder output
@@ -678,7 +694,8 @@ impl MoondreamClient {
         let mut coords: Vec<f64> = Vec::new();
         let mut sizes: Vec<(f64, f64)> = Vec::new();
 
-        while let Some(delta) = rx.recv().await {
+        loop {
+            let delta = next_task_delta(&mut rx, "detect").await?;
             let client_delta = ClientDelta::from(delta);
 
             if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
@@ -764,7 +781,8 @@ impl MoondreamClient {
 
         let mut coords: Vec<f64> = Vec::new();
 
-        while let Some(delta) = rx.recv().await {
+        loop {
+            let delta = next_task_delta(&mut rx, "detect_gaze").await?;
             let client_delta = ClientDelta::from(delta);
 
             if let (Some(ref decoder_id), Some(ref bytes_b64)) = (
@@ -793,5 +811,45 @@ impl MoondreamClient {
         } else {
             Ok(GazeResult { gaze: None })
         }
+    }
+}
+
+#[cfg(test)]
+mod stream_status_tests {
+    use super::*;
+    use crate::ipc::client::ResponseDelta;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn carries_the_native_failure_and_requires_a_terminal_delta() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(ResponseDelta {
+            is_final_delta: true,
+            finish_reason: Some("error".into()),
+            error: Some("workspace refused".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        drop(tx);
+        assert!(
+            matches!(next_task_delta(&mut rx, "point").await, Err(Error::Other(message)) if message == "workspace refused")
+        );
+        assert!(
+            matches!(next_task_delta(&mut rx, "point").await, Err(Error::Other(message)) if message.contains("before its final delta"))
+        );
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(ResponseDelta {
+            is_final_delta: true,
+            finish_reason: Some("stop".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(
+            next_task_delta(&mut rx, "point")
+                .await
+                .unwrap()
+                .is_final_delta
+        );
     }
 }
