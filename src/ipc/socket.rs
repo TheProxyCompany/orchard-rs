@@ -47,7 +47,9 @@ fn check(code: std::ffi::c_int) -> Result<(), SocketError> {
 
 fn initialize() -> Result<(), SocketError> {
     static INITIALIZED: Mutex<bool> = Mutex::new(false);
-    let mut initialized = INITIALIZED.lock().unwrap_or_else(|error| error.into_inner());
+    let mut initialized = INITIALIZED
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     if !*initialized {
         let result = unsafe { nng_init(ptr::null()) };
         if result.0 != 0 {
