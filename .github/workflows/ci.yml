@@ -111,5 +111,6 @@ jobs:
           name: orchard-rs-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.ORCHARD_TEST_ROOT }}/*.log
+            ${{ env.ORCHARD_TEST_ROOT }}/golden-diffs/
             ${{ runner.temp }}/orchard-rs-buckshot.log
           retention-days: 7

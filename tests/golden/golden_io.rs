@@ -168,6 +168,10 @@ pub(crate) fn assert_or_record(
 
     let diagnostics = std::env::var_os("ORCHARD_GOLDEN_DIFF_DIR")
         .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("ORCHARD_CACHE_ROOT")
+                .map(|root| PathBuf::from(root).join("golden-diffs"))
+        })
         .unwrap_or_else(|| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-output/golden-diffs")
         });
