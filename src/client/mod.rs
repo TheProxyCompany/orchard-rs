@@ -11,7 +11,6 @@ mod vision;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
@@ -407,30 +406,10 @@ impl Client {
 
     /// Cancel an in-flight PIE request by request id.
     pub async fn cancel_request(&self, request_id: u64) -> Result<()> {
-        let response = self
-            .ipc
-            .send_management_command_async(
-                serde_json::json!({
-                    "type": "cancel_request",
-                    "request_id": request_id,
-                    "response_channel_id": self.ipc.response_channel_id(),
-                }),
-                Duration::from_secs(2),
-            )
-            .await?;
-
-        let status = response
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if matches!(status, "ok" | "accepted") {
-            Ok(())
-        } else {
-            Err(Error::Other(format!(
-                "Cancel request {} failed: {}",
-                request_id, response
-            )))
-        }
+        let ipc = Arc::clone(&self.ipc);
+        tokio::task::spawn_blocking(move || ipc.cancel_request(request_id))
+            .await
+            .map_err(|error| Error::Internal(format!("Task join error: {error}")))?
     }
 
     /// Cancel an in-progress PIE model load or activation.
