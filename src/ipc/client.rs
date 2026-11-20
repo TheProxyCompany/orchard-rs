@@ -383,12 +383,7 @@ impl IPCClient {
         let (tx, rx) = mpsc::unbounded_channel();
         let remaining_finals = prompts
             .iter()
-            .map(|prompt| {
-                let num_candidates = prompt.num_candidates.max(1);
-                let best_of = prompt.best_of.unwrap_or(num_candidates).max(1);
-                let final_candidates = prompt.final_candidates.unwrap_or(best_of).max(1);
-                final_candidates as usize
-            })
+            .map(PromptPayload::generated_candidate_count)
             .sum::<usize>()
             .max(1);
 
@@ -1077,6 +1072,40 @@ fn rand_u64() -> u64 {
 #[cfg(test)]
 mod response_cancellation_tests {
     use super::*;
+
+    #[test]
+    fn batch_registration_counts_generated_candidates_before_ranking() {
+        let mut client = IPCClient::new();
+        let address = format!("inproc://ranked-fanout-{}", client.response_channel_id());
+        let sink = Socket::new(Protocol::Pull0).unwrap();
+        sink.listen(&address).unwrap();
+        let sender = Socket::new(Protocol::Push0).unwrap();
+        sender.dial(&address).unwrap();
+        client.request_socket = Some(sender);
+
+        let prompt = |n, best_of, final_candidates| PromptPayload {
+            prompt: "test".into(),
+            num_candidates: n,
+            best_of,
+            final_candidates,
+            ..Default::default()
+        };
+        let prompts = [
+            prompt(2, Some(4), Some(2)),
+            prompt(3, None, None),
+            prompt(1, Some(2), Some(4)),
+            prompt(3, Some(0), Some(0)),
+        ];
+        let (batch_size, _receiver) = client
+            .send_batch_request(11, "model", "/model", &prompts)
+            .unwrap();
+        assert_eq!(batch_size, 4);
+        sink.receive().unwrap();
+        assert_eq!(
+            client.active_requests.lock().unwrap()[&11].remaining_finals,
+            4 + 3 + 4 + 3
+        );
+    }
 
     #[test]
     fn dropping_the_runtime_cancels_only_an_unfinished_response() {

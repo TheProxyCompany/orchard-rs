@@ -536,6 +536,7 @@ impl Client {
             stream,
             "Dispatching chat request to PIE"
         );
+        let generated_candidates = prompt_payload.generated_candidate_count();
         let (_batch_size, rx) = self.ipc.send_batch_request(
             request_id,
             request_model_id,
@@ -546,14 +547,13 @@ impl Client {
         if stream {
             Ok(ChatResult::Stream(rx))
         } else {
-            // Determine how many candidates to expect
-            let best_of = params.best_of.unwrap_or(params.n).max(1) as usize;
             let final_candidates = params.final_candidates.unwrap_or(params.n).max(1) as usize;
 
             // Collect deltas grouped by candidate_index (matching Python's gather_non_streaming_batch_response)
-            let mut candidate_states: Vec<CandidateState> =
-                (0..best_of).map(|_| CandidateState::default()).collect();
-            let mut remaining_sequences = best_of;
+            let mut candidate_states: Vec<CandidateState> = (0..generated_candidates)
+                .map(|_| CandidateState::default())
+                .collect();
+            let mut remaining_sequences = generated_candidates;
             let mut rx = rx;
 
             while remaining_sequences > 0 {
@@ -605,7 +605,8 @@ impl Client {
                 candidate_states.iter().map(|c| c.completion_tokens).sum();
 
             // Score and select best candidates (matching Python logic)
-            let selected = select_best_candidates(candidate_states, best_of, final_candidates);
+            let selected =
+                select_best_candidates(candidate_states, generated_candidates, final_candidates);
 
             Ok(ChatResult::Complete(build_response_from_candidates(
                 selected,
