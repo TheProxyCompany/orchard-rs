@@ -50,5 +50,26 @@ mod golden_path;
 
 #[ctor::ctor]
 fn preload_modal_models() {
+    // Each async test opens a reactor. Like orchard-py's joint fixture, raise
+    // this test process's soft descriptor limit before starting the volley.
+    #[cfg(unix)]
+    {
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } == 0 {
+            let desired = limit.rlim_max.min(10_240);
+            if limit.rlim_cur < desired {
+                limit.rlim_cur = desired;
+                if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) } != 0 {
+                    eprintln!(
+                        "Unable to raise the buckshot descriptor limit: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
+            }
+        }
+    }
     fixture::PRELOAD_MODAL_MODELS.store(true, std::sync::atomic::Ordering::Relaxed);
 }

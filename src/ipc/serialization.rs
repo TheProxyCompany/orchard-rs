@@ -88,6 +88,16 @@ pub struct PromptPayload {
     pub prefix_cache: Option<bool>,
 }
 
+impl PromptPayload {
+    pub(crate) fn generated_candidate_count(&self) -> usize {
+        let best_of = self
+            .best_of
+            .filter(|&count| count > 0)
+            .unwrap_or(self.num_candidates.max(1));
+        best_of.max(self.final_candidates.unwrap_or(best_of)) as usize
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolCallFormat {
     #[serde(default)]

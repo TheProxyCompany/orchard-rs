@@ -2475,6 +2475,7 @@ impl Client {
             &[prompt_payload],
         )?;
 
+        let pending = self.ipc.pending_response(request_id);
         let generation = GenerationRecord {
             model: request_model_id.to_string(),
             thinking: reasoning_flag,
@@ -2482,15 +2483,22 @@ impl Client {
         };
         if request.stream {
             let (event_tx, event_rx) = mpsc::channel(256);
-            tokio::spawn(stream_response_events(
+            let forwarding = stream_response_events(
                 stream,
-                event_tx,
+                event_tx.clone(),
                 generate_response_id(),
                 model_id.to_string(),
                 request.stream_tokens,
                 generation,
                 info.releases_held_text(),
-            ));
+            );
+            tokio::spawn(async move {
+                let _pending = pending;
+                tokio::select! {
+                    _ = event_tx.closed() => {}
+                    _ = forwarding => {}
+                }
+            });
             Ok(ResponsesResult::Stream {
                 request_id,
                 events: event_rx,

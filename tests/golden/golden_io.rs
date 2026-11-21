@@ -168,6 +168,10 @@ pub(crate) fn assert_or_record(
 
     let diagnostics = std::env::var_os("ORCHARD_GOLDEN_DIFF_DIR")
         .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("ORCHARD_CACHE_ROOT")
+                .map(|root| PathBuf::from(root).join("golden-diffs"))
+        })
         .unwrap_or_else(|| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/test-output/golden-diffs")
         });
@@ -180,19 +184,32 @@ pub(crate) fn assert_or_record(
     .unwrap_or_else(|error| panic!("{error}"));
 }
 
-fn compare_strictly(
+pub(super) fn compare_strictly(
     recorded: &Value,
     live: &[Value],
     label: &str,
     diagnostics: &Path,
 ) -> Result<(), String> {
-    if recorded.as_array().is_some_and(|expected| expected == live) {
-        return Ok(());
-    }
-
-    let recorded_events = recorded
+    let entries = recorded
         .as_array()
         .ok_or_else(|| format!("golden turn {label} is not an array"))?;
+    let recorded_events = if entries.first().is_some_and(Value::is_array) {
+        // As in the Python matrix, each alternative is one entire verified stream.
+        for variant in entries {
+            let events = variant
+                .as_array()
+                .ok_or_else(|| format!("invalid event-stream variant for golden turn {label}"))?;
+            if events == live {
+                return Ok(());
+            }
+        }
+        entries[0].as_array().expect("first variant was an array")
+    } else {
+        if entries == live {
+            return Ok(());
+        }
+        entries
+    };
     let mut detail = if recorded_events.len() != live.len() {
         format!(
             "event count: golden={} live={}",

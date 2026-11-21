@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -169,6 +169,7 @@ pub struct IPCClient {
     response_channel_id: u64,
     request_id_counter: AtomicU64,
     active_requests: Arc<Mutex<HashMap<u64, ActiveRequest>>>,
+    abandoned_requests: Mutex<VecDeque<u64>>,
     listener_handle: Option<JoinHandle<()>>,
     should_stop: Arc<AtomicBool>,
     /// Set by the listener when the engine process dies or the response
@@ -183,6 +184,17 @@ struct ActiveRequest {
     remaining_finals: usize,
 }
 
+pub(crate) struct PendingResponse {
+    ipc: Arc<IPCClient>,
+    request_id: u64,
+}
+
+impl Drop for PendingResponse {
+    fn drop(&mut self) {
+        self.ipc.abandon_request(self.request_id);
+    }
+}
+
 impl IPCClient {
     /// Create a new IPC client (not connected).
     pub fn new() -> Self {
@@ -193,6 +205,7 @@ impl IPCClient {
             response_channel_id: rand_u64(),
             request_id_counter: AtomicU64::new(0),
             active_requests: Arc::new(Mutex::new(HashMap::new())),
+            abandoned_requests: Mutex::new(VecDeque::new()),
             listener_handle: None,
             should_stop: Arc::new(AtomicBool::new(false)),
             engine_dead: Arc::new(AtomicBool::new(false)),
@@ -370,12 +383,7 @@ impl IPCClient {
         let (tx, rx) = mpsc::unbounded_channel();
         let remaining_finals = prompts
             .iter()
-            .map(|prompt| {
-                let num_candidates = prompt.num_candidates.max(1);
-                let best_of = prompt.best_of.unwrap_or(num_candidates).max(1);
-                let final_candidates = prompt.final_candidates.unwrap_or(best_of).max(1);
-                final_candidates as usize
-            })
+            .map(PromptPayload::generated_candidate_count)
             .sum::<usize>()
             .max(1);
 
@@ -661,6 +669,80 @@ impl IPCClient {
             Some("pull_v1"),
         )?;
         socket.send(&payload).map_err(Error::from)
+    }
+
+    pub(crate) fn cancel_request(&self, request_id: u64) -> Result<()> {
+        let command = serde_json::json!({
+            "type": "cancel_request",
+            "request_id": request_id,
+            "response_channel_id": self.response_channel_id(),
+        });
+        let response = blocking_management_exchange(
+            &self.management_socket,
+            &self.engine_dead,
+            self.engine_pid_file.as_deref(),
+            &command,
+            Duration::from_secs(2),
+        )?;
+        let status = response
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if matches!(status, "ok" | "accepted") {
+            Ok(())
+        } else {
+            Err(Error::Other(format!(
+                "Cancel request {} failed: {}",
+                request_id, response
+            )))
+        }
+    }
+
+    pub(crate) fn pending_response(self: &Arc<Self>, request_id: u64) -> PendingResponse {
+        PendingResponse {
+            ipc: Arc::clone(self),
+            request_id,
+        }
+    }
+
+    fn abandon_request(self: &Arc<Self>, request_id: u64) {
+        let active = self
+            .active_requests
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&request_id);
+        if active.is_none() {
+            return;
+        }
+        // Management exchanges are blocking and serialized on the shared socket.
+        // Keep one cleanup thread until this burst of abandoned requests is drained.
+        let mut queued = self
+            .abandoned_requests
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        queued.push_back(request_id);
+        if queued.len() > 1 {
+            return;
+        }
+        let ipc = Arc::clone(self);
+        let worker = thread::Builder::new().name("orchard-cancel-request".into()).spawn(move || {
+            let mut current = request_id;
+            loop {
+                if let Err(error) = ipc.cancel_request(current) {
+                    tracing::warn!(request_id = current, %error, "Failed to cancel abandoned request");
+                }
+                let mut queued = ipc.abandoned_requests.lock().unwrap_or_else(|error| error.into_inner());
+                queued.pop_front();
+                match queued.front() {
+                    Some(next) => current = *next,
+                    None => return,
+                }
+            }
+        });
+        if let Err(error) = worker {
+            queued.pop_back();
+            tracing::warn!(request_id, %error, "Failed to start request cancellation");
+        }
     }
 
     /// Start the response listener thread.
@@ -984,5 +1066,96 @@ fn rand_u64() -> u64 {
         1
     } else {
         channel_id
+    }
+}
+
+#[cfg(test)]
+mod response_cancellation_tests {
+    use super::*;
+
+    #[test]
+    fn batch_registration_counts_generated_candidates_before_ranking() {
+        let mut client = IPCClient::new();
+        let address = format!("inproc://ranked-fanout-{}", client.response_channel_id());
+        let sink = Socket::new(Protocol::Pull0).unwrap();
+        sink.listen(&address).unwrap();
+        let sender = Socket::new(Protocol::Push0).unwrap();
+        sender.dial(&address).unwrap();
+        client.request_socket = Some(sender);
+
+        let prompt = |n, best_of, final_candidates| PromptPayload {
+            prompt: "test".into(),
+            num_candidates: n,
+            best_of,
+            final_candidates,
+            ..Default::default()
+        };
+        let prompts = [
+            prompt(2, Some(4), Some(2)),
+            prompt(3, None, None),
+            prompt(1, Some(2), Some(4)),
+            prompt(3, Some(0), Some(0)),
+        ];
+        let (batch_size, _receiver) = client
+            .send_batch_request(11, "model", "/model", &prompts)
+            .unwrap();
+        assert_eq!(batch_size, 4);
+        sink.receive().unwrap();
+        assert_eq!(
+            client.active_requests.lock().unwrap()[&11].remaining_finals,
+            4 + 3 + 4 + 3
+        );
+    }
+
+    #[test]
+    fn dropping_the_runtime_cancels_only_an_unfinished_response() {
+        let client = Arc::new(IPCClient::new());
+        let address = format!(
+            "inproc://responses-cancellation-{}",
+            client.response_channel_id()
+        );
+        let server = Socket::new(Protocol::Rep0).unwrap();
+        server.listen(&address).unwrap();
+        let socket = Socket::new(Protocol::Req0).unwrap();
+        socket.dial(&address).unwrap();
+        *client.management_socket.lock().unwrap() = Some(socket);
+
+        let (sender, _receiver) = mpsc::unbounded_channel();
+        client.active_requests.lock().unwrap().insert(
+            1,
+            ActiveRequest {
+                sender,
+                remaining_finals: 1,
+            },
+        );
+        let caller = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        caller.block_on(async {
+            let pending = client.pending_response(1);
+            tokio::spawn(async move {
+                let _pending = pending;
+                std::future::pending::<()>().await;
+            });
+            tokio::task::yield_now().await;
+        });
+        drop(caller);
+        server.set_receive_timeout(Duration::from_secs(2)).unwrap();
+        let message = server.receive().unwrap();
+        let command: Value = serde_json::from_slice(message.as_slice()).unwrap();
+        assert_eq!(
+            command,
+            serde_json::json!({
+                "type": "cancel_request", "request_id": 1, "response_channel_id": client.response_channel_id(),
+            })
+        );
+        server.send(br#"{"status":"accepted"}"#).unwrap();
+
+        // The response listener already removed a request that delivered a final.
+        drop(client.pending_response(2));
+        server
+            .set_receive_timeout(Duration::from_millis(50))
+            .unwrap();
+        assert!(matches!(server.receive(), Err(SocketError::TIMED_OUT)));
     }
 }
