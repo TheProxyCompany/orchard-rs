@@ -42,16 +42,29 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
                 let mut candidate_contents: HashMap<u32, Vec<String>> = HashMap::new();
                 let mut finish_reasons: HashMap<u32, String> = HashMap::new();
 
+                let mut sequence_ids = HashMap::new();
                 while let Some(delta) = stream.recv().await {
-                    let index = delta.candidate_index.unwrap_or(0);
+                    let index = delta.candidate_index.expect("missing candidate index");
+                    assert!(index < batch_size as u32);
+                    let id = delta.sequence_id.expect("missing sequence ID");
+                    assert_eq!(*sequence_ids.entry(index).or_insert(id), id);
+                    assert!(
+                        !finish_reasons.contains_key(&index),
+                        "delta after terminal for {model_id} candidate {index}"
+                    );
                     if let Some(content) = &delta.content {
                         candidate_contents
                             .entry(index)
                             .or_default()
                             .push(content.clone());
                     }
-                    if let Some(reason) = &delta.finish_reason {
-                        finish_reasons.insert(index, reason.clone());
+                    if delta.is_final_delta {
+                        finish_reasons.insert(
+                            index,
+                            delta
+                                .finish_reason
+                                .expect("terminal without a finish reason"),
+                        );
                     }
                 }
 
@@ -72,6 +85,14 @@ async fn run_multi_candidate_determinism(batch_size: i32) {
                     })
                     .collect();
 
+                assert_eq!(
+                    sequence_ids
+                        .values()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len(),
+                    batch_size as usize,
+                    "each candidate must have its own sequence ID for {model_id}"
+                );
                 let first_content = &reconstructed[0];
                 println!(
                     "{} first content:\n{}\n seen {} candidates",
@@ -231,6 +252,78 @@ async fn test_multi_candidate_determinism_n8() {
 #[tokio::test]
 async fn test_multi_candidate_determinism_n16() {
     run_multi_candidate_determinism(16).await;
+}
+
+/// Each prompt has n=1 and enters PIE as its own physical decode row.
+#[tokio::test]
+async fn test_sixteen_independent_greedy_rows_agree() {
+    let fixture = get_fixture().await;
+    fanout(ALL_MODELS.iter().map(|&model_id| async move {
+        let prompt = vec![make_message(
+            "user",
+            "Provide one friendly sentence introducing yourself.",
+        )];
+        let params = SamplingParams {
+            max_tokens: 8,
+            temperature: 0.0,
+            deterministic: true,
+            n: 1,
+            reasoning: Some(false),
+            prefix_cache: Some(false),
+            ..Default::default()
+        };
+        let orchard::BatchChatResult::Stream(mut stream) = fixture
+            .client
+            .achat_batch(model_id, vec![prompt; 16], params, true)
+            .await
+            .expect("independent batch failed")
+        else {
+            panic!("expected an independent-row stream");
+        };
+        let mut tokens = vec![Vec::new(); 16];
+        let mut terminals = vec![None; 16];
+        let mut ids = vec![None; 16];
+        while let Some(delta) = stream.recv().await {
+            let row = delta.prompt_index.expect("missing prompt index") as usize;
+            assert_eq!(delta.candidate_index, Some(0));
+            let id = delta.sequence_id.expect("missing sequence ID");
+            assert_eq!(*ids[row].get_or_insert(id), id);
+            assert!(
+                terminals[row].is_none(),
+                "delta after terminal on {model_id} row {row}"
+            );
+            tokens[row].extend(delta.tokens);
+            if delta.is_final {
+                let reason = delta
+                    .finish_reason
+                    .expect("terminal without a finish reason");
+                assert!(
+                    matches!(reason.to_lowercase().as_str(), "stop" | "length"),
+                    "{model_id}: {reason}"
+                );
+                terminals[row] = Some(reason);
+            }
+        }
+        assert_eq!(
+            ids.into_iter()
+                .flatten()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            16
+        );
+        assert!(terminals[0].is_some() && !tokens[0].is_empty());
+        for row in 1..16 {
+            assert_eq!(
+                tokens[row], tokens[0],
+                "token drift on {model_id} row {row}"
+            );
+            assert_eq!(
+                terminals[row], terminals[0],
+                "finish reason drift on {model_id} row {row}"
+            );
+        }
+    }))
+    .await;
 }
 
 /// Test sequential request determinism - same request multiple times should yield identical results.
