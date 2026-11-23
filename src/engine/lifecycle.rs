@@ -172,6 +172,10 @@ impl InferenceEngine {
             return Ok(());
         }
 
+        // Reference changes and PID registration share the startup lock.
+        let lock_file = std::fs::File::create(&self.paths.lock_file)?;
+        lock_exclusive_with_timeout(&lock_file)?;
+
         let should_release = if self.lease_active {
             let prev = GLOBAL_CONTEXT.ref_count.fetch_sub(1, Ordering::SeqCst);
             prev == 1 // Was the last reference
@@ -184,11 +188,6 @@ impl InferenceEngine {
             self.lease_active = false;
             return Ok(());
         }
-
-        // Acquire lock while checking the shared engine PID file so we don't race
-        // a concurrent startup or explicit shutdown in another process.
-        let lock_file = std::fs::File::create(&self.paths.lock_file)?;
-        lock_exclusive_with_timeout(&lock_file)?;
 
         let engine_pid = read_pid_file(&self.paths.pid_file);
         let engine_running = engine_pid.map(pid_is_alive).unwrap_or(false);
@@ -209,12 +208,11 @@ impl InferenceEngine {
             remove_if_exists(&self.paths.cache_dir.join("engine.refs"));
         }
 
-        drop(lock_file);
-
         self.lease_active = false;
         self.closed = true;
         GLOBAL_CONTEXT.initialized.store(false, Ordering::SeqCst);
         set_current_engine_pid_file(None);
+        drop(lock_file);
 
         Ok(())
     }

@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use ctor::dtor;
 use futures::future::try_join_all;
@@ -11,12 +11,7 @@ use orchard::{Client, InferenceEngine, ModelRegistry};
 
 #[dtor]
 fn cleanup_engine() {
-    // Only clean up an engine this test process actually used. If the fixture
-    // never initialized, no test touched an engine -- and without the
-    // fixture's namespace setup a shutdown here would target the machine's
-    // default engine namespace, killing an engine that belongs to someone
-    // else (e.g. Proxy.app's Grand Central engine).
-    if matches!(FIXTURE.get(), Some(Ok(_))) {
+    if let Some(Ok(fixture)) = FIXTURE.get() {
         if let Some(start) = VOLLEY_START.get() {
             // Mirrors orchard-py's BUCKSHOT wall print: volley only, engine
             // setup and shutdown excluded, so the harnesses compare directly.
@@ -25,7 +20,12 @@ fn cleanup_engine() {
                 start.elapsed().as_secs_f64()
             );
         }
-        let _ = InferenceEngine::shutdown(Duration::from_secs(30));
+        fixture
+            .engine
+            .lock()
+            .expect("Engine lease lock poisoned")
+            .close()
+            .expect("Failed to release the test client's engine lease");
     }
 }
 
@@ -219,7 +219,7 @@ where
 
 pub(crate) struct TestFixture {
     _runtime: tokio::runtime::Runtime,
-    _engine: InferenceEngine,
+    engine: Mutex<InferenceEngine>,
     pub(crate) client: Client,
     pub(crate) registry: Arc<ModelRegistry>,
 }
@@ -227,13 +227,8 @@ pub(crate) struct TestFixture {
 static FIXTURE: OnceLock<Result<TestFixture, String>> = OnceLock::new();
 static VOLLEY_START: OnceLock<Instant> = OnceLock::new();
 
-/// Tests must never operate in the default engine namespace: that namespace
-/// belongs to whatever long-lived engine this machine runs (Proxy.app's
-/// Grand Central engine in production), and test-side engine shutdowns
-/// force-stop the namespace's engine. Unless the caller pinned a namespace
-/// explicitly (pie_cycle.sh exports ORCHARD_CACHE_ROOT), give this test
-/// process a private one before anything resolves engine paths or IPC
-/// endpoints from the environment.
+/// The cycle supplies a namespace shared by both clients. A standalone
+/// test process gets its own before any engine paths are resolved.
 pub(crate) fn ensure_test_namespace() {
     if std::env::var_os("ORCHARD_CACHE_ROOT").is_none() {
         // Keep the name short: the engine listens on a unix socket at
@@ -261,13 +256,6 @@ pub(crate) fn ensure_test_namespace() {
 fn init_fixture() -> TestFixture {
     ensure_test_namespace();
 
-    if let Err(e) = InferenceEngine::shutdown(Duration::from_secs(30)) {
-        panic!(
-            "Failed to stop existing engine before starting tests: {}",
-            e
-        );
-    }
-
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -278,6 +266,17 @@ fn init_fixture() -> TestFixture {
         let engine = InferenceEngine::new()
             .await
             .expect("Failed to start engine");
+        if let Some(expected_pid) = std::env::var_os("ORCHARD_TEST_ENGINE_PID") {
+            let namespace = std::env::var_os("ORCHARD_CACHE_ROOT").unwrap();
+            let actual_pid =
+                std::fs::read_to_string(std::path::Path::new(&namespace).join("engine.pid"))
+                    .expect("The cycle's engine PID file is missing");
+            assert_eq!(
+                actual_pid.trim(),
+                expected_pid.to_str().expect("Invalid engine PID"),
+                "The test client replaced the cycle's engine"
+            );
+        }
         let registry = Arc::new(ModelRegistry::new().unwrap());
         let client = Client::connect(Arc::clone(&registry))
             .await
@@ -308,7 +307,7 @@ fn init_fixture() -> TestFixture {
 
     TestFixture {
         _runtime: rt,
-        _engine: engine,
+        engine: Mutex::new(engine),
         client,
         registry,
     }

@@ -318,8 +318,10 @@ fn generate_image_tool() -> Value {
 
 /// Backstop for a request that wedges (e.g. the engine hangs without dying);
 /// one stuck stream must not park the suite for hours. Fixture setup (engine
-/// start + model preload) stays outside this window.
-const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
+/// start + model preload) stays outside this window. Sized from the joint
+/// buckshot with both clients on one engine, where a stream waited 1219s for
+/// its model to get room on 64 GiB and 822s on 128 GiB (root run 45025843400).
+const STREAM_TIMEOUT: Duration = Duration::from_secs(1800);
 
 async fn run_stream(model: Model, request: ResponsesRequest) -> Turn {
     let total_token_limit = request.max_output_tokens;
