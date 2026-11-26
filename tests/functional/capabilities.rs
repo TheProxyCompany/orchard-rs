@@ -13,7 +13,7 @@ use base64::Engine;
 use orchard::client::{MoondreamClient, SpatialRef};
 use orchard::{Client, ModelRegistry, SamplingParams};
 
-use crate::fixture::get_fixture;
+use crate::fixture::{get_fixture, has_model, MOONDREAM_MODEL_ID};
 
 fn get_test_assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets")
@@ -40,6 +40,9 @@ async fn create_moondream_client(registry: Arc<ModelRegistry>) -> MoondreamClien
 /// Mirrors: test_capabilities.py::test_moondream_reasoning_grounding
 #[tokio::test]
 async fn test_moondream_reasoning_grounding() {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -114,6 +117,9 @@ async fn test_moondream_caption_long() {
 }
 
 async fn run_moondream_caption(length: &str) {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -139,6 +145,9 @@ async fn run_moondream_caption(length: &str) {
 /// Mirrors: test_capabilities.py::test_moondream_detect
 #[tokio::test]
 async fn test_moondream_detect() {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -162,6 +171,9 @@ async fn test_moondream_detect() {
 /// Mirrors: test_capabilities.py::test_moondream_query_with_spatial_refs
 #[tokio::test]
 async fn test_moondream_query_with_spatial_refs() {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -196,6 +208,9 @@ async fn test_moondream_query_with_spatial_refs() {
 /// Mirrors: test_capabilities.py::test_moondream_point
 #[tokio::test]
 async fn test_moondream_point() {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 
@@ -219,6 +234,9 @@ async fn test_moondream_point() {
 /// Mirrors: test_capabilities.py::test_moondream_detect_gaze
 #[tokio::test]
 async fn test_moondream_detect_gaze() {
+    if !has_model(MOONDREAM_MODEL_ID) {
+        return;
+    }
     let fixture = get_fixture().await;
     let moondream = create_moondream_client(Arc::clone(&fixture.registry)).await;
 

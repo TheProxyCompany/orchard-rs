@@ -11,10 +11,10 @@ use orchard::{
 use serde_json::{json, Value};
 
 use crate::fixture::{
-    fanout, get_fixture, Model, Thinking, FLUX2_MODEL_ID, GEMMA4_MODEL_ID, IDEOGRAM4_MODEL_ID,
-    MODELS, MOONDREAM_MODEL_ID, PARAKEET_MODEL_ID, QWEN3_ASR_0_6B_MODEL_ID,
-    QWEN3_ASR_1_7B_MODEL_ID, QWEN3_TTS_0_6B_MODEL_ID, QWEN3_TTS_1_7B_MODEL_ID,
-    QWEN_IMAGE_EDIT_MODEL_ID,
+    fanout, get_fixture, has_modal_model, has_model, Model, Thinking, FLUX2_MODEL_ID,
+    GEMMA4_MODEL_ID, IDEOGRAM4_MODEL_ID, MODELS, MOONDREAM_MODEL_ID, PARAKEET_MODEL_ID,
+    QWEN3_ASR_0_6B_MODEL_ID, QWEN3_ASR_1_7B_MODEL_ID, QWEN3_TTS_0_6B_MODEL_ID,
+    QWEN3_TTS_1_7B_MODEL_ID, QWEN_IMAGE_EDIT_MODEL_ID,
 };
 use crate::golden_io::{assert_or_record, drain_stream, reasoning_tokens, Turn};
 
@@ -942,6 +942,12 @@ async fn test_tool_result_grounding() {
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier() {
+    if !has_model(GEMMA4_MODEL_ID)
+        || !has_model(MOONDREAM_MODEL_ID)
+        || !has_modal_model(IDEOGRAM4_MODEL_ID)
+    {
+        return;
+    }
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -1125,6 +1131,12 @@ async fn test_image_tool_self_loop_and_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_tool_self_loop_and_blind_verifier_flux() {
+    if !has_model(GEMMA4_MODEL_ID)
+        || !has_model(MOONDREAM_MODEL_ID)
+        || !has_modal_model(FLUX2_MODEL_ID)
+    {
+        return;
+    }
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
     const USER: &str = "Use generate_image to create a simple image of one red apple centered on a plain white background. After the tool returns, tell me what object is in the generated image.";
 
@@ -1316,6 +1328,13 @@ async fn test_image_tool_self_loop_and_blind_verifier_flux() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier() {
+    if !has_model(GEMMA4_MODEL_ID)
+        || !has_model(MOONDREAM_MODEL_ID)
+        || !has_modal_model(IDEOGRAM4_MODEL_ID)
+        || !has_modal_model(QWEN_IMAGE_EDIT_MODEL_ID)
+    {
+        return;
+    }
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1496,6 +1515,13 @@ async fn test_image_edit_tool_blind_verifier() {
 
 #[tokio::test]
 async fn test_image_edit_tool_blind_verifier_flux() {
+    if !has_model(GEMMA4_MODEL_ID)
+        || !has_model(MOONDREAM_MODEL_ID)
+        || !has_modal_model(FLUX2_MODEL_ID)
+        || !has_modal_model(QWEN_IMAGE_EDIT_MODEL_ID)
+    {
+        return;
+    }
     const SYSTEM: &str = "You are a multimodal assistant with image-generation tools. Use the tool when the user asks you to create an image. After the tool result is returned, inspect the image and answer from the image.";
 
     let gemma = model_by_checkpoint(GEMMA4_MODEL_ID);
@@ -1721,6 +1747,11 @@ async fn run_audio_telephone_chain(tts_label: &str, tts_model_id: &str, phrase: 
 
 #[tokio::test]
 async fn test_audio_telephone_tts_to_speech_to_text() {
+    if !TTS_MODELS.iter().all(|(_, id)| has_modal_model(id))
+        || !STT_MODELS.iter().all(|(_, id)| has_modal_model(id))
+    {
+        return;
+    }
     // Every (TTS model, phrase) chain is independent, and within a chain the
     // three STT transcriptions share only the already-generated WAV: run all
     // twelve chains concurrently and fan each one out across the STT models.
