@@ -51,6 +51,7 @@ impl ModelOperations {
         };
         if has_formatter
             && !native("speech_to_text")
+            && !native("audio_generation")
             && profile.get("duplex").is_none()
             && profile.get("diarization").is_none()
         {
@@ -71,6 +72,13 @@ impl ModelOperations {
         if native("captioning") {
             add("vision_caption");
             result.vision_tasks = true;
+        }
+        if native("audio_generation") {
+            if let Some(tasks) = profile["audio_generation"]["tasks"].as_array() {
+                for task in tasks.iter().filter_map(Value::as_str) {
+                    add(task);
+                }
+            }
         }
         if native("speech_to_text") {
             add("audio_transcription");
@@ -130,11 +138,21 @@ impl ModelOperations {
             serde_yaml::from_str(embedded.capabilities)
                 .map_err(|error| Error::Other(format!("Invalid operation profile: {error}")))?
         };
-        Ok(Self::from_profile(
-            &profile,
-            &descriptor,
-            info.formatter.is_some(),
-        ))
+        let mut operations = Self::from_profile(&profile, &descriptor, info.formatter.is_some());
+        // Profile features alone cannot establish that the running engine has
+        // the incremental PCM implementation. Require its native load receipt.
+        if operations.supports("text_to_speech")
+            && info.capabilities.as_ref().is_some_and(|capabilities| {
+                capabilities
+                    .get("qwen3_tts_streaming")
+                    .is_some_and(|value| value.as_slice() == [1])
+            })
+        {
+            operations
+                .operations
+                .insert("text_to_speech_streaming".into());
+        }
+        Ok(operations)
     }
 }
 

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "orchard_runtime_revision": "cbd95d886c2134a5f5e3802ed1e4da1876ae54ef",
+  "pie_revision": "b7b75ae3d484bd27ae1a335cbd5c24e7f4461ab2",
+  "pie_binary_sha256": "d824c85c5d37c1d7667cbac4e2d8a6ac4f4a719794e1156d60a86089a36e6b92",
+  "component_proof_path": "Orchard Python \u2192 native IPC \u2192 actual Qwen \u2192 native artifacts",
+  "receipts": [
+    {
+      "path": "/Users/aidenmean/Proxy/work/mobile-voice-evidence/pie-streaming-after-d/receipt.json",
+      "sha256": "46b558b88c53d758d0073ff01471e2a89049c506b07763cfa12a19957faa2408"
+    },
+    {
+      "path": "/Users/aidenmean/Proxy/work/mobile-voice-evidence/pie-streaming-asr-c/receipt.json",
+      "sha256": "1882d01d1527611986fc63907901b83e1831158978442a5764430eb4f7b5eb92"
+    }
+  ],
+  "gc_rust_streaming_integration": "pending H acceptance",
+  "broader_pie_client_cycle": "attempted; blocked by unavailable unrelated Llama model",
+  "limits": [
+    "No automatic engine update in this library change.",
+    "No physical iPhone, microphone, playback or end-to-end latency claim.",
+    "Native cancellation terminal and clean next request do not by themselves establish GPU quiescence after terminal."
+  ],
+  "historical_evidence_notice": "The original receipts above predate the October 23 rebase and are not current native runtime or latency proof.",
+  "rebase_validation_2026_10_23": {
+    "production_source_revision": "8a5cacd35f87860ae292a05af58879db84c8ae3e",
+    "rebased_onto": "7e2c98af18c168ba5e7e3d054662eaca27070087",
+    "previous_pr_head": "151812074e02b7ade617bd7696cba71e4e53dc20",
+    "range_diff": "All four replayed commits have identical patches; no conflicts.",
+    "upstream_preserved": [
+      ".github/workflows/ci.yml including PIE_REVISION 67345c351efda50060e45b01a72eb25368f613e3",
+      "tests/project/fixture.rs including private namespace and failed initialization cleanup guards",
+      "Cargo.toml",
+      "Cargo.lock",
+      "profiles at 7cc44cd29c0fa13d151a5d5781113fc96684e5c8"
+    ],
+    "commands": [
+      {
+        "command": "cargo fmt --check",
+        "exit": 0
+      },
+      {
+        "command": "cargo test --locked --all-features --no-run",
+        "exit": 0
+      },
+      {
+        "command": "cargo test --locked --all-features --lib",
+        "exit": 0,
+        "tests": 0
+      },
+      {
+        "command": "cargo test --locked --all-features --test diarization_ipc",
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "command": "cargo test --locked --all-features --doc",
+        "exit": 0,
+        "tests": 0
+      },
+      {
+        "command": "cargo clippy --locked --all-targets --all-features -- -D warnings",
+        "exit": 0
+      }
+    ],
+    "lockfile": "The first unlocked Cargo run removed three upstream patch.unused metadata records (pane, grand-central, trellis). The committed lockfile was restored unchanged; all reported locked checks pass. These records contain no source/path override.",
+    "limits": [
+      "Full native model suite not run in this rebase validation; it requires the coordinated model test window and complete checkpoint access.",
+      "The diarization test uses production client IPC with a fixture engine; it is not evidence of Qwen streaming, native audio, or iPhone acceptance.",
+      "No application binary or engine installation was changed. Cargo dependency pins do not provision PIE; the consuming application must package the reviewed engine at Contents/Resources/Orchard through its normal release path and verify its native streaming load receipt.",
+      "Existing upstream CI engine selection was preserved, not executed or used as shipping validation.",
+      "No sub-800 ms result is established by compilation or these checks."
+    ]
+  }
+}

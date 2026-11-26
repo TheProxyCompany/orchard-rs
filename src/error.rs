@@ -19,6 +19,11 @@ pub enum Error {
     Timeout,
     #[error("Channel closed")]
     ChannelClosed,
+    /// The request was never admitted or its terminal response was observed.
+    #[error("Request canceled")]
+    Cancelled,
+    #[error("Audio cancellation was not confirmed")]
+    CancellationUnconfirmed,
 
     // === Serialization Errors ===
     #[error("JSON error: {0}")]
