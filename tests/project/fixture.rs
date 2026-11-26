@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
 use ctor::dtor;
@@ -63,7 +63,7 @@ pub(crate) struct Model {
     pub(crate) tools: bool,
 }
 
-pub(crate) const MODELS: &[Model] = &[
+const ALL_DEFINED_MODELS: &[Model] = &[
     Model {
         template_type: "llama3",
         checkpoint: LLAMA_MODEL_ID,
@@ -136,20 +136,51 @@ pub(crate) const MODELS: &[Model] = &[
     },
 ];
 
-pub(crate) const TEXT_MODELS: &[&str] = &[
-    LLAMA_MODEL_ID,
-    GEMMA4_MODEL_ID,
-    QWEN_MODEL_ID,
-    MOONDREAM_MODEL_ID,
-    TRINITY_MODEL_ID,
-    LFM2_5_MODEL_ID,
-    OLMO_HYBRID_MODEL_ID,
-    NEMOTRON_H_MODEL_ID,
-    GRANITE_MODEL_ID,
-    GPT_OSS_MODEL_ID,
-];
-pub(crate) const VISION_MODELS: &[&str] = &[GEMMA4_MODEL_ID, MOONDREAM_MODEL_ID];
-pub(crate) const ALL_MODELS: &[&str] = TEXT_MODELS;
+pub(crate) static MODELS: LazyLock<Vec<Model>> = LazyLock::new(|| {
+    let raw = std::env::var("ORCHARD_TEST_MODELS").unwrap_or_default();
+    let requested: Vec<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .collect();
+    if requested.is_empty() {
+        return ALL_DEFINED_MODELS.to_vec();
+    }
+    let selected: Vec<Model> = ALL_DEFINED_MODELS
+        .iter()
+        .copied()
+        .filter(|model| {
+            requested
+                .iter()
+                .any(|&token| token == model.template_type || token == model.checkpoint)
+        })
+        .collect();
+    let matched: HashSet<&str> = selected
+        .iter()
+        .flat_map(|model| [model.template_type, model.checkpoint])
+        .collect();
+    let unknown: Vec<&str> = requested
+        .iter()
+        .copied()
+        .filter(|token| !matched.contains(token))
+        .collect();
+    assert!(
+        unknown.is_empty() && !selected.is_empty(),
+        "Unsupported ORCHARD_TEST_MODELS={raw:?}; unknown={unknown:?}"
+    );
+    selected
+});
+
+pub(crate) static TEXT_MODELS: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| MODELS.iter().map(|model| model.checkpoint).collect());
+pub(crate) static VISION_MODELS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    MODELS
+        .iter()
+        .filter(|model| model.vision)
+        .map(|model| model.checkpoint)
+        .collect()
+});
+pub(crate) static ALL_MODELS: LazyLock<Vec<&'static str>> = LazyLock::new(|| TEXT_MODELS.clone());
 
 pub(crate) const IDEOGRAM4_MODEL_ID: &str = "ideogram-ai/ideogram-4-fp8";
 pub(crate) const FLUX2_MODEL_ID: &str = "black-forest-labs/FLUX.2-klein-4B";
@@ -160,22 +191,41 @@ pub(crate) const QWEN3_TTS_1_7B_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-Custo
 pub(crate) const QWEN3_ASR_0_6B_MODEL_ID: &str = "Qwen/Qwen3-ASR-0.6B";
 pub(crate) const QWEN3_ASR_1_7B_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 
-/// Modal (diffusion/TTS/STT) checkpoints the golden suite exercises.
-/// Hydrated serially at fixture init when [`PRELOAD_MODAL_MODELS`] is set:
-/// activating them lazily mid-volley — while chat decode is in flight —
-/// spikes wired memory, and concurrent hydration of several at once is the
-/// documented engine killer (same constraint orchard-py's buckshot preload
-/// obeys). Serial, up-front, on an idle GPU.
-pub(crate) const MODAL_MODELS: &[&str] = &[
-    IDEOGRAM4_MODEL_ID,
-    FLUX2_MODEL_ID,
-    QWEN_IMAGE_EDIT_MODEL_ID,
+const IMAGE_MODAL_MODELS: &[&str] = &[IDEOGRAM4_MODEL_ID, FLUX2_MODEL_ID, QWEN_IMAGE_EDIT_MODEL_ID];
+const AUDIO_MODAL_MODELS: &[&str] = &[
     QWEN3_TTS_0_6B_MODEL_ID,
     QWEN3_TTS_1_7B_MODEL_ID,
     PARAKEET_MODEL_ID,
     QWEN3_ASR_0_6B_MODEL_ID,
     QWEN3_ASR_1_7B_MODEL_ID,
 ];
+
+/// Modal (diffusion/TTS/STT) checkpoints the golden suite exercises.
+/// Hydrated serially at fixture init when [`PRELOAD_MODAL_MODELS`] is set:
+/// activating them lazily mid-volley, while chat decode is in flight,
+/// spikes wired memory, and concurrent hydration of several at once is the
+/// documented engine killer (same constraint orchard-py's buckshot preload
+/// obeys). Serial, up-front, on an idle GPU.
+pub(crate) static MODAL_MODELS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    let raw = std::env::var("ORCHARD_TEST_PIPELINE_FAMILY").unwrap_or_default();
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" => [IMAGE_MODAL_MODELS, AUDIO_MODAL_MODELS].concat(),
+        "audio" => AUDIO_MODAL_MODELS.to_vec(),
+        "image" => IMAGE_MODAL_MODELS.to_vec(),
+        "none" => Vec::new(),
+        other => panic!(
+            "Unsupported ORCHARD_TEST_PIPELINE_FAMILY={other:?}; expected audio, image, or none"
+        ),
+    }
+});
+
+pub(crate) fn has_model(checkpoint: &str) -> bool {
+    ALL_MODELS.contains(&checkpoint)
+}
+
+pub(crate) fn has_modal_model(checkpoint: &str) -> bool {
+    MODAL_MODELS.contains(&checkpoint)
+}
 
 /// Set from a `#[ctor]` in targets whose tests hit modal checkpoints
 /// (golden, buckshot) before any test runs; functional-only runs skip the
@@ -290,7 +340,7 @@ fn init_fixture() -> TestFixture {
         .expect("Failed to preload test models");
 
         if PRELOAD_MODAL_MODELS.load(Ordering::Relaxed) {
-            for &model_id in MODAL_MODELS {
+            for &model_id in MODAL_MODELS.iter() {
                 registry
                     .ensure_loaded(model_id)
                     .await
@@ -346,7 +396,7 @@ pub(crate) fn make_message(role: &str, content: &str) -> HashMap<String, serde_j
 /// A semantic answer/tool test needs the room mandatory reasoning used to receive
 /// outside the output cap. Truncation tests keep their explicit small total caps.
 pub(crate) fn requires_reasoning(model_id: &str) -> bool {
-    MODELS
+    ALL_DEFINED_MODELS
         .iter()
         .any(|model| model.checkpoint == model_id && model.thinking == Thinking::Required)
 }
